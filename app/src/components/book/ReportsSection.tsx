@@ -55,14 +55,19 @@ interface CancellationRec {
 interface TurnawayRec {
   id: string;
   dateKey: string;
-  clientName?: string;
+  guests: { name?: string; serviceIds?: string[] }[];
   phone?: string;
-  partySize?: number;
-  serviceIds?: string[];
   requestedTechId?: string;
   reason: "no_availability" | "price" | "didnt_like_options" | "other";
   notes?: string;
   loggedAt: number;
+}
+
+/** "Jamie: Manicure + Pedicure" or "Guest 2: Gel manicure" or just "Walk-in" */
+function describeTurnawayGuest(g: { name?: string; serviceIds?: string[] }, numbered: boolean, idx?: number): string {
+  const label = g.name ?? (numbered && idx != null ? `Guest ${idx + 1}` : "Walk-in");
+  const svcs = (g.serviceIds ?? []).map((id) => svcById[id]?.name ?? "Service");
+  return svcs.length > 0 ? `${label}: ${svcs.join(" + ")}` : label;
 }
 
 // ── date helpers ─────────────────────────────────────────────────────────────
@@ -623,14 +628,16 @@ export function ReportsSection() {
     for (const t of turnawaysInRange) map.set(t.reason, (map.get(t.reason) ?? 0) + 1);
     return [...map.entries()].map(([reason, n]) => ({ reason, label: TURNAWAY_REASON_LABEL[reason] ?? reason, n })).sort((a, b) => b.n - a.n);
   }, [turnawaysInRange]);
-  // sum of the requested services' prices per turnaway, not multiplied by party
-  // size (a group's wanted services are logged once for the whole visit)
+  // sum of every guest's requested services' prices, across every turnaway
   const turnawayEstRevenue = useMemo(
-    () => turnawaysInRange.reduce((s, t) => s + (t.serviceIds ?? []).reduce((s2, id) => s2 + (svcById[id]?.price ?? 0), 0), 0),
+    () => turnawaysInRange.reduce(
+      (s, t) => s + t.guests.reduce((s2, g) => s2 + (g.serviceIds ?? []).reduce((s3, id) => s3 + (svcById[id]?.price ?? 0), 0), 0),
+      0,
+    ),
     [turnawaysInRange],
   );
   const turnawayPeopleCount = useMemo(
-    () => turnawaysInRange.reduce((s, t) => s + (t.partySize ?? 1), 0),
+    () => turnawaysInRange.reduce((s, t) => s + t.guests.length, 0),
     [turnawaysInRange],
   );
 
@@ -1863,10 +1870,11 @@ export function ReportsSection() {
               </div>
               <ExportButton
                 filename={`turnaways_${range.from}_to_${range.to}.csv`}
-                headers={["Date", "Client", "Phone", "Party size", "Service(s) requested", "Tech requested", "Reason", "Notes"]}
+                headers={["Date", "Party size", "Guests & services wanted", "Phone", "Tech requested", "Reason", "Notes"]}
                 rows={turnawaysInRange.map((t) => [
-                  dayLabel(t.dateKey), t.clientName ?? "Walk-in", t.phone ?? "", t.partySize ?? 1,
-                  (t.serviceIds ?? []).map((id) => svcById[id]?.name ?? "").filter(Boolean).join(", ") || "Any",
+                  dayLabel(t.dateKey), t.guests.length,
+                  t.guests.map((g, gi) => describeTurnawayGuest(g, t.guests.length > 1, gi)).join("; "),
+                  t.phone ?? "",
                   t.requestedTechId ? staff.techs.find((x) => x.id === t.requestedTechId)?.name ?? "" : "Any",
                   TURNAWAY_REASON_LABEL[t.reason] ?? t.reason, t.notes ?? "",
                 ])}
@@ -1881,13 +1889,12 @@ export function ReportsSection() {
                 ))}
               </div>
             )}
-            <table className="w-full min-w-[680px] border-collapse">
+            <table className="w-full min-w-[640px] border-collapse">
               <thead>
                 <tr className="border-b border-[#EDE7EE] bg-[#FAF8FA]">
                   <th className={th}>Date</th>
-                  <th className={th}>Client</th>
                   <th className={`${th} text-right`}>Party</th>
-                  <th className={th}>Wanted</th>
+                  <th className={th}>Who wanted what</th>
                   <th className={th}>Reason</th>
                   <th className={th}>Notes</th>
                 </tr>
@@ -1896,17 +1903,23 @@ export function ReportsSection() {
                 {turnawaysInRange.slice().reverse().map((t) => (
                   <tr key={t.id} className="border-b border-[#F4F0F5] last:border-0 hover:bg-[#FAF8FA]">
                     <td className={td}>{dayLabel(t.dateKey)}</td>
+                    <td className={tdn}>{t.guests.length}</td>
                     <td className={td}>
-                      <span className="block text-[12.5px] font-semibold text-slate-800">{t.clientName ?? "Walk-in"}</span>
-                      {t.phone && <span className="block text-[10.5px] text-slate-400">{t.phone}</span>}
-                    </td>
-                    <td className={tdn}>{t.partySize ?? 1}</td>
-                    <td className={td}>
-                      {(t.serviceIds ?? []).length > 0
-                        ? (t.serviceIds ?? []).map((id) => svcById[id]?.name ?? "Service").join(" + ")
-                        : "Unspecified"}
-                      {t.requestedTechId && (
-                        <span className="text-slate-400"> · {staff.techs.find((x) => x.id === t.requestedTechId)?.name ?? "requested tech"}</span>
+                      {t.guests.map((g, gi) => {
+                        const svcs = (g.serviceIds ?? []).map((id) => svcById[id]?.name ?? "Service");
+                        return (
+                          <div key={gi} className={gi > 0 ? "mt-1" : undefined}>
+                            <span className="font-semibold text-slate-800">{g.name ?? (t.guests.length > 1 ? `Guest ${gi + 1}` : "Walk-in")}</span>
+                            {svcs.length > 0 && <span className="text-slate-400"> — {svcs.join(" + ")}</span>}
+                          </div>
+                        );
+                      })}
+                      {(t.phone || t.requestedTechId) && (
+                        <div className="mt-1 text-[11px] text-slate-400">
+                          {t.phone}
+                          {t.phone && t.requestedTechId && " · "}
+                          {t.requestedTechId && `requested ${staff.techs.find((x) => x.id === t.requestedTechId)?.name ?? "tech"}`}
+                        </div>
                       )}
                     </td>
                     <td className={td}>{TURNAWAY_REASON_LABEL[t.reason] ?? t.reason}</td>
@@ -1914,7 +1927,7 @@ export function ReportsSection() {
                   </tr>
                 ))}
                 {turnawaysInRange.length === 0 && (
-                  <tr><td className={`${td} py-8 text-center text-slate-400`} colSpan={6}>No turnaways logged in this range. Use the phone-off icon in the calendar toolbar to log one.</td></tr>
+                  <tr><td className={`${td} py-8 text-center text-slate-400`} colSpan={5}>No turnaways logged in this range. Use the phone-off icon in the calendar toolbar to log one.</td></tr>
                 )}
               </tbody>
             </table>
