@@ -1,9 +1,17 @@
 import { useMemo, useState } from 'react'
-import { Bell, CalendarDays, Check, Clock, Search, Settings, Sparkles, Users } from 'lucide-react'
+import {
+  ArrowRightLeft, Bell, CalendarDays, CalendarPlus, CalendarX, Check, CheckCircle2, Clock, ListPlus,
+  PhoneOff, Receipt, Search, Settings, Sparkles, UserX, Users, XCircle,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import type { ClientRecord } from '@/lib/booking-types'
 import { DEMO_USERS, SALON_NAME, setSessionUser, useSessionUser, useSessionUserId } from '@/lib/session'
 import { boardTechs, useStaffStore } from '@/lib/staff-store'
 import { useSettingsStore } from '@/lib/settings-store'
+import {
+  clearNotifications, markAllNotificationsRead, markNotificationRead, useNotifications,
+  type NotificationKind,
+} from '@/lib/notifications-store'
 import { KeyRound } from 'lucide-react'
 
 /* ═══ App shell, ported from the k3 web SalonShell ═══
@@ -159,6 +167,127 @@ export function NavRail({ active, onNavigate }: RailProps) {
   )
 }
 
+/* ── Notifications, a running feed of things the salon should know ── */
+const KIND_META: Record<NotificationKind, { icon: LucideIcon; color: string }> = {
+  booked: { icon: CalendarPlus, color: '#2FA883' },
+  moved: { icon: ArrowRightLeft, color: '#6B4FC4' },
+  checked_out: { icon: Receipt, color: '#5B54D6' },
+  cancelled: { icon: CalendarX, color: '#B3402F' },
+  no_show: { icon: UserX, color: '#B3402F' },
+  waitlist_joined: { icon: ListPlus, color: '#D99B26' },
+  online_approved: { icon: CheckCircle2, color: '#2FA883' },
+  online_declined: { icon: XCircle, color: '#B3402F' },
+  turnaway: { icon: PhoneOff, color: '#D99B26' },
+}
+
+function relTime(ms: number): string {
+  const min = Math.floor((Date.now() - ms) / 60000)
+  if (min < 1) return 'Just now'
+  if (min < 60) return `${min}m ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  return `${Math.floor(hr / 24)}d ago`
+}
+
+function NotificationBell({ onJumpToDate }: { onJumpToDate?: (dateKey: string) => void }) {
+  const notifications = useNotifications()
+  const [open, setOpen] = useState(false)
+  const unread = notifications.filter((n) => !n.read).length
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        title="Notifications"
+        onClick={() => setOpen((o) => !o)}
+        className={`relative flex h-9 w-9 items-center justify-center rounded-[10px] transition-colors ${
+          open ? 'bg-cream text-ink' : 'text-ink-soft hover:bg-cream hover:text-ink'
+        }`}
+      >
+        <Bell className="h-[18px] w-[18px]" />
+        {unread > 0 && (
+          <span className="tnum absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-clay px-1 text-[10px] font-extrabold text-white">
+            {unread > 99 ? '99+' : unread}
+          </span>
+        )}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-12 z-[95] w-96 overflow-hidden rounded-[14px] border border-line bg-popover shadow-sh-2">
+            <div className="flex items-center justify-between border-b border-line px-3.5 py-2.5">
+              <span className="text-[13px] font-bold text-ink">Notifications</span>
+              {unread > 0 && (
+                <button
+                  type="button"
+                  onClick={() => markAllNotificationsRead()}
+                  className="text-[11.5px] font-semibold text-clay hover:text-clay-deep"
+                >
+                  Mark all read
+                </button>
+              )}
+            </div>
+            <div className="max-h-[420px] overflow-y-auto">
+              {notifications.length === 0 ? (
+                <p className="px-3.5 py-6 text-center text-[12.5px] text-ink-faint">
+                  Nothing yet, activity on the book will show up here.
+                </p>
+              ) : (
+                notifications.map((n) => {
+                  const meta = KIND_META[n.kind]
+                  const Icon = meta.icon
+                  return (
+                    <button
+                      key={n.id}
+                      type="button"
+                      onClick={() => {
+                        markNotificationRead(n.id)
+                        onJumpToDate?.(n.dateKey)
+                        setOpen(false)
+                      }}
+                      className={`flex w-full items-start gap-2.5 border-b border-line px-3.5 py-2.5 text-left transition-colors last:border-0 hover:bg-cream ${
+                        n.read ? '' : 'bg-clay-tint/30'
+                      }`}
+                    >
+                      <span
+                        className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+                        style={{ background: `${meta.color}22`, color: meta.color }}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-1.5">
+                          <span className={`truncate text-[12.5px] ${n.read ? 'font-medium text-ink-soft' : 'font-bold text-ink'}`}>
+                            {n.text}
+                          </span>
+                          {!n.read && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-clay" />}
+                        </span>
+                        {n.detail && <span className="mt-0.5 block truncate text-[11.5px] text-ink-faint">{n.detail}</span>}
+                        <span className="mt-0.5 block text-[10.5px] text-ink-faint">{relTime(n.at)}</span>
+                      </span>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+            {notifications.length > 0 && (
+              <div className="border-t border-line px-3.5 py-2">
+                <button
+                  type="button"
+                  onClick={() => clearNotifications()}
+                  className="text-[11px] font-semibold text-ink-faint transition-colors hover:text-[#B3402F]"
+                >
+                  Clear all
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 /* ── Top context bar ── */
 interface BarProps {
   title: string
@@ -166,9 +295,10 @@ interface BarProps {
   todayLabel: string
   clients: ClientRecord[]
   onPickGuest: (c: ClientRecord) => void
+  onJumpToDate?: (dateKey: string) => void
 }
 
-export function ContextBar({ title, subtitle, todayLabel, clients, onPickGuest }: BarProps) {
+export function ContextBar({ title, subtitle, todayLabel, clients, onPickGuest, onJumpToDate }: BarProps) {
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
 
@@ -231,14 +361,7 @@ export function ContextBar({ title, subtitle, todayLabel, clients, onPickGuest }
         </div>
 
         {/* notifications */}
-        <button
-          type="button"
-          title="Notifications"
-          className="relative flex h-9 w-9 items-center justify-center rounded-[10px] text-ink-soft transition-colors hover:bg-cream hover:text-ink"
-        >
-          <Bell className="h-[18px] w-[18px]" />
-          <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-clay" />
-        </button>
+        <NotificationBell onJumpToDate={onJumpToDate} />
 
         {/* today chip */}
         <span className="tnum hidden h-9 items-center rounded-full border border-line bg-cream px-3.5 text-small font-bold text-ink-soft md:flex">

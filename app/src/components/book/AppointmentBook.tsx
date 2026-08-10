@@ -30,6 +30,7 @@ import { STATUS_META, TechSchedulePanel, type DaySchedule } from './TechSchedule
 import { BlockEditor, type BlockDraft } from './BlockEditor'
 import { TurnawayDialog, type TurnawayDraft } from './TurnawayDialog'
 import { TechCalendarView } from './TechCalendarView'
+import { addNotification } from '@/lib/notifications-store'
 
 const GUTTER_W = 64
 const GROUP_H = 40
@@ -1150,9 +1151,21 @@ export function AppointmentBook() {
             removeQueue(src.kind, src.id)
           }
           showFlash(`✓ ${d.clip!.clientName} booked from ${src.kind === 'waitlist' ? 'waitlist' : src.kind === 'approved' ? 'approved requests' : 'walk-ins'} at ${fmtTime(moving[0].startMin)}`)
+          addNotification({
+            kind: 'booked',
+            text: 'New appointment booked',
+            detail: `${d.clip!.clientName} · from ${src.kind === 'waitlist' ? 'waitlist' : src.kind === 'approved' ? 'approved request' : 'walk-in'} · ${fmtTime(moving[0].startMin)}`,
+            dateKey,
+          })
         } else {
           setClipboard((c) => c.filter((x) => x.id !== d.clip!.id))
           showFlash(`✓ ${d.clip!.clientName} placed at ${fmtTime(moving[0].startMin)} on ${dayLabel(date)}`)
+          addNotification({
+            kind: 'booked',
+            text: 'New appointment booked',
+            detail: `${d.clip!.clientName} · ${fmtTime(moving[0].startMin)}`,
+            dateKey,
+          })
         }
       }
       return
@@ -1174,6 +1187,13 @@ export function AppointmentBook() {
       const primary = appts.find((a) => a.id === d.primaryId)!
       const t = techOf(byId.get(d.primaryId)!.techId)
       showFlash(`✓ ${primary.clientName} → ${t.name} at ${fmtTime(byId.get(d.primaryId)!.startMin)}`)
+      addNotification({
+        kind: 'moved',
+        text: 'Appointment moved',
+        detail: `${primary.clientName} → ${t.name} at ${fmtTime(byId.get(d.primaryId)!.startMin)}`,
+        dateKey,
+        apptId: primary.id,
+      })
     }
   }
   const applyDropRef = useRef(applyDrop)
@@ -1345,6 +1365,12 @@ export function AppointmentBook() {
     const names = [...new Set(services.map((s) => s.clientName))].join(' & ')
     const movedNote = relocated.size > 0 ? `, moved ${relocated.size} booking${relocated.size > 1 ? 's' : ''} to make room` : ''
     showFlash(`✓ ${names} booked at ${fmtTime(services[0].startMin)}${movedNote}, confirmation sent`)
+    addNotification({
+      kind: 'booked',
+      text: newAppts.length > 1 ? `${newAppts.length} appointments booked` : 'New appointment booked',
+      detail: `${names} · ${fmtTime(services[0].startMin)}${movedNote}`,
+      dateKey,
+    })
     }
     // requested tech with no room to relocate, always ask before double booking
     if (forceDouble) {
@@ -1482,6 +1508,12 @@ export function AppointmentBook() {
     showFlash(party.size > 1
       ? `✓ Party of ${party.size} checked out together, $${p.total.toFixed(2)} (${p.method})`
       : `✓ ${checkoutName} checked out, $${p.total.toFixed(2)} (${p.method})`)
+    addNotification({
+      kind: 'checked_out',
+      text: party.size > 1 ? `Party of ${party.size} checked out` : 'Client checked out',
+      detail: `${checkoutName} · $${p.total.toFixed(2)} (${p.method})`,
+      dateKey,
+    })
     setCheckoutDraft(null) // ticket closed, draft can go
     closeCheckout()
   }
@@ -1594,7 +1626,10 @@ export function AppointmentBook() {
         setInvoicePayment({ payment, items: items.length > 0 ? items : [a] })
         break
       }
-      case 'noshow': setStatus(a, 'no_show', `Marked no-show, ${a.clientName}`); break
+      case 'noshow':
+        setStatus(a, 'no_show', `Marked no-show, ${a.clientName}`)
+        addNotification({ kind: 'no_show', text: 'Client no-showed', detail: `${a.clientName} · ${fmtTime(a.startMin)}`, dateKey, apptId: a.id })
+        break
       case 'cancel':
         setCancelPromptId(a.id) // confirmation happens in the dialog
         break
@@ -1703,6 +1738,14 @@ export function AppointmentBook() {
       serviceId: g.serviceId, techId: g.techId, startMin: g.startMin, durationMin: g.durationMin,
       bookedAt: g.log?.[0]?.at, cancelledAt: now, groupSize: group.length,
     }))])
+    const names = [...new Set(group.map((g) => g.clientName))]
+    addNotification({
+      kind: 'cancelled',
+      text: group.length > 1 ? `${group.length} services cancelled` : 'Appointment cancelled',
+      detail: `${names.join(' & ')} · ${fmtTime(group[0].startMin)}`,
+      dateKey,
+      apptId: group[0].id,
+    })
   }
 
   // ── turnaways ──────────────────────────────────────────────────────────────
@@ -1721,6 +1764,16 @@ export function AppointmentBook() {
     const who = named.length > 0 ? named.join(', ') : d.guests.length > 1 ? `a party of ${d.guests.length}` : 'a walk-in'
     // the new record always belongs to turnawaysToday (both scoped to dateKey)
     showFlash(`Logged turnaway for ${who} · ${turnawaysToday.length + 1} ${turnawayDayLabel} at ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`)
+    const reasonLabel = d.reason === 'no_availability' ? 'No availability'
+      : d.reason === 'price' ? 'Price'
+      : d.reason === 'didnt_like_options' ? "Didn't like the options"
+      : 'Other'
+    addNotification({
+      kind: 'turnaway',
+      text: 'Turnaway logged',
+      detail: `${who} · ${reasonLabel}`,
+      dateKey,
+    })
   }
   const doCancelOne = () => {
     if (cancelAppt) recordCancellations([cancelAppt])
@@ -1846,6 +1899,13 @@ export function AppointmentBook() {
       commit([...appts.filter((a) => !ids.has(a.id)).map((a) => relocated.get(a.id) ?? a), ...placed])
       const movedNote = relocated.size > 0 ? `, moved ${relocated.size} booking${relocated.size > 1 ? 's' : ''} to make room` : ''
       showFlash(`✓ Approved and booked at ${fmtTime(req.startMin)}${movedNote}, client notified`)
+      addNotification({
+        kind: 'online_approved',
+        text: 'Online request approved',
+        detail: `${req.clientName} · ${fmtTime(req.startMin)}${movedNote}`,
+        dateKey,
+        apptId: req.id,
+      })
       return
     }
     // requested time unavailable, keep the manual drag-onto-calendar flow
@@ -1860,6 +1920,12 @@ export function AppointmentBook() {
       requestedTechId: req.techId,
     }])
     showFlash(`✓ Approved, ${fmtTime(req.startMin)} is taken, drag ${req.clientName}'s booking onto the calendar`)
+    addNotification({
+      kind: 'online_approved',
+      text: 'Online request approved',
+      detail: `${req.clientName} · requested ${fmtTime(req.startMin)}, needs placement`,
+      dateKey,
+    })
   }
   const declineRequest = (id: string) => {
     const req = appts.find((a) => a.id === id)
@@ -1870,6 +1936,12 @@ export function AppointmentBook() {
     const ids = new Set(linked.map((a) => a.id))
     commit(appts.filter((a) => !ids.has(a.id)))
     showFlash('Request declined, client notified')
+    addNotification({
+      kind: 'online_declined',
+      text: 'Online request declined',
+      detail: `${req.clientName} · requested ${fmtTime(req.startMin)}`,
+      dateKey,
+    })
   }
   const proposeRequest = (id: string, startMin: number) => {
     commit(appts.map((a) => (a.id === id ? { ...a, startMin, status: 'confirmed' as const } : a)))
@@ -1880,6 +1952,7 @@ export function AppointmentBook() {
   const addWaitlist = (entry: Omit<QueueEntry, 'id' | 'createdMin'>) => {
     setWaitlist((w) => [...w, { ...entry, id: `w${Date.now()}`, createdMin: DEMO_NOW_MIN }])
     showFlash(`✓ ${entry.name} joined the online waitlist`)
+    addNotification({ kind: 'waitlist_joined', text: 'Client joined the waitlist', detail: entry.name, dateKey })
   }
   const addWalkinGroup = (guests: WalkInGuest[]) => {
     setWalkins((w) => [...w, { id: `k${Date.now()}`, guests, createdMin: DEMO_NOW_MIN }])
@@ -2219,6 +2292,7 @@ export function AppointmentBook() {
         todayLabel={dayLabel(new Date())}
         clients={clients}
         onPickGuest={(c) => openProfile(c.name)}
+        onJumpToDate={(k) => goDay(new Date(k + 'T12:00:00'))}
       />
       <Toolbar
         subtitle={`${dayLabel(date)} · ${columns.filter((c) => c.kind === 'tech').length} of ${techs.length} techs working · ${appts.length} appointments`}
