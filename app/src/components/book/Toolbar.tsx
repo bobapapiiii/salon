@@ -38,23 +38,27 @@ interface Props {
   /** today's turnaway tally, resets on its own the next day */
   turnawayCount: number
   turnawayTitle: string
+  /** you can't turn away someone in the past or the future, only on today's board */
+  turnawayDisabled: boolean
 }
 
-function IconBtn({ children, title, badge, onClick, active }: {
-  children: ReactNode; title: string; badge?: number; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; active?: boolean
+function IconBtn({ children, title, badge, onClick, active, disabled }: {
+  children: ReactNode; title: string; badge?: number; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; active?: boolean; disabled?: boolean
 }) {
   return (
     <button
       type="button"
       title={title}
       onClick={onClick}
+      disabled={disabled}
       className={`relative flex h-9 w-9 items-center justify-center rounded-[10px] border transition-colors ${
-        active ? 'border-clay/40 bg-clay-tint text-clay' : 'border-line bg-surface text-ink-soft hover:bg-cream'
+        disabled ? 'cursor-not-allowed border-line bg-surface text-ink-faint/50'
+          : active ? 'border-clay/40 bg-clay-tint text-clay' : 'border-line bg-surface text-ink-soft hover:bg-cream'
       }`}
     >
       {children}
       {badge != null && badge > 0 && (
-        <span className="tnum absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-clay px-1 text-[10px] font-extrabold text-white">
+        <span className={`tnum absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-extrabold text-white ${disabled ? 'bg-ink-faint' : 'bg-clay'}`}>
           {badge}
         </span>
       )}
@@ -213,7 +217,7 @@ export function Toolbar(p: Props) {
           <PanelRight className="h-4 w-4" />
         </IconBtn>
 
-        <IconBtn title={p.turnawayTitle} badge={p.turnawayCount} onClick={p.onTurnaway}>
+        <IconBtn title={p.turnawayTitle} badge={p.turnawayCount} onClick={p.onTurnaway} disabled={p.turnawayDisabled}>
           <PhoneOff className="h-4 w-4" />
         </IconBtn>
       </div>

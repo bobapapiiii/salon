@@ -140,6 +140,7 @@ function presetRange(p: Preset, today: string): { from: string; to: string } {
 const money = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 const money2 = (n: number) => `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const hours = (mins: number) => `${(mins / 60).toFixed(1)}h`;
+const clockTime = (ms: number) => new Date(ms).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 
 // ── small UI pieces ──────────────────────────────────────────────────────────
 const card = "rounded-xl border border-[#EDE7EE] bg-white p-4";
@@ -1870,9 +1871,9 @@ export function ReportsSection() {
               </div>
               <ExportButton
                 filename={`turnaways_${range.from}_to_${range.to}.csv`}
-                headers={["Date", "Party size", "Guests & services wanted", "Phone", "Tech requested", "Reason", "Notes"]}
+                headers={["Date", "Time", "Party size", "Guests & services wanted", "Phone", "Tech requested", "Reason", "Notes"]}
                 rows={turnawaysInRange.map((t) => [
-                  dayLabel(t.dateKey), t.guests.length,
+                  dayLabel(t.dateKey), clockTime(t.loggedAt), t.guests.length,
                   t.guests.map((g, gi) => describeTurnawayGuest(g, t.guests.length > 1, gi)).join("; "),
                   t.phone ?? "",
                   t.requestedTechId ? staff.techs.find((x) => x.id === t.requestedTechId)?.name ?? "" : "Any",
@@ -1893,6 +1894,7 @@ export function ReportsSection() {
               <thead>
                 <tr className="border-b border-[#EDE7EE] bg-[#FAF8FA]">
                   <th className={th}>Date</th>
+                  <th className={th}>Time</th>
                   <th className={`${th} text-right`}>Party</th>
                   <th className={th}>Who wanted what</th>
                   <th className={th}>Reason</th>
@@ -1903,6 +1905,7 @@ export function ReportsSection() {
                 {turnawaysInRange.slice().reverse().map((t) => (
                   <tr key={t.id} className="border-b border-[#F4F0F5] last:border-0 hover:bg-[#FAF8FA]">
                     <td className={td}>{dayLabel(t.dateKey)}</td>
+                    <td className={`${td} text-slate-500`}>{clockTime(t.loggedAt)}</td>
                     <td className={tdn}>{t.guests.length}</td>
                     <td className={td}>
                       {t.guests.map((g, gi) => {
@@ -1927,7 +1930,7 @@ export function ReportsSection() {
                   </tr>
                 ))}
                 {turnawaysInRange.length === 0 && (
-                  <tr><td className={`${td} py-8 text-center text-slate-400`} colSpan={5}>No turnaways logged in this range. Use the phone-off icon in the calendar toolbar to log one.</td></tr>
+                  <tr><td className={`${td} py-8 text-center text-slate-400`} colSpan={6}>No turnaways logged in this range. Use the phone-off icon in the calendar toolbar to log one.</td></tr>
                 )}
               </tbody>
             </table>

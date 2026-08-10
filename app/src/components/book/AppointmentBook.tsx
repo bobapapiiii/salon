@@ -295,6 +295,9 @@ export function AppointmentBook() {
   const [, setCancellations] = usePersistentState<CancellationRecord[]>(sdata('cancellations-v1'), [])
   const [turnaways, setTurnaways] = usePersistentState<TurnawayRecord[]>(sdata('turnaways-v1'), [])
   const [turnawayOpen, setTurnawayOpen] = useState(false)
+  // you can't turn away someone in the past or the future, only right now, so
+  // logging only makes sense while looking at today's board
+  const canLogTurnaway = isToday(date)
   // daily turnaway tally for the toolbar badge, scoped to whichever day is on
   // screen (same as every other day-scoped thing here, appts/blocks/etc) so it
   // always matches what you're looking at, and naturally resets when the date
@@ -312,14 +315,17 @@ export function AppointmentBook() {
     }
     return [...counts.entries()].sort((a, b) => b[1] - a[1])
   }, [turnawaysToday])
-  const turnawayDayLabel = isToday(date) ? 'today' : `on ${dayLabel(date)}`
-  const turnawayTitle = turnawaysToday.length === 0
-    ? "Log a turnaway, a client we couldn't fit in"
+  const turnawayDayLabel = canLogTurnaway ? 'today' : `on ${dayLabel(date)}`
+  const turnawaySummary = turnawaysToday.length === 0
+    ? null
     : `${turnawaysToday.length} turnaway${turnawaysToday.length === 1 ? '' : 's'} ${turnawayDayLabel}${
         turnawaysTodayServices.length > 0
           ? ` — ${turnawaysTodayServices.map(([name, n]) => (n > 1 ? `${name} ×${n}` : name)).join(', ')}`
           : ''
       }`
+  const turnawayTitle = canLogTurnaway
+    ? turnawaySummary ?? "Log a turnaway, a client we couldn't fit in"
+    : `Turnaways can only be logged for today${turnawaySummary ? ` · ${turnawaySummary}` : ''}`
   const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; clientName: string; itemCount: number; subtotal: number; tip: number; total: number; method: string; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[] }[]>(sdata('payments-v1'), [])
   // online waitlist (self-serve) + walk-in queue (front desk)
   const [waitlist, setWaitlist] = usePersistentState<QueueEntry[]>(sdata('waitlist-v1'), () => [
@@ -1660,12 +1666,20 @@ export function AppointmentBook() {
 
   // ── turnaways ──────────────────────────────────────────────────────────────
   const logTurnaway = (d: TurnawayDraft) => {
+    // safety net for the dialog being left open across a day rollover — the
+    // toolbar button is disabled outside today, but a stale open dialog could
+    // still call this, and you can't turn away someone in the past or future
+    if (!canLogTurnaway) {
+      setTurnawayOpen(false)
+      showFlash(`⚠ That was for a different day, turnaways can only be logged for today`)
+      return
+    }
     setTurnaways((x) => [...x, { id: `tw${Date.now()}`, dateKey, loggedAt: Date.now(), ...d }])
     setTurnawayOpen(false)
     const named = d.guests.map((g) => g.name).filter((n): n is string => !!n)
     const who = named.length > 0 ? named.join(', ') : d.guests.length > 1 ? `a party of ${d.guests.length}` : 'a walk-in'
     // the new record always belongs to turnawaysToday (both scoped to dateKey)
-    showFlash(`Logged turnaway for ${who} · ${turnawaysToday.length + 1} ${turnawayDayLabel}`)
+    showFlash(`Logged turnaway for ${who} · ${turnawaysToday.length + 1} ${turnawayDayLabel} at ${new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`)
   }
   const doCancelOne = () => {
     if (cancelAppt) recordCancellations([cancelAppt])
@@ -2191,9 +2205,10 @@ export function AppointmentBook() {
         }}
         requestCount={requested.length}
         onToggleRail={() => setRailOpen((o) => !o)}
-        onTurnaway={() => setTurnawayOpen(true)}
+        onTurnaway={() => { if (canLogTurnaway) setTurnawayOpen(true) }}
         turnawayCount={turnawaysToday.length}
         turnawayTitle={turnawayTitle}
+        turnawayDisabled={!canLogTurnaway}
       />
 
       {/* legend + date picker popovers */}
