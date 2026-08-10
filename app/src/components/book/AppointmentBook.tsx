@@ -1289,6 +1289,10 @@ export function AppointmentBook() {
       let to = from + dur
       if (from < salonOpenOff || to > salonCloseOff) { showFlash(`⚠ ${svc.name} would run outside salon hours`); return }
       let techId = s.techId
+      // picked by name (not First available / gender pref / issue) — pinning
+      // to a specific tech is what should clear squatters out of the way,
+      // independent of whether the separate "Requested" flag was also set
+      const pinned = techId !== 'first' && techId !== 'pref-female' && techId !== 'pref-male' && techId !== 'issue'
       if (techId === 'first' || techId === 'pref-female' || techId === 'pref-male' || techId === 'issue') {
         // exclude techs already assigned a same-time service in THIS booking,
         // so parallel services never land on one tech (back-to-back still can)
@@ -1301,8 +1305,8 @@ export function AppointmentBook() {
       if (selfClash) { showFlash(`⚠ ${techOf(techId).name} is busy at ${fmtTime(from)}`); return }
       const clash = appts.some((a) =>
         !relocated.has(a.id) && a.techId === techId && overlaps(from, to, a.startMin, a.startMin + a.durationMin))
-      if (clash && s.techRequested) {
-        // client asked for THIS tech: move the non-requested booking out of her way
+      if (clash && (pinned || s.techRequested)) {
+        // booked for THIS specific tech: move the non-requested booking out of her way
         const moved = makeRoom(techId, from, to)
         if (moved) for (const m of moved) relocated.set(m.id, m)
         else forceDouble = true // nowhere to move it, ask about double booking
@@ -1646,6 +1650,17 @@ export function AppointmentBook() {
     : []
 
   const saveDetail = (updated: Appointment[], removedIds: string[]) => {
+    // a service is "pinned" when the form has it set to an actual tech by
+    // name, as opposed to First available / gender preference / issue — this
+    // is what should trigger auto-relocation below, independent of whether
+    // the separate "Request: Requested" flag was also flipped, since picking
+    // someone by name IS asking for that specific tech
+    const pinnedIds = new Set(
+      updated
+        .filter((u) => !removedIds.includes(u.id) &&
+          u.techId !== 'first' && u.techId !== 'pref-female' && u.techId !== 'pref-male' && u.techId !== 'issue')
+        .map((u) => u.id),
+    )
     const keep = updated.filter((u) => !removedIds.includes(u.id)).map((u) => {
       if (u.techId === 'first' || u.techId === 'pref-female' || u.techId === 'pref-male' || u.techId === 'issue') {
         const resolved = resolveChoice(u.techId, u.serviceId, u.startMin, u.startMin + u.durationMin, u.id)
@@ -1672,7 +1687,7 @@ export function AppointmentBook() {
     const ignoreIds = new Set([...keepIds, ...removedIds])
     const relocated = new Map<string, Appointment>()
     for (const u of keep) {
-      if (!u.techRequested) continue
+      if (!pinnedIds.has(u.id)) continue
       const clash = appts.some((a) =>
         !ignoreIds.has(a.id) && !relocated.has(a.id) && a.techId === u.techId &&
         overlaps(u.startMin, u.startMin + u.durationMin, a.startMin, a.startMin + a.durationMin))
