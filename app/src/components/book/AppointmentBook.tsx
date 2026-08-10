@@ -643,7 +643,7 @@ export function AppointmentBook() {
 
   // ── conflict checking ─────────────────────────────────────────────────────
   const checkMove = useCallback(
-    (moving: MovingItem[]) => {
+    (moving: MovingItem[], extraIgnoreIds?: Set<string>) => {
       const ids = new Set(moving.map((m) => m.id))
       const errors = new Map<string, string | null>()
       for (const m of moving) {
@@ -651,7 +651,7 @@ export function AppointmentBook() {
         if (m.startMin < salonOpenOff || m.startMin + m.durationMin > salonCloseOff) err = salonClosed ? 'Salon closed' : 'Outside hours'
         if (!err && !allowOverlap) {
           const hit = appts.find(
-            (a) => !ids.has(a.id) && a.techId === m.techId &&
+            (a) => !ids.has(a.id) && !extraIgnoreIds?.has(a.id) && a.techId === m.techId &&
               overlaps(m.startMin, m.startMin + m.durationMin, a.startMin, a.startMin + a.durationMin),
           )
           if (hit) err = `Overlaps ${hit.clientName}`
@@ -1664,22 +1664,44 @@ export function AppointmentBook() {
     const moving: MovingItem[] = keep.map((u) => ({
       id: u.id, techId: u.techId, startMin: u.startMin, durationMin: u.durationMin, serviceId: u.serviceId,
     }))
-    const err = [...checkMove(moving).values()].find(Boolean)
+
+    // a service was pinned to a specific tech by name in the edit form: move
+    // any non-requested appointment out of her way, same as booking or
+    // approving a tech-requested service does
+    const keepIds = new Set(keep.map((u) => u.id))
+    const ignoreIds = new Set([...keepIds, ...removedIds])
+    const relocated = new Map<string, Appointment>()
+    for (const u of keep) {
+      if (!u.techRequested) continue
+      const clash = appts.some((a) =>
+        !ignoreIds.has(a.id) && !relocated.has(a.id) && a.techId === u.techId &&
+        overlaps(u.startMin, u.startMin + u.durationMin, a.startMin, a.startMin + a.durationMin))
+      if (!clash) continue
+      const moved = makeRoom(u.techId, u.startMin, u.startMin + u.durationMin, ignoreIds)
+      // null means the squatter is itself requested or nobody qualified is free,
+      // fall through to the usual double-book prompt / overlap error below
+      if (moved) for (const m of moved) relocated.set(m.id, m)
+    }
+
+    const err = [...checkMove(moving, new Set(relocated.keys())).values()].find(Boolean)
     if (err) { setDetailError(err); return }
     const doSave = () => {
       const byId = new Map(keep.map((u) => [u.id, u]))
       commit(appts
         .filter((a) => !removedIds.includes(a.id))
-        .map((a) => byId.get(a.id) ?? a))
+        .map((a) => byId.get(a.id) ?? relocated.get(a.id) ?? a))
       setDetailId(null)
-      showFlash(keep.some((u) => u.issue) ? '⚠ Marked as issue, assigned to an available tech' : '✓ Appointment updated')
+      showFlash(
+        relocated.size > 0
+          ? `✓ Appointment updated, moved ${relocated.size} booking${relocated.size > 1 ? 's' : ''} to make room`
+          : keep.some((u) => u.issue) ? '⚠ Marked as issue, assigned to an available tech' : '✓ Appointment updated')
     }
-    // double-booking is enabled, warn before saving one
+    // double-booking is enabled, warn before saving one (only for clashes we
+    // couldn't clear a path for above)
     if (allowOverlap) {
-      const keepIds = new Set(keep.map((u) => u.id))
       const hit = keep.find((u) =>
         appts.some((a) =>
-          !keepIds.has(a.id) && !removedIds.includes(a.id) && a.techId === u.techId &&
+          !keepIds.has(a.id) && !removedIds.includes(a.id) && !relocated.has(a.id) && a.techId === u.techId &&
           overlaps(u.startMin, u.startMin + u.durationMin, a.startMin, a.startMin + a.durationMin)))
       if (hit) {
         setPendingOverlap({ techId: hit.techId, timeLabel: fmtTime(hit.startMin), apply: doSave })
