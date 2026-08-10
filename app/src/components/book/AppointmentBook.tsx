@@ -111,6 +111,29 @@ export interface TurnawayRecord {
   loggedAt: number
 }
 
+// `guests` replaced older shapes (single clientName+serviceId, then a shared
+// partySize+serviceIds) as this feature was built out. Records already saved
+// to a browser's localStorage under those older shapes won't have `guests`,
+// so normalize on read instead of crashing on `for (const g of t.guests)`.
+type LegacyTurnawayRecord = Omit<TurnawayRecord, 'guests'> & {
+  guests?: TurnawayRecord['guests']
+  clientName?: string
+  partySize?: number
+  serviceIds?: string[]
+  serviceId?: string
+}
+function normalizeTurnaway(raw: LegacyTurnawayRecord): TurnawayRecord {
+  if (Array.isArray(raw.guests)) return raw as TurnawayRecord
+  const serviceIds = raw.serviceIds ?? (raw.serviceId ? [raw.serviceId] : undefined)
+  const partySize = Math.max(1, raw.partySize ?? 1)
+  const guests = [{ name: raw.clientName, serviceIds }, ...Array.from({ length: partySize - 1 }, () => ({}))]
+  return { ...raw, guests }
+}
+const turnawaysCodec = {
+  deserialize: (raw: unknown): TurnawayRecord[] =>
+    Array.isArray(raw) ? raw.filter((r): r is LegacyTurnawayRecord => r != null && typeof r === 'object').map(normalizeTurnaway) : [],
+}
+
 export interface QueueEntry {
   id: string
   clientId?: string
@@ -293,7 +316,7 @@ export function AppointmentBook() {
   // cancellation history, kept separately since a cancelled appointment is removed
   // from the day's board entirely (nothing else needs it, but Reports does)
   const [, setCancellations] = usePersistentState<CancellationRecord[]>(sdata('cancellations-v1'), [])
-  const [turnaways, setTurnaways] = usePersistentState<TurnawayRecord[]>(sdata('turnaways-v1'), [])
+  const [turnaways, setTurnaways] = usePersistentState<TurnawayRecord[]>(sdata('turnaways-v1'), [], turnawaysCodec)
   const [turnawayOpen, setTurnawayOpen] = useState(false)
   // you can't turn away someone in the past or the future, only right now, so
   // logging only makes sense while looking at today's board

@@ -63,6 +63,29 @@ interface TurnawayRec {
   loggedAt: number;
 }
 
+// `guests` replaced older shapes (single clientName+serviceId, then a shared
+// partySize+serviceIds) as this feature was built out. Records already saved
+// to a browser's localStorage under those older shapes won't have `guests`,
+// so normalize on read instead of crashing on `for (const g of t.guests)`.
+type LegacyTurnawayRec = Omit<TurnawayRec, "guests"> & {
+  guests?: TurnawayRec["guests"];
+  clientName?: string;
+  partySize?: number;
+  serviceIds?: string[];
+  serviceId?: string;
+};
+function normalizeTurnaway(raw: LegacyTurnawayRec): TurnawayRec {
+  if (Array.isArray(raw.guests)) return raw as TurnawayRec;
+  const serviceIds = raw.serviceIds ?? (raw.serviceId ? [raw.serviceId] : undefined);
+  const partySize = Math.max(1, raw.partySize ?? 1);
+  const guests = [{ name: raw.clientName, serviceIds }, ...Array.from({ length: partySize - 1 }, () => ({}))];
+  return { ...raw, guests };
+}
+const turnawaysCodec = {
+  deserialize: (raw: unknown): TurnawayRec[] =>
+    Array.isArray(raw) ? raw.filter((r): r is LegacyTurnawayRec => r != null && typeof r === "object").map(normalizeTurnaway) : [],
+};
+
 /** "Jamie: Manicure + Pedicure" or "Guest 2: Gel manicure" or just "Walk-in" */
 function describeTurnawayGuest(g: { name?: string; serviceIds?: string[] }, numbered: boolean, idx?: number): string {
   const label = g.name ?? (numbered && idx != null ? `Guest ${idx + 1}` : "Walk-in");
@@ -265,7 +288,7 @@ export function ReportsSection() {
   const [apptDays] = usePersistentState<Record<string, Appointment[]>>(sdata("appts-v1"), {});
   const [clients] = usePersistentState<ClientRec[]>(sdata("clients-v1"), []);
   const [cancellations] = usePersistentState<CancellationRec[]>(sdata("cancellations-v1"), []);
-  const [turnaways] = usePersistentState<TurnawayRec[]>(sdata("turnaways-v1"), []);
+  const [turnaways] = usePersistentState<TurnawayRec[]>(sdata("turnaways-v1"), [], turnawaysCodec);
   const [pointsByClient] = usePersistentState<Record<string, number>>(sdata("loyalty-v1"), {});
   const staff = useStaffStore();
   const settings = useSettingsStore();
