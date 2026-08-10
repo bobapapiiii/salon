@@ -977,7 +977,13 @@ export function AppointmentBook() {
       for (const m of moved) {
         if (overlaps(sq.startMin, sq.startMin + sq.durationMin, m.startMin, m.startMin + m.durationMin)) busy.add(m.techId)
       }
-      const alt = resolveChoice('first', sq.serviceId, sq.startMin, sq.startMin + sq.durationMin, sq.id, busy)
+      // when checking who's free, ignore the squatter's own appointment AND
+      // everything else being moved in this same action (e.g. the tech being
+      // dropped elsewhere just vacated her old slot — that shouldn't still
+      // count as "busy" when we're looking for somewhere to put the squatter)
+      const ignoreForAlt = new Set(ignoreIds ?? [])
+      ignoreForAlt.add(sq.id)
+      const alt = resolveChoice('first', sq.serviceId, sq.startMin, sq.startMin + sq.durationMin, ignoreForAlt, busy)
       if (!alt) return null
       moved.push({
         ...sq, techId: alt.id,
