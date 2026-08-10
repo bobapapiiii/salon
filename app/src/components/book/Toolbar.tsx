@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react'
 import {
-  CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Eye, ListFilter, PanelRight, PhoneOff, Plus, Search, Store,
+  CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Eye, ListFilter, PanelRight, Plus, Search, Store,
 } from 'lucide-react'
 import { useCategoriesStore } from '@/lib/categories-store'
 
@@ -34,12 +34,6 @@ interface Props {
   onPos: () => void
   requestCount: number
   onToggleRail: () => void
-  onTurnaway: () => void
-  /** today's turnaway tally, resets on its own the next day */
-  turnawayCount: number
-  turnawayTitle: string
-  /** you can't turn away someone in the past or the future, only on today's board */
-  turnawayDisabled: boolean
 }
 
 function IconBtn({ children, title, badge, onClick, active, disabled }: {
@@ -215,10 +209,6 @@ export function Toolbar(p: Props) {
 
         <IconBtn title="Requests panel" badge={p.requestCount} onClick={p.onToggleRail}>
           <PanelRight className="h-4 w-4" />
-        </IconBtn>
-
-        <IconBtn title={p.turnawayTitle} badge={p.turnawayCount} onClick={p.onTurnaway} disabled={p.turnawayDisabled}>
-          <PhoneOff className="h-4 w-4" />
         </IconBtn>
       </div>
 

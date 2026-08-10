@@ -292,13 +292,46 @@ function NotificationBell({ onJumpToDate }: { onJumpToDate?: (dateKey: string) =
 interface BarProps {
   title: string
   subtitle: string
-  todayLabel: string
   clients: ClientRecord[]
   onPickGuest: (c: ClientRecord) => void
   onJumpToDate?: (dateKey: string) => void
+  onTurnaway: () => void
+  /** today's turnaway tally, resets on its own the next day */
+  turnawayCount: number
+  turnawayTitle: string
+  /** you can't turn away someone in the past or the future, only on today's board */
+  turnawayDisabled: boolean
 }
 
-export function ContextBar({ title, subtitle, todayLabel, clients, onPickGuest, onJumpToDate }: BarProps) {
+function TurnawayButton({ onTurnaway, turnawayCount, turnawayTitle, turnawayDisabled }: {
+  onTurnaway: () => void
+  turnawayCount: number
+  turnawayTitle: string
+  turnawayDisabled: boolean
+}) {
+  return (
+    <button
+      type="button"
+      title={turnawayTitle}
+      onClick={onTurnaway}
+      disabled={turnawayDisabled}
+      className={`relative flex h-9 w-9 items-center justify-center rounded-[10px] transition-colors ${
+        turnawayDisabled ? 'cursor-not-allowed text-ink-faint/50' : 'text-ink-soft hover:bg-cream hover:text-ink'
+      }`}
+    >
+      <PhoneOff className="h-[18px] w-[18px]" />
+      {turnawayCount > 0 && (
+        <span className={`tnum absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-extrabold text-white ${turnawayDisabled ? 'bg-ink-faint' : 'bg-clay'}`}>
+          {turnawayCount > 99 ? '99+' : turnawayCount}
+        </span>
+      )}
+    </button>
+  )
+}
+
+export function ContextBar({
+  title, subtitle, clients, onPickGuest, onJumpToDate, onTurnaway, turnawayCount, turnawayTitle, turnawayDisabled,
+}: BarProps) {
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
 
@@ -360,13 +393,16 @@ export function ContextBar({ title, subtitle, todayLabel, clients, onPickGuest, 
           )}
         </div>
 
+        {/* turnaway */}
+        <TurnawayButton
+          onTurnaway={onTurnaway}
+          turnawayCount={turnawayCount}
+          turnawayTitle={turnawayTitle}
+          turnawayDisabled={turnawayDisabled}
+        />
+
         {/* notifications */}
         <NotificationBell onJumpToDate={onJumpToDate} />
-
-        {/* today chip */}
-        <span className="tnum hidden h-9 items-center rounded-full border border-line bg-cream px-3.5 text-small font-bold text-ink-soft md:flex">
-          {todayLabel}
-        </span>
       </div>
     </header>
   )

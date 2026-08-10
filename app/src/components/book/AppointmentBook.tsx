@@ -2289,10 +2289,13 @@ export function AppointmentBook() {
       <ContextBar
         title="Schedule"
         subtitle="Day view · whole team"
-        todayLabel={dayLabel(new Date())}
         clients={clients}
         onPickGuest={(c) => openProfile(c.name)}
         onJumpToDate={(k) => goDay(new Date(k + 'T12:00:00'))}
+        onTurnaway={() => { if (canLogTurnaway) setTurnawayOpen(true) }}
+        turnawayCount={turnawaysToday.length}
+        turnawayTitle={turnawayTitle}
+        turnawayDisabled={!canLogTurnaway}
       />
       <Toolbar
         subtitle={`${dayLabel(date)} · ${columns.filter((c) => c.kind === 'tech').length} of ${techs.length} techs working · ${appts.length} appointments`}
@@ -2320,10 +2323,6 @@ export function AppointmentBook() {
         }}
         requestCount={requested.length}
         onToggleRail={() => setRailOpen((o) => !o)}
-        onTurnaway={() => { if (canLogTurnaway) setTurnawayOpen(true) }}
-        turnawayCount={turnawaysToday.length}
-        turnawayTitle={turnawayTitle}
-        turnawayDisabled={!canLogTurnaway}
       />
 
       {/* legend + date picker popovers */}
