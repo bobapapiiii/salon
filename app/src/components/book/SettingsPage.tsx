@@ -1269,6 +1269,12 @@ function BookingSection() {
           on={b.allowOverlap}
           onClick={() => patch({ allowOverlap: !b.allowOverlap })}
         />
+        <ToggleRow
+          title="Auto-move non-requested appointments to make room"
+          body="When a new booking, an edit, or a drag pins an appointment to a specific technician and she already has a non-requested appointment in that slot, automatically move that other appointment to the next least-booked qualified tech instead of double-booking her. Requested-by-name appointments are never bumped. Turn this off to always ask before double-booking instead."
+          on={b.autoRelocateNonRequested}
+          onClick={() => patch({ autoRelocateNonRequested: !b.autoRelocateNonRequested })}
+        />
         <div className={card}>
           <p className="mb-2 text-[12px] font-bold text-slate-800">Time increments</p>
           <div className="flex gap-1.5">

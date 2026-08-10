@@ -380,6 +380,9 @@ export function AppointmentBook() {
   ])
   const allowOverlap = useSettingsStore().booking.allowOverlap // Settings → Online booking
   const warnOnDoubleBook = useSettingsStore().booking.warnOnDoubleBook
+  // auto-move a non-requested squatter to make room for a specific-tech
+  // booking/edit/drag, instead of prompting to double-book — Settings → Online booking
+  const autoRelocateNonRequested = useSettingsStore().booking.autoRelocateNonRequested
   const salonGeneral = useSettingsStore().general
   // salon operating window for the viewed day (minutes from OPEN_MIN) + closures
   const salonDow = new Date(dateKey + 'T12:00:00').getDay()
@@ -1095,9 +1098,10 @@ export function AppointmentBook() {
         !movingIds.has(a.id) && !relocated.has(a.id) && a.techId === m.techId &&
         overlaps(m.startMin, m.startMin + m.durationMin, a.startMin, a.startMin + a.durationMin))
       if (!clash) continue
-      const moved = makeRoom(m.techId, m.startMin, m.startMin + m.durationMin, movingIds)
-      // null means the squatter is itself requested or nobody qualified is free,
-      // fall through to the usual double-book prompt / overlap error
+      const moved = autoRelocateNonRequested ? makeRoom(m.techId, m.startMin, m.startMin + m.durationMin, movingIds) : null
+      // null means the feature is off, the squatter is itself requested, or
+      // nobody qualified is free — fall through to the usual double-book
+      // prompt / overlap error
       if (moved) for (const x of moved) relocated.set(x.id, x)
     }
     return relocated
@@ -1335,9 +1339,9 @@ export function AppointmentBook() {
         !relocated.has(a.id) && a.techId === techId && overlaps(from, to, a.startMin, a.startMin + a.durationMin))
       if (clash && (pinned || s.techRequested)) {
         // booked for THIS specific tech: move the non-requested booking out of her way
-        const moved = makeRoom(techId, from, to)
+        const moved = autoRelocateNonRequested ? makeRoom(techId, from, to) : null
         if (moved) for (const m of moved) relocated.set(m.id, m)
-        else forceDouble = true // nowhere to move it, ask about double booking
+        else forceDouble = true // feature off, or nowhere to move it — ask about double booking
       } else if (clash && !allowOverlap) {
         showFlash(`⚠ ${techOf(techId).name} is busy at ${fmtTime(from)}`)
         return
@@ -1720,9 +1724,10 @@ export function AppointmentBook() {
         !ignoreIds.has(a.id) && !relocated.has(a.id) && a.techId === u.techId &&
         overlaps(u.startMin, u.startMin + u.durationMin, a.startMin, a.startMin + a.durationMin))
       if (!clash) continue
-      const moved = makeRoom(u.techId, u.startMin, u.startMin + u.durationMin, ignoreIds)
-      // null means the squatter is itself requested or nobody qualified is free,
-      // fall through to the usual double-book prompt / overlap error below
+      const moved = autoRelocateNonRequested ? makeRoom(u.techId, u.startMin, u.startMin + u.durationMin, ignoreIds) : null
+      // null means the feature is off, the squatter is itself requested, or
+      // nobody qualified is free — fall through to the usual double-book
+      // prompt / overlap error below
       if (moved) for (const m of moved) relocated.set(m.id, m)
     }
 
@@ -1945,7 +1950,7 @@ export function AppointmentBook() {
           techId = r.techId // specific requested tech is open at the requested time
         } else {
           // requested tech is taken: move the non-requested booking out of her way
-          const moved = makeRoom(r.techId, from, to, ids)
+          const moved = autoRelocateNonRequested ? makeRoom(r.techId, from, to, ids) : null
           if (moved && !busy.has(r.techId) && withinShift(r.techId, from, to) &&
             !blocksRef.current.some((b) => b.techId === r.techId && overlaps(from, to, b.startMin, b.startMin + b.durationMin))) {
             for (const m of moved) relocated.set(m.id, m)

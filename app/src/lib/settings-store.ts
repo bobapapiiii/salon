@@ -42,6 +42,12 @@ export interface SalonSettings {
     allowOverlap: boolean;
     /** ask before placing an overlapping appointment */
     warnOnDoubleBook: boolean;
+    /** when a booking, edit, or drag pins an appointment to a specific tech
+     *  and a non-requested appointment is already sitting in that slot,
+     *  automatically move the non-requested one to the next least-booked
+     *  qualified tech instead of prompting to double-book. Off restores the
+     *  double-book prompt (or overlap error) for every such clash. */
+    autoRelocateNonRequested: boolean;
     /** booking time steps, minutes */
     increment: 15 | 30 | 60;
   };
@@ -60,7 +66,10 @@ const defaults: SalonSettings = {
     weekHours: {},
     holidays: [],
   },
-  booking: { autoConfirm: false, minLeadHrs: 2, maxDaysOut: 60, allowTechChoice: true, allowSameTime: true, allowOverlap: false, warnOnDoubleBook: true, increment: 15 },
+  booking: {
+    autoConfirm: false, minLeadHrs: 2, maxDaysOut: 60, allowTechChoice: true, allowSameTime: true,
+    allowOverlap: false, warnOnDoubleBook: true, autoRelocateNonRequested: true, increment: 15,
+  },
   payments: { methods: [...ALL_METHODS], tipPresets: [0, 15, 18, 20, 25] },
   loyalty: {
     pointsPerDollar: 1,
