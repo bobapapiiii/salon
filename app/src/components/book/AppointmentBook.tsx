@@ -963,34 +963,58 @@ export function AppointmentBook() {
   }
 
   // free a tech's [from,to) for a tech-requested booking: move any NON-requested
-  // appointments sitting there to their least-booked qualified alternative.
-  // null when a squatter is itself requested (can't move) or nobody can take it
+  // appointment sitting there to a qualified tech who's actually free — and if
+  // the best candidate is busy too, chase that squatter off of THEM as well,
+  // hopping through as many techs as it takes. Cycle-guarded (never revisits a
+  // tech already mid-chain) so it always terminates; null when the chain hits
+  // a requested appointment it can't bump, or runs out of qualified techs
   const makeRoom = (techId: string, from: number, to: number, ignoreIds?: Set<string>): Appointment[] | null => {
-    const squatters = appts.filter((a) =>
-      !ignoreIds?.has(a.id) && a.techId === techId &&
-      overlaps(from, to, a.startMin, a.startMin + a.durationMin))
-    if (squatters.length === 0) return []
-    if (squatters.some((a) => a.techRequested)) return null
-    const moved: Appointment[] = []
-    for (const sq of squatters) {
-      const busy = new Set<string>([techId])
-      for (const m of moved) {
-        if (overlaps(sq.startMin, sq.startMin + sq.durationMin, m.startMin, m.startMin + m.durationMin)) busy.add(m.techId)
+    const ignore = ignoreIds ?? new Set<string>()
+
+    // free tid's [f,t) window, recursively bumping whoever's chained in the
+    // way. `moved` is the relocation plan built up so far across the whole
+    // chain (id → its final appointment); `visited` is the set of techs
+    // already being cleared earlier in this same chain, so it can't loop
+    // back through one of them. Returns the updated plan on success, or
+    // null if this branch of the chain is a dead end.
+    const freeSlotFor = (
+      tid: string, f: number, t: number, moved: Map<string, Appointment>, visited: Set<string>,
+    ): Map<string, Appointment> | null => {
+      const effTechOf = (a: Appointment) => moved.get(a.id)?.techId ?? a.techId
+      const squatter = appts.find((a) =>
+        !ignore.has(a.id) && effTechOf(a) === tid &&
+        overlaps(f, t, a.startMin, a.startMin + a.durationMin))
+      if (!squatter) return moved // already clear
+      if (squatter.techRequested || visited.has(tid)) return null
+      const nextVisited = new Set(visited)
+      nextVisited.add(tid)
+      const sqFrom = squatter.startMin
+      const sqTo = sqFrom + squatter.durationMin
+      const candidates = boardTechs(getStaff().techs)
+        .filter((c) =>
+          c.id !== tid && c.skills.includes(squatter.serviceId) && withinShift(c.id, sqFrom, sqTo) &&
+          !nextVisited.has(c.id) &&
+          !blocksRef.current.some((b) => b.techId === c.id && overlaps(sqFrom, sqTo, b.startMin, b.startMin + b.durationMin)))
+        .sort((a, b) => (apptCountByTech.get(a.id) ?? 0) - (apptCountByTech.get(b.id) ?? 0))
+      for (const cand of candidates) {
+        // clear the candidate first (a no-op if she's already free), then land the squatter there
+        const cleared = freeSlotFor(cand.id, sqFrom, sqTo, moved, nextVisited)
+        if (!cleared) continue
+        const placed = new Map(cleared)
+        placed.set(squatter.id, {
+          ...squatter, techId: cand.id,
+          log: [...(squatter.log ?? []), logEntry(`Auto-moved to ${cand.name} to make room for a requested booking`)],
+        })
+        // tid might have had more than one overlapping appointment (possible
+        // if double-booking was used before), keep clearing it
+        const rest = freeSlotFor(tid, f, t, placed, visited)
+        if (rest) return rest
       }
-      // when checking who's free, ignore the squatter's own appointment AND
-      // everything else being moved in this same action (e.g. the tech being
-      // dropped elsewhere just vacated her old slot — that shouldn't still
-      // count as "busy" when we're looking for somewhere to put the squatter)
-      const ignoreForAlt = new Set(ignoreIds ?? [])
-      ignoreForAlt.add(sq.id)
-      const alt = resolveChoice('first', sq.serviceId, sq.startMin, sq.startMin + sq.durationMin, ignoreForAlt, busy)
-      if (!alt) return null
-      moved.push({
-        ...sq, techId: alt.id,
-        log: [...(sq.log ?? []), logEntry(`Auto-moved to ${alt.name} to make room for a requested booking`)],
-      })
+      return null
     }
-    return moved
+
+    const result = freeSlotFor(techId, from, to, new Map(), new Set())
+    return result ? [...result.values()] : null
   }
 
   // move every NON-requested appointment off a tech to the least-booked
