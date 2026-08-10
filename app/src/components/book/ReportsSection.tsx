@@ -7,7 +7,7 @@ import { Download, Printer } from "lucide-react";
 import type { Appointment } from "../../lib/booking-types";
 import { OPEN_MIN, fmtTime } from "../../lib/booking-types";
 import { sdata, usePersistentState } from "../../lib/persist";
-import { svcById } from "../../lib/services-store";
+import { svcById, useServicesStore } from "../../lib/services-store";
 import { catById } from "../../lib/categories-store";
 import { roleColor, useStaffStore } from "../../lib/staff-store";
 import { useSettingsStore } from "../../lib/settings-store";
@@ -55,7 +55,9 @@ interface CancellationRec {
 interface TurnawayRec {
   id: string;
   dateKey: string;
-  guests: { name?: string; serviceIds?: string[] }[];
+  /** general category each person wanted, not the exact service — staff
+   *  usually don't know exactly what a turned-away walk-in would have picked */
+  guests: { name?: string; categoryIds?: string[] }[];
   phone?: string;
   requestedTechId?: string;
   reason: "no_availability" | "price" | "didnt_like_options" | "other";
@@ -63,22 +65,38 @@ interface TurnawayRec {
   loggedAt: number;
 }
 
-// `guests` replaced older shapes (single clientName+serviceId, then a shared
-// partySize+serviceIds) as this feature was built out. Records already saved
-// to a browser's localStorage under those older shapes won't have `guests`,
-// so normalize on read instead of crashing on `for (const g of t.guests)`.
+/** any exact service id → its category id, deduped; drops ids that don't
+ *  resolve to a real service (e.g. one that's since been deleted) */
+function toCategoryIds(serviceIds?: string[]): string[] | undefined {
+  if (!serviceIds || serviceIds.length === 0) return undefined;
+  const cats = [...new Set(serviceIds.map((id) => svcById[id]?.categoryId).filter((c): c is string => !!c))];
+  return cats.length > 0 ? cats : undefined;
+}
+
+// `guests` (with categoryIds) replaced older shapes as this feature was built
+// out: first a single clientName+serviceId, then a shared partySize+
+// serviceIds, then a guests array but keyed by exact serviceIds instead of
+// categoryIds. Records already saved to a browser's localStorage under any
+// of those won't match what the current code expects, so normalize on read
+// instead of crashing (e.g. on `for (const g of t.guests)`).
+type LegacyGuest = { name?: string; categoryIds?: string[]; serviceIds?: string[] };
 type LegacyTurnawayRec = Omit<TurnawayRec, "guests"> & {
-  guests?: TurnawayRec["guests"];
+  guests?: LegacyGuest[];
   clientName?: string;
   partySize?: number;
   serviceIds?: string[];
   serviceId?: string;
 };
 function normalizeTurnaway(raw: LegacyTurnawayRec): TurnawayRec {
-  if (Array.isArray(raw.guests)) return raw as TurnawayRec;
-  const serviceIds = raw.serviceIds ?? (raw.serviceId ? [raw.serviceId] : undefined);
+  if (Array.isArray(raw.guests)) {
+    return {
+      ...raw,
+      guests: raw.guests.map((g) => ({ name: g.name, categoryIds: g.categoryIds ?? toCategoryIds(g.serviceIds) })),
+    } as TurnawayRec;
+  }
+  const categoryIds = toCategoryIds(raw.serviceIds ?? (raw.serviceId ? [raw.serviceId] : undefined));
   const partySize = Math.max(1, raw.partySize ?? 1);
-  const guests = [{ name: raw.clientName, serviceIds }, ...Array.from({ length: partySize - 1 }, () => ({}))];
+  const guests = [{ name: raw.clientName, categoryIds }, ...Array.from({ length: partySize - 1 }, () => ({}))];
   return { ...raw, guests };
 }
 const turnawaysCodec = {
@@ -87,10 +105,10 @@ const turnawaysCodec = {
 };
 
 /** "Jamie: Manicure + Pedicure" or "Guest 2: Gel manicure" or just "Walk-in" */
-function describeTurnawayGuest(g: { name?: string; serviceIds?: string[] }, numbered: boolean, idx?: number): string {
+function describeTurnawayGuest(g: { name?: string; categoryIds?: string[] }, numbered: boolean, idx?: number): string {
   const label = g.name ?? (numbered && idx != null ? `Guest ${idx + 1}` : "Walk-in");
-  const svcs = (g.serviceIds ?? []).map((id) => svcById[id]?.name ?? "Service");
-  return svcs.length > 0 ? `${label}: ${svcs.join(" + ")}` : label;
+  const cats = (g.categoryIds ?? []).map((id) => catById[id]?.name ?? "Service");
+  return cats.length > 0 ? `${label}: ${cats.join(" + ")}` : label;
 }
 
 // ── date helpers ─────────────────────────────────────────────────────────────
@@ -292,6 +310,7 @@ export function ReportsSection() {
   const [pointsByClient] = usePersistentState<Record<string, number>>(sdata("loyalty-v1"), {});
   const staff = useStaffStore();
   const settings = useSettingsStore();
+  const allServices = useServicesStore();
 
   const range = preset === "custom" ? custom : presetRange(preset, today);
   const days = useMemo(() => listDays(range.from, range.to), [range.from, range.to]);
@@ -652,13 +671,27 @@ export function ReportsSection() {
     for (const t of turnawaysInRange) map.set(t.reason, (map.get(t.reason) ?? 0) + 1);
     return [...map.entries()].map(([reason, n]) => ({ reason, label: TURNAWAY_REASON_LABEL[reason] ?? reason, n })).sort((a, b) => b.n - a.n);
   }, [turnawaysInRange]);
-  // sum of every guest's requested services' prices, across every turnaway
+  // we only know the general category a turnaway wanted, not the exact
+  // service, so estimate each one at that category's average active price
+  const avgPriceByCategory = useMemo(() => {
+    const sums = new Map<string, { total: number; count: number }>();
+    for (const s of allServices) {
+      if (s.active === false) continue;
+      const e = sums.get(s.categoryId) ?? { total: 0, count: 0 };
+      e.total += s.price;
+      e.count++;
+      sums.set(s.categoryId, e);
+    }
+    const out = new Map<string, number>();
+    for (const [cat, e] of sums) out.set(cat, e.count > 0 ? e.total / e.count : 0);
+    return out;
+  }, [allServices]);
   const turnawayEstRevenue = useMemo(
     () => turnawaysInRange.reduce(
-      (s, t) => s + t.guests.reduce((s2, g) => s2 + (g.serviceIds ?? []).reduce((s3, id) => s3 + (svcById[id]?.price ?? 0), 0), 0),
+      (s, t) => s + t.guests.reduce((s2, g) => s2 + (g.categoryIds ?? []).reduce((s3, id) => s3 + (avgPriceByCategory.get(id) ?? 0), 0), 0),
       0,
     ),
-    [turnawaysInRange],
+    [turnawaysInRange, avgPriceByCategory],
   );
   const turnawayPeopleCount = useMemo(
     () => turnawaysInRange.reduce((s, t) => s + t.guests.length, 0),
@@ -1889,12 +1922,12 @@ export function ReportsSection() {
               <div>
                 <h3 className="text-[13px] font-bold text-slate-800">Turnaways</h3>
                 <p className="text-[11px] text-slate-400">
-                  Demand we couldn't fit in, logged from the calendar toolbar · {turnawayPeopleCount} {turnawayPeopleCount === 1 ? "person" : "people"} · est. {money2(turnawayEstRevenue)} in missed revenue
+                  Demand we couldn't fit in, logged from the calendar toolbar · {turnawayPeopleCount} {turnawayPeopleCount === 1 ? "person" : "people"} · est. {money2(turnawayEstRevenue)} in missed revenue (avg. price per category)
                 </p>
               </div>
               <ExportButton
                 filename={`turnaways_${range.from}_to_${range.to}.csv`}
-                headers={["Date", "Time", "Party size", "Guests & services wanted", "Phone", "Tech requested", "Reason", "Notes"]}
+                headers={["Date", "Time", "Party size", "Guests & categories wanted", "Phone", "Tech requested", "Reason", "Notes"]}
                 rows={turnawaysInRange.map((t) => [
                   dayLabel(t.dateKey), clockTime(t.loggedAt), t.guests.length,
                   t.guests.map((g, gi) => describeTurnawayGuest(g, t.guests.length > 1, gi)).join("; "),
@@ -1919,7 +1952,7 @@ export function ReportsSection() {
                   <th className={th}>Date</th>
                   <th className={th}>Time</th>
                   <th className={`${th} text-right`}>Party</th>
-                  <th className={th}>Who wanted what</th>
+                  <th className={th}>Who wanted what category</th>
                   <th className={th}>Reason</th>
                   <th className={th}>Notes</th>
                 </tr>
@@ -1932,11 +1965,11 @@ export function ReportsSection() {
                     <td className={tdn}>{t.guests.length}</td>
                     <td className={td}>
                       {t.guests.map((g, gi) => {
-                        const svcs = (g.serviceIds ?? []).map((id) => svcById[id]?.name ?? "Service");
+                        const cats = (g.categoryIds ?? []).map((id) => catById[id]?.name ?? "Service");
                         return (
                           <div key={gi} className={gi > 0 ? "mt-1" : undefined}>
                             <span className="font-semibold text-slate-800">{g.name ?? (t.guests.length > 1 ? `Guest ${gi + 1}` : "Walk-in")}</span>
-                            {svcs.length > 0 && <span className="text-slate-400"> — {svcs.join(" + ")}</span>}
+                            {cats.length > 0 && <span className="text-slate-400"> — {cats.join(" + ")}</span>}
                           </div>
                         );
                       })}

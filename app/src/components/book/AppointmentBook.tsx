@@ -101,9 +101,11 @@ export interface CancellationRecord {
 export interface TurnawayRecord {
   id: string
   dateKey: string
-  /** one entry per person; length is the party size. Each person can want
-   *  different services (e.g. mani for one, mani + pedi for another) */
-  guests: { name?: string; serviceIds?: string[] }[]
+  /** one entry per person; length is the party size. Each person can want a
+   *  different general category (e.g. mani for one, mani + pedi for
+   *  another) — the exact service isn't tracked, since staff usually don't
+   *  know exactly what a turned-away walk-in would have picked */
+  guests: { name?: string; categoryIds?: string[] }[]
   phone?: string
   requestedTechId?: string
   reason: 'no_availability' | 'price' | 'didnt_like_options' | 'other'
@@ -111,22 +113,38 @@ export interface TurnawayRecord {
   loggedAt: number
 }
 
-// `guests` replaced older shapes (single clientName+serviceId, then a shared
-// partySize+serviceIds) as this feature was built out. Records already saved
-// to a browser's localStorage under those older shapes won't have `guests`,
-// so normalize on read instead of crashing on `for (const g of t.guests)`.
+/** any exact service id → its category id, deduped; drops ids that don't
+ *  resolve to a real service (e.g. one that's since been deleted) */
+function toCategoryIds(serviceIds?: string[]): string[] | undefined {
+  if (!serviceIds || serviceIds.length === 0) return undefined
+  const cats = [...new Set(serviceIds.map((id) => svcById[id]?.categoryId).filter((c): c is string => !!c))]
+  return cats.length > 0 ? cats : undefined
+}
+
+// `guests` (with categoryIds) replaced older shapes as this feature was built
+// out: first a single clientName+serviceId, then a shared partySize+
+// serviceIds, then a guests array but keyed by exact serviceIds instead of
+// categoryIds. Records already saved to a browser's localStorage under any
+// of those won't match what the current code expects, so normalize on read
+// instead of crashing (e.g. on `for (const g of t.guests)`).
+type LegacyGuest = { name?: string; categoryIds?: string[]; serviceIds?: string[] }
 type LegacyTurnawayRecord = Omit<TurnawayRecord, 'guests'> & {
-  guests?: TurnawayRecord['guests']
+  guests?: LegacyGuest[]
   clientName?: string
   partySize?: number
   serviceIds?: string[]
   serviceId?: string
 }
 function normalizeTurnaway(raw: LegacyTurnawayRecord): TurnawayRecord {
-  if (Array.isArray(raw.guests)) return raw as TurnawayRecord
-  const serviceIds = raw.serviceIds ?? (raw.serviceId ? [raw.serviceId] : undefined)
+  if (Array.isArray(raw.guests)) {
+    return {
+      ...raw,
+      guests: raw.guests.map((g) => ({ name: g.name, categoryIds: g.categoryIds ?? toCategoryIds(g.serviceIds) })),
+    } as TurnawayRecord
+  }
+  const categoryIds = toCategoryIds(raw.serviceIds ?? (raw.serviceId ? [raw.serviceId] : undefined))
   const partySize = Math.max(1, raw.partySize ?? 1)
-  const guests = [{ name: raw.clientName, serviceIds }, ...Array.from({ length: partySize - 1 }, () => ({}))]
+  const guests = [{ name: raw.clientName, categoryIds }, ...Array.from({ length: partySize - 1 }, () => ({}))]
   return { ...raw, guests }
 }
 const turnawaysCodec = {
@@ -326,12 +344,12 @@ export function AppointmentBook() {
   // always matches what you're looking at, and naturally resets when the date
   // changes rather than needing a separate stored counter to reset
   const turnawaysToday = useMemo(() => turnaways.filter((t) => t.dateKey === dateKey), [turnaways, dateKey])
-  const turnawaysTodayServices = useMemo(() => {
+  const turnawaysTodayCategories = useMemo(() => {
     const counts = new Map<string, number>()
     for (const t of turnawaysToday) {
       for (const g of t.guests) {
-        for (const id of g.serviceIds ?? []) {
-          const name = svcById[id]?.name ?? 'Service'
+        for (const id of g.categoryIds ?? []) {
+          const name = catById[id]?.name ?? 'Service'
           counts.set(name, (counts.get(name) ?? 0) + 1)
         }
       }
@@ -342,8 +360,8 @@ export function AppointmentBook() {
   const turnawaySummary = turnawaysToday.length === 0
     ? null
     : `${turnawaysToday.length} turnaway${turnawaysToday.length === 1 ? '' : 's'} ${turnawayDayLabel}${
-        turnawaysTodayServices.length > 0
-          ? ` — ${turnawaysTodayServices.map(([name, n]) => (n > 1 ? `${name} ×${n}` : name)).join(', ')}`
+        turnawaysTodayCategories.length > 0
+          ? ` — ${turnawaysTodayCategories.map(([name, n]) => (n > 1 ? `${name} ×${n}` : name)).join(', ')}`
           : ''
       }`
   const turnawayTitle = canLogTurnaway

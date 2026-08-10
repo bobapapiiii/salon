@@ -3,29 +3,25 @@
 // Nothing else in the app leaves a trace of missed demand: if there's no
 // room, the client just never gets booked. Most turnaways are walk-ins we
 // never got a name for, sometimes a whole party where each person wants
-// something different (mani for one, mani + pedi for another), and salons
-// can have a long service menu — too long to show as a wall of buttons —
-// so each person gets their own type-to-search picker instead of a fixed
-// list. Built to still be loggable in a couple of taps for the common
-// case: one unnamed walk-in, no services picked, just a reason.
-//
-// The search dropdown is rendered through a Radix Popover (portaled to
-// document.body) rather than a plain absolutely-positioned div, so it can
-// never get visually clipped by this dialog's own scroll container — that
-// was the bug where the 2nd/3rd person's results looked "broken" but were
-// actually just clipped off-screen underneath.
+// something different (mani for one, mani + pedi for another). We track
+// the general service category, not the exact service — a turned-away
+// walk-in was never asked which specific service they wanted, so a
+// category (Manicure, Pedicure, etc) is what's actually known, and the
+// category list is short enough to just tap through. Built to still be
+// loggable in a couple of taps for the common case: one unnamed walk-in,
+// nothing else picked, just a reason.
 import { useState } from "react";
 import { PhoneOff, Check, X, Plus } from "lucide-react";
-import { useServicesStore, activeServices } from "@/lib/services-store";
-import { catById } from "@/lib/categories-store";
+import { useCategoriesStore } from "@/lib/categories-store";
 import { useStaffStore, boardTechs } from "@/lib/staff-store";
-import type { Service } from "@/lib/booking-types";
-import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import type { ServiceCategory } from "@/lib/booking-types";
 
 export interface TurnawayGuest {
   name?: string;
-  /** what this one person wanted; empty/undefined = unspecified */
-  serviceIds?: string[];
+  /** general service category this one person wanted, e.g. Manicure +
+   *  Pedicure — not the exact service, since we usually don't know that
+   *  for someone we couldn't fit in; empty/undefined = unspecified */
+  categoryIds?: string[];
 }
 
 export interface TurnawayDraft {
@@ -48,84 +44,29 @@ const REASONS: { id: TurnawayDraft["reason"]; label: string }[] = [
 const field =
   "w-full rounded-[8px] border border-input bg-background px-2 py-1.5 text-[12px] outline-none focus:ring-1 focus:ring-ring";
 
-/** type-to-search, multi-select service picker — scales to a long menu
- *  without listing every service on screen at once, and its results
- *  dropdown is portaled so it's never clipped by a scrolling ancestor */
-function ServicePicker({ services, selected, onChange }: {
-  services: Service[];
+/** tap-to-toggle category picker — the category list is short and curated
+ *  (unlike the full service menu), so a plain pill row is faster than a
+ *  search box here */
+function CategoryPicker({ categories, selected, onChange }: {
+  categories: ServiceCategory[];
   selected: string[];
   onChange: (ids: string[]) => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const q = query.trim().toLowerCase();
-  const matches = q
-    ? services.filter((s) => !selected.includes(s.id) && s.name.toLowerCase().includes(q)).slice(0, 7)
-    : [];
-  const showPopover = open && q.length > 0;
-
-  const add = (id: string) => {
-    onChange([...selected, id]);
-    setQuery("");
-  };
-  const remove = (id: string) => onChange(selected.filter((x) => x !== id));
-
+  const toggle = (id: string) => onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
   return (
-    <div>
-      {selected.length > 0 && (
-        <div className="mb-1.5 flex flex-wrap gap-1">
-          {selected.map((id) => {
-            const s = services.find((x) => x.id === id);
-            return (
-              <span key={id} className="flex items-center gap-1 rounded-full border border-clay bg-clay-tint py-0.5 pl-2.5 pr-1.5 text-[11px] font-bold text-clay">
-                {s?.name ?? "Service"}
-                <button type="button" onClick={() => remove(id)} className="text-clay/70 transition-colors hover:text-clay" aria-label={`Remove ${s?.name ?? "service"}`}>
-                  <X className="h-2.5 w-2.5" />
-                </button>
-              </span>
-            );
-          })}
-        </div>
-      )}
-      <Popover open={showPopover} onOpenChange={(o) => { if (!o) setOpen(false); }}>
-        <PopoverAnchor asChild>
-          <input
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setOpen(true);
-            }}
-            onFocus={() => setOpen(true)}
-            onBlur={() => window.setTimeout(() => setOpen(false), 120)}
-            placeholder="Search services to add…"
-            className={field}
-          />
-        </PopoverAnchor>
-        <PopoverContent
-          align="start"
-          side="bottom"
-          sideOffset={4}
-          onOpenAutoFocus={(e) => e.preventDefault()}
-          className="z-[95] w-[var(--radix-popover-trigger-width)] max-h-44 overflow-y-auto rounded-[8px] border-line p-1 shadow-lg"
+    <div className="flex flex-wrap gap-1">
+      {categories.map((c) => (
+        <button
+          key={c.id}
+          type="button"
+          onClick={() => toggle(c.id)}
+          className={`rounded-full border px-2.5 py-1 text-[11.5px] font-bold transition-colors ${
+            selected.includes(c.id) ? "border-clay bg-clay-tint text-clay" : "border-line bg-surface text-ink-soft hover:border-line-strong"
+          }`}
         >
-          {matches.length > 0 ? (
-            matches.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => add(s.id)}
-                className="flex w-full items-center justify-between gap-2 rounded-[6px] px-2 py-1.5 text-left text-[12px] text-ink-soft hover:bg-cream"
-              >
-                <span className="truncate">{s.name}</span>
-                <span className="shrink-0 text-[10px] text-ink-faint">{catById[s.categoryId]?.name ?? ""}</span>
-              </button>
-            ))
-          ) : (
-            <p className="px-2 py-1.5 text-[11.5px] text-ink-faint">No matching services</p>
-          )}
-        </PopoverContent>
-      </Popover>
+          {c.name}
+        </button>
+      ))}
     </div>
   );
 }
@@ -134,7 +75,7 @@ export function TurnawayDialog({ onSave, onClose }: {
   onSave: (d: TurnawayDraft) => void;
   onClose: () => void;
 }) {
-  const services = activeServices(useServicesStore());
+  const categories = useCategoriesStore();
   const staff = useStaffStore();
   const techs = boardTechs(staff.techs);
   const [guests, setGuests] = useState<TurnawayGuest[]>([{}]);
@@ -153,7 +94,7 @@ export function TurnawayDialog({ onSave, onClose }: {
     onSave({
       guests: guests.map((g) => ({
         name: g.name?.trim() || undefined,
-        serviceIds: g.serviceIds && g.serviceIds.length > 0 ? g.serviceIds : undefined,
+        categoryIds: g.categoryIds && g.categoryIds.length > 0 ? g.categoryIds : undefined,
       })),
       phone: phone.trim() || undefined,
       requestedTechId: requestedTechId || undefined,
@@ -166,8 +107,8 @@ export function TurnawayDialog({ onSave, onClose }: {
     <div className="fixed inset-0 z-[93] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-slate-900/40" onClick={onClose} />
       {/* max-h + overflow-y-auto lives on this outer card (not the guest
-          list) so a big party just grows the dialog instead of nesting a
-          nested scroll region that would clip the search popovers */}
+          list) so a big party just grows the dialog instead of needing a
+          nested scroll region */}
       <div className="relative flex max-h-[90vh] w-[400px] flex-col overflow-y-auto rounded-2xl border border-line bg-popover p-4 shadow-2xl">
         <div className="flex items-center justify-between">
           <h3 className="flex items-center gap-2 text-[14px] font-bold text-ink">
@@ -182,7 +123,7 @@ export function TurnawayDialog({ onSave, onClose }: {
         </p>
 
         <p className="mb-1.5 mt-3.5 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
-          Who wanted what <span className="normal-case text-ink-faint/70">(each person can want something different)</span>
+          Who wanted what <span className="normal-case text-ink-faint/70">(general category, each person can want something different)</span>
         </p>
         <div className="space-y-2">
           {guests.map((g, i) => (
@@ -206,10 +147,10 @@ export function TurnawayDialog({ onSave, onClose }: {
                 )}
               </div>
               <div className="mt-1.5">
-                <ServicePicker
-                  services={services}
-                  selected={g.serviceIds ?? []}
-                  onChange={(ids) => updateGuest(i, { serviceIds: ids })}
+                <CategoryPicker
+                  categories={categories}
+                  selected={g.categoryIds ?? []}
+                  onChange={(ids) => updateGuest(i, { categoryIds: ids })}
                 />
               </div>
             </div>
