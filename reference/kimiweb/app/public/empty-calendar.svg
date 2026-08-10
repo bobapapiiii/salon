@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180" width="240" height="180" fill="none" stroke="#A3937F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+  <!-- open appointment book -->
+  <path d="M36 128 Q78 114 120 124 Q162 114 204 128 L204 62 Q162 48 120 58 Q78 48 36 62 Z"/>
+  <path d="M120 58 L120 124"/>
+  <!-- page lines (left) -->
+  <path d="M52 72 Q82 63 108 69" stroke-dasharray="0.5 5"/>
+  <path d="M52 84 Q82 75 108 81" stroke-dasharray="0.5 5"/>
+  <path d="M52 96 Q82 87 108 93" stroke-dasharray="0.5 5"/>
+  <!-- page lines (right) -->
+  <path d="M132 69 Q158 63 188 72" stroke-dasharray="0.5 5"/>
+  <path d="M132 81 Q158 75 188 84" stroke-dasharray="0.5 5"/>
+  <!-- small circled day on right page -->
+  <circle cx="168" cy="102" r="7"/>
+  <!-- small vase with one stem -->
+  <path d="M52 148 C48 138 50 130 56 126 L56 120 L68 120 L68 126 C74 130 76 138 72 148 Z"/>
+  <path d="M62 120 C62 108 60 100 54 92"/>
+  <path d="M54 92 C50 88 46 88 44 84"/>
+  <path d="M54 92 C58 88 62 88 64 83"/>
+  <!-- ground line -->
+  <path d="M28 148 L212 148" stroke-opacity="0.5"/>
+</svg>

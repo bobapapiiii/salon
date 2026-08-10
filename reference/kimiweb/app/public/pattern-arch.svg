@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240">
+  <g fill="none" stroke="#E7DDCF" stroke-opacity="0.4" stroke-width="1.5" stroke-linecap="round">
+    <!-- seamless arch grid: 60px columns, 120px rows, arches drawn on both edges for wrap -->
+    <g id="arch">
+      <path d="M6 96 L6 54 A24 24 0 0 1 54 54 L54 96"/>
+    </g>
+    <use href="#arch" x="60"/>
+    <use href="#arch" x="120"/>
+    <use href="#arch" x="180"/>
+    <use href="#arch" x="240"/>
+    <use href="#arch" y="120"/>
+    <use href="#arch" x="60" y="120"/>
+    <use href="#arch" x="120" y="120"/>
+    <use href="#arch" x="180" y="120"/>
+    <use href="#arch" x="240" y="120"/>
+    <use href="#arch" y="240"/>
+    <use href="#arch" x="60" y="240"/>
+    <use href="#arch" x="120" y="240"/>
+    <use href="#arch" x="180" y="240"/>
+    <use href="#arch" x="240" y="240"/>
+  </g>
+</svg>

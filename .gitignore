@@ -1,0 +1,11 @@
+# OS
+.DS_Store
+
+# App build artifacts / deps (app/.gitignore also covers these, kept here for safety)
+app/node_modules
+app/dist
+app/dist-ssr
+*.local
+
+# Large raw reference footage (small compressed versions of these are kept in reference/)
+reference/*.mov

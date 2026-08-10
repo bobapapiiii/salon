@@ -1,0 +1,131 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 38 44% 96%;
+    --foreground: 24 24% 13%;
+    --card: 45 100% 99%;
+    --card-foreground: 24 24% 13%;
+    --popover: 45 100% 99%;
+    --popover-foreground: 24 24% 13%;
+    --primary: 18 62% 44%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 36 33% 91%;
+    --secondary-foreground: 24 24% 13%;
+    --muted: 36 33% 91%;
+    --muted-foreground: 26 16% 37%;
+    --accent: 22 56% 90%;
+    --accent-foreground: 24 24% 13%;
+    --destructive: 8 59% 44%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 36 26% 86%;
+    --input: 36 26% 86%;
+    --ring: 18 62% 44%;
+    --radius: 0.625rem;
+    --sidebar-background: 45 100% 99%;
+    --sidebar-foreground: 26 16% 37%;
+    --sidebar-primary: 18 62% 44%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 36 33% 91%;
+    --sidebar-accent-foreground: 24 24% 13%;
+    --sidebar-border: 36 26% 86%;
+    --sidebar-ring: 18 62% 44%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+    font-optical-sizing: auto;
+  }
+
+  ::selection {
+    background: #f6e3d6;
+    color: #2a211a;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgba(180, 85, 43, 0.6);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  /* Tabular numerals for prices, times, stats — design.md §4 */
+  .tnum {
+    font-feature-settings: "tnum";
+  }
+
+  /* Quiet repeating arch pattern (client gutters, divider bands) */
+  .arch-pattern {
+    background-image: url("/pattern-arch.svg");
+    background-repeat: repeat;
+    background-size: 240px 240px;
+  }
+
+  /* Paper-grain overlay to kill flat digital feel — design.md §10 */
+  .grain-overlay {
+    position: relative;
+  }
+  .grain-overlay::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("/grain.png");
+    background-repeat: repeat;
+    background-size: 256px 256px;
+    opacity: var(--grain-opacity, 0.05);
+    pointer-events: none;
+    mix-blend-mode: multiply;
+  }
+  .grain-overlay-dark::after {
+    mix-blend-mode: screen;
+  }
+
+  /* Custom scrollbar for the salon schedule — warm, thin, unobtrusive */
+  .schedule-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #d8ccb9 transparent;
+  }
+  .schedule-scroll::-webkit-scrollbar {
+    height: 10px;
+    width: 10px;
+  }
+  .schedule-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .schedule-scroll::-webkit-scrollbar-thumb {
+    background: #d8ccb9;
+    border-radius: 999px;
+    border: 2px solid #faf6ef;
+  }
+  .schedule-scroll::-webkit-scrollbar-thumb:hover {
+    background: #a3937f;
+  }
+  .schedule-scroll::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+@layer base {
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 150ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 150ms !important;
+    }
+  }
+}
