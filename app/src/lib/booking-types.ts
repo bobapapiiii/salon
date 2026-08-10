@@ -164,6 +164,8 @@ export interface Appointment {
   customFields?: Record<string, string>
   /** audit trail, everything that happened to this appointment */
   log?: { at: number; text: string }[]
+  /** how the booking came in; undefined on older records predating this field */
+  bookingSource?: 'front_desk' | 'walk_in' | 'online'
 }
 
 export const logEntry = (text: string) => ({ at: Date.now(), text })

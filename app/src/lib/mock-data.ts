@@ -162,6 +162,7 @@ export function generateDay(seedKey = '2026-07-24'): Appointment[] {
           durationMin: svc.durationMin,
           status: isRequested ? 'requested' : pick(STATUSES),
           notes: rand() < 0.18 ? pick(NOTES) : undefined,
+          bookingSource: isRequested ? 'online' : rand() < 0.15 ? 'walk_in' : 'front_desk',
         })
         cursor = snapped + svc.durationMin + pick([0, 30, 60])
       }
@@ -187,8 +188,8 @@ export function generateDay(seedKey = '2026-07-24'): Appointment[] {
     const client = newClient()
     const group = `pg${pg++}`
     appts.push(
-      { id: `a${id++}`, techId: mt.id, clientName: client, serviceId: 'm-gel', startMin, durationMin: dur, status: pick(['confirmed', 'checked_in', 'in_service']), parallelGroup: group, notes: rand() < 0.4 ? 'Doing hands while pedi runs' : undefined },
-      { id: `a${id++}`, techId: pt.id, clientName: client, serviceId: 'p-gel', startMin, durationMin: dur, status: pick(['confirmed', 'checked_in', 'in_service']), parallelGroup: group },
+      { id: `a${id++}`, techId: mt.id, clientName: client, serviceId: 'm-gel', startMin, durationMin: dur, status: pick(['confirmed', 'checked_in', 'in_service']), parallelGroup: group, notes: rand() < 0.4 ? 'Doing hands while pedi runs' : undefined, bookingSource: 'front_desk' },
+      { id: `a${id++}`, techId: pt.id, clientName: client, serviceId: 'p-gel', startMin, durationMin: dur, status: pick(['confirmed', 'checked_in', 'in_service']), parallelGroup: group, bookingSource: 'front_desk' },
     )
     pairs++
   }
@@ -203,7 +204,7 @@ export function generateDay(seedKey = '2026-07-24'): Appointment[] {
     appts.push({
       id: `a${id++}`, techId: tech.id, clientName: newClient(), serviceId: svc.id,
       startMin, durationMin: svc.durationMin, status: 'requested',
-      notes: 'Online request, awaiting approval',
+      notes: 'Online request, awaiting approval', bookingSource: 'online',
     })
   }
 

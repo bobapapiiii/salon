@@ -28,6 +28,7 @@ import { InvoiceDialog } from './InvoiceDialog'
 import { PosPanel } from './PosPanel'
 import { STATUS_META, TechSchedulePanel, type DaySchedule } from './TechSchedulePanel'
 import { BlockEditor, type BlockDraft } from './BlockEditor'
+import { TurnawayDialog, type TurnawayDraft } from './TurnawayDialog'
 import { TechCalendarView } from './TechCalendarView'
 
 const GUTTER_W = 64
@@ -48,6 +49,8 @@ interface ClipService {
   requestedTechChoice?: 'first' | 'pref-female' | 'pref-male'
   /** the client asked for a specific tech */
   techRequested?: boolean
+  /** carried over from the appointment this was copied from (plain clipboard copy only) */
+  bookingSource?: 'front_desk' | 'walk_in' | 'online'
 }
 interface ClipItem {
   id: string
@@ -70,6 +73,41 @@ export interface ApprovedItem {
   /** what the client asked for, so the salon books it the same way */
   requestedStartMin?: number
   requestedTechId?: string
+}
+
+/** a snapshot kept when an appointment is cancelled, since the appointment
+ *  itself is removed from the day's board (Reports reads this for cancellation
+ *  rate, the booking funnel, and average notice given) */
+export interface CancellationRecord {
+  id: string
+  apptId: string
+  dateKey: string
+  clientName: string
+  serviceId: string
+  techId: string
+  startMin: number
+  durationMin: number
+  /** when the appointment was originally booked, from its first log entry */
+  bookedAt?: number
+  cancelledAt: number
+  /** services cancelled together in one same-time group */
+  groupSize: number
+}
+
+/** logged when a client wanted an appointment and the salon had no room for
+ *  them, so demand that never made it onto the book is still visible in
+ *  Reports (Zenoti's "Turnaways" report has no equivalent data source here
+ *  otherwise, since a slot that was never offered leaves no other trace) */
+export interface TurnawayRecord {
+  id: string
+  dateKey: string
+  clientName: string
+  phone?: string
+  serviceId?: string
+  requestedTechId?: string
+  reason: 'no_availability' | 'price' | 'didnt_like_options' | 'other'
+  notes?: string
+  loggedAt: number
 }
 
 export interface QueueEntry {
@@ -251,6 +289,11 @@ export function AppointmentBook() {
   const setDayBlocks = (next: TimeBlock[] | ((b: TimeBlock[]) => TimeBlock[])) =>
     setBlocksByDay((m) => ({ ...m, [dateKey]: typeof next === 'function' ? next(m[dateKey] ?? []) : next }))
   const [pointsByClient, setPointsByClient] = usePersistentState<Record<string, number>>(sdata('loyalty-v1'), {})
+  // cancellation history, kept separately since a cancelled appointment is removed
+  // from the day's board entirely (nothing else needs it, but Reports does)
+  const [, setCancellations] = usePersistentState<CancellationRecord[]>(sdata('cancellations-v1'), [])
+  const [, setTurnaways] = usePersistentState<TurnawayRecord[]>(sdata('turnaways-v1'), [])
+  const [turnawayOpen, setTurnawayOpen] = useState(false)
   const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; clientName: string; itemCount: number; subtotal: number; tip: number; total: number; method: string; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[] }[]>(sdata('payments-v1'), [])
   // online waitlist (self-serve) + walk-in queue (front desk)
   const [waitlist, setWaitlist] = usePersistentState<QueueEntry[]>(sdata('waitlist-v1'), () => [
@@ -930,6 +973,7 @@ export function AppointmentBook() {
       startMin: start, durationMin: st.durationMin, status: 'confirmed' as const,
       guestOf: personIsAccount ? undefined : checkoutGuestOf ?? hostClient?.id,
       priceOverride: st.price !== svc.price ? st.price : undefined,
+      bookingSource: 'front_desk',
     }
     commit([...appts, appt])
     setCheckoutDraft((d) => d && { ...d, addedIds: [...d.addedIds, appt.id] })
@@ -1016,6 +1060,9 @@ export function AppointmentBook() {
             parallelGroup: group,
             requestedTechChoice: d.clip!.services[i].requestedTechChoice,
             techRequested: d.clip!.services[i].techRequested,
+            bookingSource: d.clip!.source?.kind === 'walkin' ? 'walk_in' as const
+              : d.clip!.source?.kind === 'waitlist' || d.clip!.source?.kind === 'approved' ? 'online' as const
+              : d.clip!.services[i].bookingSource ?? 'front_desk' as const,
             log: [logEntry(`Placed at ${fmtTime(m.startMin)} with ${techOf(m.techId).name}`)],
           }
         })
@@ -1188,6 +1235,7 @@ export function AppointmentBook() {
         durationMin: dur,
         priceOverride: st.price !== svc.price ? st.price : undefined,
         status: 'booked' as const,
+        bookingSource: 'front_desk',
         notes: [s.notes, addonNote].filter(Boolean).join(' · ') || undefined,
         parallelGroup: group,
         guestOf: s.guestOf,
@@ -1424,7 +1472,7 @@ export function AppointmentBook() {
     const item: ClipItem = {
       id: `clip-${a.id}`,
       clientName: a.clientName,
-      services: [{ serviceId: a.serviceId, durationMin: a.durationMin, techId: a.techId, notes: a.notes, requestedTechChoice: a.requestedTechChoice, techRequested: a.techRequested }],
+      services: [{ serviceId: a.serviceId, durationMin: a.durationMin, techId: a.techId, notes: a.notes, requestedTechChoice: a.requestedTechChoice, techRequested: a.techRequested, bookingSource: a.bookingSource }],
       isPair: false,
       sourceApptId: a.id,
     }
@@ -1574,13 +1622,31 @@ export function AppointmentBook() {
     ? appts.filter((a) => a.parallelGroup === cancelAppt.parallelGroup)
     : cancelAppt ? [cancelAppt] : []
 
+  const recordCancellations = (group: Appointment[]) => {
+    if (group.length === 0) return
+    const now = Date.now()
+    setCancellations((x) => [...x, ...group.map((g) => ({
+      id: `cx${now}-${g.id}`, apptId: g.id, dateKey, clientName: g.clientName,
+      serviceId: g.serviceId, techId: g.techId, startMin: g.startMin, durationMin: g.durationMin,
+      bookedAt: g.log?.[0]?.at, cancelledAt: now, groupSize: group.length,
+    }))])
+  }
+
+  // ── turnaways ──────────────────────────────────────────────────────────────
+  const logTurnaway = (d: TurnawayDraft) => {
+    setTurnaways((x) => [...x, { id: `tw${Date.now()}`, dateKey, loggedAt: Date.now(), ...d }])
+    setTurnawayOpen(false)
+    showFlash(`Logged turnaway for ${d.clientName}`)
+  }
   const doCancelOne = () => {
+    if (cancelAppt) recordCancellations([cancelAppt])
     commit(appts.filter((x) => x.id !== cancelPromptId))
     setCancelPromptId(null)
     showFlash('Appointment cancelled, client notified by SMS')
   }
   const doCancelGroup = () => {
     const ids = new Set(cancelGroup.map((g) => g.id))
+    recordCancellations(cancelGroup)
     commit(appts.filter((x) => !ids.has(x.id)))
     setCancelPromptId(null)
     showFlash(`Group cancelled (${cancelGroup.length} services), client notified by SMS`)
@@ -2096,6 +2162,7 @@ export function AppointmentBook() {
         }}
         requestCount={requested.length}
         onToggleRail={() => setRailOpen((o) => !o)}
+        onTurnaway={() => setTurnawayOpen(true)}
       />
 
       {/* legend + date picker popovers */}
@@ -2656,6 +2723,11 @@ export function AppointmentBook() {
         </div>
       )}
 
+      {/* turnaway logger */}
+      {turnawayOpen && (
+        <TurnawayDialog onSave={logTurnaway} onClose={() => setTurnawayOpen(false)} />
+      )}
+
       {/* block editor */}
       {blockEdit && (
         <BlockEditor
@@ -2862,7 +2934,7 @@ export function AppointmentBook() {
                   : a.requestedTechChoice === 'pref-male'
                     ? <span className="font-semibold" style={{ color: '#60A5FA' }}>Male preferred</span>
                     : 'Any available')}
-            {row('Source', a.status === 'requested' ? 'Web booking' : 'Front desk')}
+            {row('Source', a.bookingSource === 'walk_in' ? 'Walk-in' : a.bookingSource === 'online' ? 'Web booking' : a.bookingSource === 'front_desk' ? 'Front desk' : a.status === 'requested' ? 'Web booking' : 'Front desk')}
             {row('Status', <span className={a.status === 'requested' ? 'text-amber-400' : 'text-emerald-400'}>{a.status.replace('_', ' ').toUpperCase()}</span>)}
             {a.notes && <div className="border-t border-white/10 pt-1 text-white/60">{a.notes}</div>}
           </div>
