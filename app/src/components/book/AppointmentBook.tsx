@@ -858,7 +858,8 @@ export function AppointmentBook() {
       }
 
       const moving = computeMoving(d, appts)
-      const errors = checkMove(moving)
+      const relocated = relocateSquatters(moving)
+      const errors = checkMove(moving, new Set(relocated.keys()))
       const firstErr = [...errors.values()].find((e) => e) ?? null
 
       // dropping into a time block is allowed for staff, but confirm first
@@ -871,7 +872,7 @@ export function AppointmentBook() {
         return
       }
 
-      continueAfterPrompts(d, moving, firstErr)
+      continueAfterPrompts(d, moving, firstErr, relocated)
       setDrag(null)
     }
 
@@ -1073,17 +1074,38 @@ export function AppointmentBook() {
   }
 
   // does this move double-book a tech? (only reachable when overlap is enabled)
-  const overlapHitFor = (moving: MovingItem[]) => {
+  const overlapHitFor = (moving: MovingItem[], extraIgnoreIds?: Set<string>) => {
     const ids = new Set(moving.map((m) => m.id))
     return moving.find((m) =>
-      appts.some((a) => !ids.has(a.id) && a.techId === m.techId &&
+      appts.some((a) => !ids.has(a.id) && !extraIgnoreIds?.has(a.id) && a.techId === m.techId &&
         overlaps(m.startMin, m.startMin + m.durationMin, a.startMin, a.startMin + a.durationMin)) ||
       moving.some((x) => x.id !== m.id && x.techId === m.techId &&
         overlaps(m.startMin, m.startMin + m.durationMin, x.startMin, x.startMin + x.durationMin)),
     ) ?? null
   }
 
-  const continueAfterPrompts = (d: DragState, moving: MovingItem[], firstErr: string | null) => {
+  // dropping onto a tech's column pins the service to her by definition —
+  // move any non-requested appointment out of the way, same as booking or
+  // editing to a specific tech already does
+  const relocateSquatters = (moving: MovingItem[]): Map<string, Appointment> => {
+    const movingIds = new Set(moving.map((m) => m.id))
+    const relocated = new Map<string, Appointment>()
+    for (const m of moving) {
+      const clash = appts.some((a) =>
+        !movingIds.has(a.id) && !relocated.has(a.id) && a.techId === m.techId &&
+        overlaps(m.startMin, m.startMin + m.durationMin, a.startMin, a.startMin + a.durationMin))
+      if (!clash) continue
+      const moved = makeRoom(m.techId, m.startMin, m.startMin + m.durationMin, movingIds)
+      // null means the squatter is itself requested or nobody qualified is free,
+      // fall through to the usual double-book prompt / overlap error
+      if (moved) for (const x of moved) relocated.set(x.id, x)
+    }
+    return relocated
+  }
+
+  const continueAfterPrompts = (
+    d: DragState, moving: MovingItem[], firstErr: string | null, relocated: Map<string, Appointment> = new Map(),
+  ) => {
     // moving a requested-tech service onto a DIFFERENT tech always confirms first
     if (!firstErr && d.kind === 'appt' && d.mode === 'move') {
       const primary = appts.find((a) => a.id === d.primaryId)
@@ -1092,27 +1114,33 @@ export function AppointmentBook() {
           fromName: techOf(primary.techId).name,
           toName: techOf(d.targetTechId).name,
           clientName: primary.clientName,
-          apply: () => continueAfterPrompts(d, moving, 'skip-tech-request'),
+          apply: () => continueAfterPrompts(d, moving, 'skip-tech-request', relocated),
         })
         return
       }
     }
-    if ((firstErr && firstErr !== 'skip-tech-request') || !allowOverlap || !warnOnDoubleBook) { applyDropRef.current(d, moving, firstErr === 'skip-tech-request' ? null : firstErr); return }
-    const hit = overlapHitFor(moving)
+    if ((firstErr && firstErr !== 'skip-tech-request') || !allowOverlap || !warnOnDoubleBook) {
+      applyDropRef.current(d, moving, firstErr === 'skip-tech-request' ? null : firstErr, relocated)
+      return
+    }
+    const hit = overlapHitFor(moving, new Set(relocated.keys()))
     if (hit) {
       setPendingOverlap({
         techId: hit.techId,
         timeLabel: fmtTime(hit.startMin),
-        apply: () => applyDropRef.current(d, moving, null),
+        apply: () => applyDropRef.current(d, moving, null, relocated),
       })
       return
     }
-    applyDropRef.current(d, moving, null)
+    applyDropRef.current(d, moving, null, relocated)
   }
 
   // applies a validated drop (appointment move or queue/clipboard placement)
-  const applyDrop = (d: DragState, moving: MovingItem[], firstErr: string | null) => {
+  const applyDrop = (
+    d: DragState, moving: MovingItem[], firstErr: string | null, relocated: Map<string, Appointment> = new Map(),
+  ) => {
     if (salonClosed) { showFlash(`⚠ Salon is closed on this day${salonHoliday?.label ? ` (${salonHoliday.label})` : ''}`); return }
+    const movedNote = relocated.size > 0 ? `, moved ${relocated.size} booking${relocated.size > 1 ? 's' : ''} to make room` : ''
     if (d.kind === 'clip') {
       if (firstErr) {
         showFlash(`⚠ Can't drop here, ${firstErr}`)
@@ -1140,7 +1168,7 @@ export function AppointmentBook() {
             log: [logEntry(`Placed at ${fmtTime(m.startMin)} with ${techOf(m.techId).name}`)],
           }
         })
-        commit([...appts, ...newAppts])
+        commit([...appts.map((a) => relocated.get(a.id) ?? a), ...newAppts])
         if (d.clip!.source) {
           const src = d.clip!.source
           if (src.kind === 'walkin' && src.guestName && src.serviceId) {
@@ -1150,20 +1178,20 @@ export function AppointmentBook() {
           } else {
             removeQueue(src.kind, src.id)
           }
-          showFlash(`✓ ${d.clip!.clientName} booked from ${src.kind === 'waitlist' ? 'waitlist' : src.kind === 'approved' ? 'approved requests' : 'walk-ins'} at ${fmtTime(moving[0].startMin)}`)
+          showFlash(`✓ ${d.clip!.clientName} booked from ${src.kind === 'waitlist' ? 'waitlist' : src.kind === 'approved' ? 'approved requests' : 'walk-ins'} at ${fmtTime(moving[0].startMin)}${movedNote}`)
           addNotification({
             kind: 'booked',
             text: 'New appointment booked',
-            detail: `${d.clip!.clientName} · from ${src.kind === 'waitlist' ? 'waitlist' : src.kind === 'approved' ? 'approved request' : 'walk-in'} · ${fmtTime(moving[0].startMin)}`,
+            detail: `${d.clip!.clientName} · from ${src.kind === 'waitlist' ? 'waitlist' : src.kind === 'approved' ? 'approved request' : 'walk-in'} · ${fmtTime(moving[0].startMin)}${movedNote}`,
             dateKey,
           })
         } else {
           setClipboard((c) => c.filter((x) => x.id !== d.clip!.id))
-          showFlash(`✓ ${d.clip!.clientName} placed at ${fmtTime(moving[0].startMin)} on ${dayLabel(date)}`)
+          showFlash(`✓ ${d.clip!.clientName} placed at ${fmtTime(moving[0].startMin)} on ${dayLabel(date)}${movedNote}`)
           addNotification({
             kind: 'booked',
             text: 'New appointment booked',
-            detail: `${d.clip!.clientName} · ${fmtTime(moving[0].startMin)}`,
+            detail: `${d.clip!.clientName} · ${fmtTime(moving[0].startMin)}${movedNote}`,
             dateKey,
           })
         }
@@ -1182,15 +1210,15 @@ export function AppointmentBook() {
               ...a, techId: m.techId, startMin: m.startMin, durationMin: m.durationMin,
               log: [...(a.log ?? []), logEntry(`Moved to ${techOf(m.techId).name} at ${fmtTime(m.startMin)}`)],
             }
-          : a
+          : relocated.get(a.id) ?? a
       }))
       const primary = appts.find((a) => a.id === d.primaryId)!
       const t = techOf(byId.get(d.primaryId)!.techId)
-      showFlash(`✓ ${primary.clientName} → ${t.name} at ${fmtTime(byId.get(d.primaryId)!.startMin)}`)
+      showFlash(`✓ ${primary.clientName} → ${t.name} at ${fmtTime(byId.get(d.primaryId)!.startMin)}${movedNote}`)
       addNotification({
         kind: 'moved',
         text: 'Appointment moved',
-        detail: `${primary.clientName} → ${t.name} at ${fmtTime(byId.get(d.primaryId)!.startMin)}`,
+        detail: `${primary.clientName} → ${t.name} at ${fmtTime(byId.get(d.primaryId)!.startMin)}${movedNote}`,
         dateKey,
         apptId: primary.id,
       })
@@ -2949,7 +2977,7 @@ export function AppointmentBook() {
             title="Move into blocked time?"
             body={`${name} → ${techOf(moving[0].techId).name} at ${fmtTime(moving[0].startMin)} overlaps a “${hit?.reason ?? 'Block'}” block. Are you sure?`}
             confirmLabel="Move anyway"
-            onConfirm={() => continueAfterPrompts(d, moving, null)}
+            onConfirm={() => continueAfterPrompts(d, moving, null, relocateSquatters(moving))}
             onClose={() => setPendingBlockDrop(null)}
           />
         )
