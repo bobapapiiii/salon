@@ -101,9 +101,13 @@ export interface CancellationRecord {
 export interface TurnawayRecord {
   id: string
   dateKey: string
-  clientName: string
+  /** most turnaways are walk-ins we never got a name for */
+  clientName?: string
   phone?: string
-  serviceId?: string
+  /** how many people; undefined on records predating this field, treat as 1 */
+  partySize?: number
+  /** everything the party wanted, e.g. mani + pedi; undefined = unspecified */
+  serviceIds?: string[]
   requestedTechId?: string
   reason: 'no_availability' | 'price' | 'didnt_like_options' | 'other'
   notes?: string
@@ -1636,7 +1640,8 @@ export function AppointmentBook() {
   const logTurnaway = (d: TurnawayDraft) => {
     setTurnaways((x) => [...x, { id: `tw${Date.now()}`, dateKey, loggedAt: Date.now(), ...d }])
     setTurnawayOpen(false)
-    showFlash(`Logged turnaway for ${d.clientName}`)
+    const who = d.clientName ?? (d.partySize > 1 ? `a party of ${d.partySize}` : 'a walk-in')
+    showFlash(`Logged turnaway for ${who}`)
   }
   const doCancelOne = () => {
     if (cancelAppt) recordCancellations([cancelAppt])
