@@ -293,8 +293,30 @@ export function AppointmentBook() {
   // cancellation history, kept separately since a cancelled appointment is removed
   // from the day's board entirely (nothing else needs it, but Reports does)
   const [, setCancellations] = usePersistentState<CancellationRecord[]>(sdata('cancellations-v1'), [])
-  const [, setTurnaways] = usePersistentState<TurnawayRecord[]>(sdata('turnaways-v1'), [])
+  const [turnaways, setTurnaways] = usePersistentState<TurnawayRecord[]>(sdata('turnaways-v1'), [])
   const [turnawayOpen, setTurnawayOpen] = useState(false)
+  // daily turnaway tally for the toolbar badge, naturally resets each day since
+  // it's just "records logged against today", not a separately stored counter
+  const turnawaysToday = useMemo(() => turnaways.filter((t) => t.dateKey === dayKey(new Date())), [turnaways])
+  const turnawaysTodayServices = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const t of turnawaysToday) {
+      for (const g of t.guests) {
+        for (const id of g.serviceIds ?? []) {
+          const name = svcById[id]?.name ?? 'Service'
+          counts.set(name, (counts.get(name) ?? 0) + 1)
+        }
+      }
+    }
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])
+  }, [turnawaysToday])
+  const turnawayTitle = turnawaysToday.length === 0
+    ? "Log a turnaway, a client we couldn't fit in"
+    : `${turnawaysToday.length} turnaway${turnawaysToday.length === 1 ? '' : 's'} today${
+        turnawaysTodayServices.length > 0
+          ? ` — ${turnawaysTodayServices.map(([name, n]) => (n > 1 ? `${name} ×${n}` : name)).join(', ')}`
+          : ''
+      }`
   const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; clientName: string; itemCount: number; subtotal: number; tip: number; total: number; method: string; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[] }[]>(sdata('payments-v1'), [])
   // online waitlist (self-serve) + walk-in queue (front desk)
   const [waitlist, setWaitlist] = usePersistentState<QueueEntry[]>(sdata('waitlist-v1'), () => [
@@ -1639,7 +1661,8 @@ export function AppointmentBook() {
     setTurnawayOpen(false)
     const named = d.guests.map((g) => g.name).filter((n): n is string => !!n)
     const who = named.length > 0 ? named.join(', ') : d.guests.length > 1 ? `a party of ${d.guests.length}` : 'a walk-in'
-    showFlash(`Logged turnaway for ${who}`)
+    const todayCount = turnawaysToday.length + (dateKey === dayKey(new Date()) ? 1 : 0)
+    showFlash(`Logged turnaway for ${who} · ${todayCount} today`)
   }
   const doCancelOne = () => {
     if (cancelAppt) recordCancellations([cancelAppt])
@@ -2166,6 +2189,8 @@ export function AppointmentBook() {
         requestCount={requested.length}
         onToggleRail={() => setRailOpen((o) => !o)}
         onTurnaway={() => setTurnawayOpen(true)}
+        turnawayCount={turnawaysToday.length}
+        turnawayTitle={turnawayTitle}
       />
 
       {/* legend + date picker popovers */}

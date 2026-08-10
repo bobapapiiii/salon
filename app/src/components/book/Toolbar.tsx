@@ -35,6 +35,9 @@ interface Props {
   requestCount: number
   onToggleRail: () => void
   onTurnaway: () => void
+  /** today's turnaway tally, resets on its own the next day */
+  turnawayCount: number
+  turnawayTitle: string
 }
 
 function IconBtn({ children, title, badge, onClick, active }: {
@@ -210,7 +213,7 @@ export function Toolbar(p: Props) {
           <PanelRight className="h-4 w-4" />
         </IconBtn>
 
-        <IconBtn title="Log a turnaway, a client we couldn't fit in" onClick={p.onTurnaway}>
+        <IconBtn title={p.turnawayTitle} badge={p.turnawayCount} onClick={p.onTurnaway}>
           <PhoneOff className="h-4 w-4" />
         </IconBtn>
       </div>
