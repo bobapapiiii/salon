@@ -295,9 +295,11 @@ export function AppointmentBook() {
   const [, setCancellations] = usePersistentState<CancellationRecord[]>(sdata('cancellations-v1'), [])
   const [turnaways, setTurnaways] = usePersistentState<TurnawayRecord[]>(sdata('turnaways-v1'), [])
   const [turnawayOpen, setTurnawayOpen] = useState(false)
-  // daily turnaway tally for the toolbar badge, naturally resets each day since
-  // it's just "records logged against today", not a separately stored counter
-  const turnawaysToday = useMemo(() => turnaways.filter((t) => t.dateKey === dayKey(new Date())), [turnaways])
+  // daily turnaway tally for the toolbar badge, scoped to whichever day is on
+  // screen (same as every other day-scoped thing here, appts/blocks/etc) so it
+  // always matches what you're looking at, and naturally resets when the date
+  // changes rather than needing a separate stored counter to reset
+  const turnawaysToday = useMemo(() => turnaways.filter((t) => t.dateKey === dateKey), [turnaways, dateKey])
   const turnawaysTodayServices = useMemo(() => {
     const counts = new Map<string, number>()
     for (const t of turnawaysToday) {
@@ -310,9 +312,10 @@ export function AppointmentBook() {
     }
     return [...counts.entries()].sort((a, b) => b[1] - a[1])
   }, [turnawaysToday])
+  const turnawayDayLabel = isToday(date) ? 'today' : `on ${dayLabel(date)}`
   const turnawayTitle = turnawaysToday.length === 0
     ? "Log a turnaway, a client we couldn't fit in"
-    : `${turnawaysToday.length} turnaway${turnawaysToday.length === 1 ? '' : 's'} today${
+    : `${turnawaysToday.length} turnaway${turnawaysToday.length === 1 ? '' : 's'} ${turnawayDayLabel}${
         turnawaysTodayServices.length > 0
           ? ` — ${turnawaysTodayServices.map(([name, n]) => (n > 1 ? `${name} ×${n}` : name)).join(', ')}`
           : ''
@@ -1661,8 +1664,8 @@ export function AppointmentBook() {
     setTurnawayOpen(false)
     const named = d.guests.map((g) => g.name).filter((n): n is string => !!n)
     const who = named.length > 0 ? named.join(', ') : d.guests.length > 1 ? `a party of ${d.guests.length}` : 'a walk-in'
-    const todayCount = turnawaysToday.length + (dateKey === dayKey(new Date()) ? 1 : 0)
-    showFlash(`Logged turnaway for ${who} · ${todayCount} today`)
+    // the new record always belongs to turnawaysToday (both scoped to dateKey)
+    showFlash(`Logged turnaway for ${who} · ${turnawaysToday.length + 1} ${turnawayDayLabel}`)
   }
   const doCancelOne = () => {
     if (cancelAppt) recordCancellations([cancelAppt])
