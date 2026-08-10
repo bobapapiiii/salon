@@ -345,7 +345,7 @@ export function ContextBar({
   }, [q, clients])
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-line bg-surface px-6">
+    <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b border-line bg-surface pl-6 pr-4">
       <div className="min-w-0">
         <h1 className="truncate font-display text-[22px] font-semibold leading-7 tracking-[-0.01em]">{title}</h1>
         <p className="-mt-0.5 truncate text-small font-medium text-ink-faint">{subtitle}</p>
