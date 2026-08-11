@@ -1299,6 +1299,12 @@ function BookingSection() {
           on={b.warnOnDoubleBook}
           onClick={() => patch({ warnOnDoubleBook: !b.warnOnDoubleBook })}
         />
+        <ToggleRow
+          title="Show no-shows on the calendar"
+          body="No-show appointments stay on the board so staff can see the gap they leave. Turn this off to hide them from the calendar (they're still recorded and counted in reports)"
+          on={b.showNoShows}
+          onClick={() => patch({ showNoShows: !b.showNoShows })}
+        />
       </div>
     </div>
   );

@@ -422,6 +422,10 @@ export function AppointmentBook() {
   // auto-move a non-requested squatter to make room for a specific-tech
   // booking/edit/drag, instead of prompting to double-book — Settings → Online booking
   const autoRelocateNonRequested = useSettingsStore().booking.autoRelocateNonRequested
+  // hide no-show appointments from the calendar board — Settings → Online booking.
+  // this only affects what's rendered here; the underlying appts (and reports,
+  // which read the same data independently) are unaffected
+  const showNoShows = useSettingsStore().booking.showNoShows
   const salonGeneral = useSettingsStore().general
   // salon operating window for the viewed day (minutes from OPEN_MIN) + closures
   const salonDow = new Date(dateKey + 'T12:00:00').getDay()
@@ -637,21 +641,25 @@ export function AppointmentBook() {
 
   // ── derived appointment views ─────────────────────────────────────────────
   const filtered = useMemo(
-    () => (catFilter === 'all' ? appts : appts.filter((a) => catById[svcById[a.serviceId].categoryId].id === catFilter)),
-    [appts, catFilter],
+    () => appts
+      .filter((a) => showNoShows || a.status !== 'no_show')
+      .filter((a) => catFilter === 'all' || catById[svcById[a.serviceId].categoryId].id === catFilter),
+    [appts, catFilter, showNoShows],
   )
   const requested = useMemo(() => appts.filter((a) => a.status === 'requested'), [appts])
 
   const teamStats = useMemo(() => {
+    // matches what's actually visible on the board (respects the "Show no-shows" setting)
+    const visible = appts.filter((a) => showNoShows || a.status !== 'no_show')
     const m = new Map<string, { booked: number; total: number; appts: number }>()
     for (const role of roles) {
       const inRole = techs.filter((t) => t.teamId === role.id)
-      const booked = inRole.filter((t) => appts.some((a) => a.techId === t.id)).length
-      const count = appts.filter((a) => inRole.some((t) => t.id === a.techId)).length
+      const booked = inRole.filter((t) => visible.some((a) => a.techId === t.id)).length
+      const count = visible.filter((a) => inRole.some((t) => t.id === a.techId)).length
       m.set(role.id, { booked, total: inRole.length, appts: count })
     }
     return m
-  }, [appts, roles, techs])
+  }, [appts, roles, techs, showNoShows])
 
   const apptCountByTech = useMemo(() => {
     const m = new Map<string, number>()
@@ -2780,7 +2788,7 @@ export function AppointmentBook() {
         turnawayDisabled={!canLogTurnaway}
       />
       <Toolbar
-        subtitle={`${dayLabel(date)} · ${columns.filter((c) => c.kind === 'tech').length} of ${techs.length} techs working · ${appts.length} appointments`}
+        subtitle={`${dayLabel(date)} · ${columns.filter((c) => c.kind === 'tech').length} of ${techs.length} techs working · ${filtered.length} appointments`}
         dateLabel={dayLabel(date)}
         isToday={isToday(date)}
         onPrevDay={() => goDay(new Date(date.getFullYear(), date.getMonth(), date.getDate() - 1))}
@@ -3164,7 +3172,7 @@ export function AppointmentBook() {
               const left = colXAt(firstCol + i)
               return (
                 <div key={`d${i}`} className="absolute" style={{ left, top: 0, width: cw, height: dayH }}>
-                  {appts.filter((a) => techOf(a.techId).teamId === c.teamId && a.techId !== 'unassigned').map((a) => (
+                  {filtered.filter((a) => techOf(a.techId).teamId === c.teamId && a.techId !== 'unassigned').map((a) => (
                     <div key={a.id} className="absolute rounded-sm opacity-50" style={{
                       top: yAt(a.startMin), height: Math.max(3, a.durationMin * pxPerMin),
                       left: 2, right: 2,
