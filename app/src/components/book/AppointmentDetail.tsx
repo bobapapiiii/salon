@@ -193,15 +193,16 @@ export function AppointmentDetail({ appt, group, clients, error, onSave, onActio
                       value={requestKind}
                       onChange={(e) => {
                         const v = e.target.value
+                        // a fresh request decision re-arms the gender-mismatch confirmation
                         if (v === 'pref-female' || v === 'pref-male' || v === 'issue') {
-                          setSvc(d.id, { techId: v, techRequested: undefined, requestedTechChoice: undefined })
+                          setSvc(d.id, { techId: v, techRequested: undefined, requestedTechChoice: undefined, genderMismatchOk: undefined })
                         } else if (v === 'requested') {
                           const concrete = d.techId === 'first' || d.techId === 'pref-female' || d.techId === 'pref-male' || d.techId === 'issue'
                             ? techs.find((t) => t.skills.includes(d.serviceId))?.id ?? 'first'
                             : d.techId
-                          setSvc(d.id, { techId: concrete, techRequested: true, requestedTechChoice: undefined })
+                          setSvc(d.id, { techId: concrete, techRequested: true, requestedTechChoice: undefined, genderMismatchOk: undefined })
                         } else {
-                          setSvc(d.id, { techRequested: undefined, requestedTechChoice: undefined })
+                          setSvc(d.id, { techRequested: undefined, requestedTechChoice: undefined, genderMismatchOk: undefined })
                         }
                       }}
                       className="min-w-0 flex-1 rounded-[8px] border border-input bg-background px-1.5 py-1 text-xs outline-none"

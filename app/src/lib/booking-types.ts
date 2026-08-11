@@ -154,6 +154,10 @@ export interface Appointment {
   requestedTechChoice?: 'first' | 'pref-female' | 'pref-male'
   /** the client asked for THIS tech by name, do not casually move it */
   techRequested?: boolean
+  /** the salon already confirmed moving this specific appointment to a tech
+   *  of the other gender than requestedTechChoice — don't ask again for it
+   *  until the request preference itself is changed */
+  genderMismatchOk?: boolean
   /** when the client checked in, minutes from OPEN_MIN */
   checkedInMin?: number
   /** when the service started, minutes from OPEN_MIN */

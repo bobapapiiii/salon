@@ -1160,11 +1160,12 @@ export function AppointmentBook() {
         return
       }
     }
-    // moving a gender-preferred service onto a tech of the OTHER gender always confirms first
+    // moving a gender-preferred service onto a tech of the OTHER gender always confirms first —
+    // unless the salon already okayed a gender mismatch for this exact appointment before
     if (!firstErr && !confirmed.genderMismatch && d.kind === 'appt' && d.mode === 'move') {
       const primary = appts.find((a) => a.id === d.primaryId)
       const pref = primary?.requestedTechChoice
-      if (primary && (pref === 'pref-female' || pref === 'pref-male') && d.targetTechId !== primary.techId) {
+      if (primary && !primary.genderMismatchOk && (pref === 'pref-female' || pref === 'pref-male') && d.targetTechId !== primary.techId) {
         const wantGender = pref === 'pref-female' ? 'female' : 'male'
         const target = techOf(d.targetTechId)
         if (target.gender !== wantGender) {
@@ -1179,7 +1180,7 @@ export function AppointmentBook() {
       }
     }
     if (firstErr || !allowOverlap || !warnOnDoubleBook) {
-      applyDropRef.current(d, moving, firstErr, relocated)
+      applyDropRef.current(d, moving, firstErr, relocated, confirmed.genderMismatch)
       return
     }
     const hit = overlapHitFor(moving, new Set(relocated.keys()))
@@ -1187,16 +1188,17 @@ export function AppointmentBook() {
       setPendingOverlap({
         techId: hit.techId,
         timeLabel: fmtTime(hit.startMin),
-        apply: () => applyDropRef.current(d, moving, null, relocated),
+        apply: () => applyDropRef.current(d, moving, null, relocated, confirmed.genderMismatch),
       })
       return
     }
-    applyDropRef.current(d, moving, null, relocated)
+    applyDropRef.current(d, moving, null, relocated, confirmed.genderMismatch)
   }
 
   // applies a validated drop (appointment move or queue/clipboard placement)
   const applyDrop = (
     d: DragState, moving: MovingItem[], firstErr: string | null, relocated: Map<string, Appointment> = new Map(),
+    ackGenderMismatch?: boolean,
   ) => {
     if (salonClosed) { showFlash(`⚠ Salon is closed on this day${salonHoliday?.label ? ` (${salonHoliday.label})` : ''}`); return }
     const movedNote = relocated.size > 0 ? `, moved ${relocated.size} booking${relocated.size > 1 ? 's' : ''} to make room` : ''
@@ -1267,6 +1269,7 @@ export function AppointmentBook() {
         return m
           ? {
               ...a, techId: m.techId, startMin: m.startMin, durationMin: m.durationMin,
+              genderMismatchOk: ackGenderMismatch && a.id === d.primaryId ? true : a.genderMismatchOk,
               log: [...(a.log ?? []), logEntry(`Moved to ${techOf(m.techId).name} at ${fmtTime(m.startMin)}`)],
             }
           : relocated.get(a.id) ?? a
@@ -1788,8 +1791,8 @@ export function AppointmentBook() {
 
     const err = [...checkMove(moving, new Set(relocated.keys())).values()].find(Boolean)
     if (err) { setDetailError(err); return }
-    const doSave = () => {
-      const byId = new Map(keep.map((u) => [u.id, u]))
+    const doSave = (finalKeep: Appointment[] = keep) => {
+      const byId = new Map(finalKeep.map((u) => [u.id, u]))
       commit(appts
         .filter((a) => !removedIds.includes(a.id))
         .map((a) => byId.get(a.id) ?? relocated.get(a.id) ?? a))
@@ -1797,27 +1800,29 @@ export function AppointmentBook() {
       showFlash(
         relocated.size > 0
           ? `✓ Appointment updated, moved ${relocated.size} booking${relocated.size > 1 ? 's' : ''} to make room`
-          : keep.some((u) => u.issue) ? '⚠ Marked as issue, assigned to an available tech' : '✓ Appointment updated')
+          : finalKeep.some((u) => u.issue) ? '⚠ Marked as issue, assigned to an available tech' : '✓ Appointment updated')
     }
-    const afterGenderCheck = () => {
+    const afterGenderCheck = (finalKeep: Appointment[] = keep) => {
       // double-booking is enabled, warn before saving one (only for clashes we
       // couldn't clear a path for above)
       if (allowOverlap) {
-        const hit = keep.find((u) =>
+        const hit = finalKeep.find((u) =>
           appts.some((a) =>
             !keepIds.has(a.id) && !removedIds.includes(a.id) && !relocated.has(a.id) && a.techId === u.techId &&
             overlaps(u.startMin, u.startMin + u.durationMin, a.startMin, a.startMin + a.durationMin)))
         if (hit) {
-          setPendingOverlap({ techId: hit.techId, timeLabel: fmtTime(hit.startMin), apply: doSave })
+          setPendingOverlap({ techId: hit.techId, timeLabel: fmtTime(hit.startMin), apply: () => doSave(finalKeep) })
           return
         }
       }
-      doSave()
+      doSave(finalKeep)
     }
-    // reassigning a gender-preferred service to a tech of the other gender always confirms first
+    // reassigning a gender-preferred service to a tech of the other gender always confirms first —
+    // unless the salon already okayed a gender mismatch for this exact appointment before
     const genderMismatch = keep.find((u) => {
       const pref = u.requestedTechChoice
       if (pref !== 'pref-female' && pref !== 'pref-male') return false
+      if (u.genderMismatchOk) return false
       const orig = appts.find((a) => a.id === u.id)
       if (!orig || orig.techId === u.techId) return false
       const wantGender = pref === 'pref-female' ? 'female' : 'male'
@@ -1828,7 +1833,7 @@ export function AppointmentBook() {
         pref: genderMismatch.requestedTechChoice === 'pref-female' ? 'female' : 'male',
         toName: techOf(genderMismatch.techId).name,
         clientName: genderMismatch.clientName,
-        apply: afterGenderCheck,
+        apply: () => afterGenderCheck(keep.map((u) => (u.id === genderMismatch.id ? { ...u, genderMismatchOk: true } : u))),
       })
       return
     }
