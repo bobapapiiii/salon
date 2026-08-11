@@ -344,6 +344,15 @@ export function BookingPanel({
     onPreviewDay(dayKeyOf(d))
   }
 
+  // picking a new overall time from the rail should win over any per-service
+  // start/duration tweaks made earlier in the details step — otherwise a
+  // manually-edited service's timeEdits entry keeps overriding `time` forever,
+  // making the rail look stuck on whatever time was last hand-picked
+  const selectTime = (s: number) => {
+    setTime(s)
+    setTimeEdits({})
+  }
+
   const allSvcs = groups.flatMap((g) => g.svcIds)
   const total = allSvcs.reduce((sum, id) => sum + svcById[id].price, 0) +
     guests.reduce((sum, _g, gi) => sum + (svcsByGuest[gi] ?? []).reduce((s2, id) => s2 + (addonsByService[`${gi}:${id}`] ?? []).reduce((s3, a) => s3 + a.price, 0), 0), 0)
@@ -492,7 +501,7 @@ export function BookingPanel({
     return (
       <div className="flex items-center gap-1.5">
         <Clock className="h-3 w-3 shrink-0 text-ink-faint" />
-        <Sel value={cur.start} onChange={(v) => editStart(gi, svcIds, defStart, Number(v))} title="Start time" className="tnum w-[86px] shrink-0 font-semibold">
+        <Sel value={cur.start} onChange={(v) => editStart(gi, svcIds, defStart, Number(v))} title="Start time" className="tnum w-[104px] shrink-0 font-semibold">
           {Array.from({ length: DAY_MIN / increment }, (_, i) => i * increment).map((m) => (
             <option key={m} value={m}>{fmtTime(m)}</option>
           ))}
@@ -502,7 +511,7 @@ export function BookingPanel({
           value={cur.end - cur.start}
           onChange={(v) => editEnd(gi, svcIdForEnd, defStart, cur.start + Number(v))}
           title="Duration"
-          className="tnum w-[76px] shrink-0 font-semibold"
+          className="tnum w-[80px] shrink-0 font-semibold"
         >
           {DUR_OPTS.map((d) => <option key={d} value={d}>{d}m</option>)}
         </Sel>
@@ -830,7 +839,7 @@ export function BookingPanel({
                           return (
                             <div className="mb-2.5 flex items-center gap-1.5">
                               <Clock className="h-3 w-3 shrink-0 text-ink-faint" />
-                              <Sel value={cur.start} onChange={(v) => editStart(gi, svcs, time, Number(v))} title="Shared start time" className="tnum w-[86px] shrink-0 font-semibold">
+                              <Sel value={cur.start} onChange={(v) => editStart(gi, svcs, time, Number(v))} title="Shared start time" className="tnum w-[104px] shrink-0 font-semibold">
                                 {Array.from({ length: DAY_MIN / increment }, (_, i) => i * increment).map((m) => (
                                   <option key={m} value={m}>{fmtTime(m)}</option>
                                 ))}
@@ -861,7 +870,7 @@ export function BookingPanel({
                                     value={cur.end - cur.start}
                                     onChange={(v) => editEnd(gi, id, time ?? 0, cur.start + Number(v))}
                                     title="Duration"
-                                    className="tnum w-[70px] shrink-0 font-semibold"
+                                    className="tnum w-[76px] shrink-0 font-semibold"
                                   >
                                     {DUR_OPTS.map((d) => <option key={d} value={d}>{d}m</option>)}
                                   </Sel>
@@ -948,9 +957,9 @@ export function BookingPanel({
                 <button
                   key={s}
                   onClick={() => {
-                    if (status === 'open') setTime(s)
-                    else if (status === 'movable' && moves) onRequestMakeRoom(moves, s, () => setTime(s))
-                    else setTime(s)
+                    if (status === 'open') selectTime(s)
+                    else if (status === 'movable' && moves) onRequestMakeRoom(moves, s, () => selectTime(s))
+                    else selectTime(s)
                   }}
                   title={
                     status === 'blocked' ? 'No qualified tech free — booking this will double-book a tech'
