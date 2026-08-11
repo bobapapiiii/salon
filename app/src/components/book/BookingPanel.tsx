@@ -36,11 +36,11 @@ function Sel({ value, onChange, title, disabled, className = '', children }: {
         title={title}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full appearance-none rounded-md border border-input bg-background py-1.5 pl-2 pr-7 text-xs outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+        className="w-full appearance-none rounded-[8px] border border-input bg-background py-1.5 pl-2 pr-7 text-xs outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
       >
         {children}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-2 h-4 w-4 text-muted-foreground/70" />
+      <ChevronDown className="pointer-events-none absolute right-2 h-4 w-4 text-ink-faint/70" />
     </span>
   )
 }
@@ -227,7 +227,7 @@ export function BookingPanel({
               type="button"
               onClick={() => setAddonsByService((m) => ({ ...m, [key]: has ? on.filter((x) => x.id !== a.id) : [...on, a] }))}
               className={`rounded-full border px-2 py-0.5 text-[10.5px] font-bold transition-colors ${
-                has ? 'border-sky-500/60 bg-sky-500/10 text-sky-600' : 'border-border text-muted-foreground hover:border-sky-500/40'
+                has ? 'border-clay/60 bg-clay-tint text-clay' : 'border-line text-ink-faint hover:border-clay/40'
               }`}
             >
               + {a.name} · {a.mins}m · ${a.price}
@@ -489,13 +489,13 @@ export function BookingPanel({
     const cur = timesFor(gi, svcIdForEnd, defStart, dur0)
     return (
       <div className="flex items-center gap-1.5">
-        <Clock className="h-3 w-3 shrink-0 text-muted-foreground" />
+        <Clock className="h-3 w-3 shrink-0 text-ink-faint" />
         <Sel value={cur.start} onChange={(v) => editStart(gi, svcIds, defStart, Number(v))} title="Start time" className="tnum w-[86px] shrink-0 font-semibold">
           {Array.from({ length: DAY_MIN / increment }, (_, i) => i * increment).map((m) => (
             <option key={m} value={m}>{fmtTime(m)}</option>
           ))}
         </Sel>
-        <span className="text-[10px] font-semibold text-muted-foreground">for</span>
+        <span className="text-[10px] font-semibold text-ink-faint">for</span>
         <Sel
           value={cur.end - cur.start}
           onChange={(v) => editEnd(gi, svcIdForEnd, defStart, cur.start + Number(v))}
@@ -513,19 +513,19 @@ export function BookingPanel({
     if (svcs.length < 2) return null
     if (parallelGuest[gi]) {
       return (
-        <div className="mb-3 flex items-center gap-2 rounded-lg border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-[12px]">
-          <Zap className="h-3.5 w-3.5 text-sky-500" />
+        <div className="mb-3 flex items-center gap-2 rounded-xl border border-clay/40 bg-clay-tint/40 px-3 py-2 text-[12px] text-ink">
+          <Zap className="h-3.5 w-3.5 text-clay" />
           <span className="flex-1">Services will run <b>in parallel</b> at the same time.</span>
-          <button onClick={() => setParallelGuest((p) => { const n = [...p]; n[gi] = false; return n })} className="text-sky-600 underline">
+          <button onClick={() => setParallelGuest((p) => { const n = [...p]; n[gi] = false; return n })} className="font-semibold text-clay underline">
             Split back-to-back
           </button>
         </div>
       )
     }
     return (
-      <div className="mb-3 rounded-lg border border-border bg-secondary/40 px-3 py-2 text-[12px] text-muted-foreground">
+      <div className="mb-3 rounded-xl border border-line bg-cream px-3 py-2 text-[12px] text-ink-faint">
         {svcs.map((id) => svcById[id].short).join(' and ')} can be scheduled at the same time.{' '}
-        <button onClick={() => setParallelGuest((p) => { const n = [...p]; n[gi] = true; return n })} className="font-medium text-sky-600 underline">
+        <button onClick={() => setParallelGuest((p) => { const n = [...p]; n[gi] = true; return n })} className="font-semibold text-clay underline">
           Combine parallel services
         </button>
       </div>
@@ -533,18 +533,39 @@ export function BookingPanel({
   }
 
   return (
-    <div className="fixed inset-y-0 right-0 z-[85] flex w-[596px] max-w-[95vw] flex-col border-l border-border bg-popover shadow-2xl">
+    <div className="fixed inset-y-0 right-0 z-[85] flex w-[596px] max-w-[95vw] flex-col border-l border-line bg-popover shadow-2xl">
       {/* header */}
-      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-        {step !== 'guest' && (
-          <button onClick={() => setStep(step === 'details' ? 'services' : 'guest')} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
-            <ArrowLeft className="h-4 w-4" />
+      <div className="border-b border-line bg-cream px-4 py-3.5">
+        <div className="flex items-center gap-3">
+          {step !== 'guest' && (
+            <button
+              onClick={() => setStep(step === 'details' ? 'services' : 'guest')}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-faint transition-colors hover:bg-surface hover:text-ink"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+          )}
+          {guests[0] ? (
+            <>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-clay-tint text-xs font-bold text-clay">
+                {guests[0].name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[14px] font-bold text-ink">
+                  {guests[0].name}{guests.length > 1 ? ` + ${guests.length - 1} more` : ''}
+                </div>
+                <div className="text-[11px] text-ink-faint">
+                  New appointment{guests[0].phone ? ` · ${guests[0].phone}` : ''}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="min-w-0 flex-1 text-[14px] font-bold text-ink">New appointment</div>
+          )}
+          <button onClick={onClose} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-faint transition-colors hover:bg-surface hover:text-ink">
+            <X className="h-4 w-4" />
           </button>
-        )}
-        <div className="text-sm font-semibold">New appointment</div>
-        <button onClick={onClose} className="ml-auto rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
-          <X className="h-4 w-4" />
-        </button>
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -553,17 +574,17 @@ export function BookingPanel({
           {step === 'guest' && (
             <>
               <div className="relative">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
                 <input
                   autoFocus
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                   placeholder="Search guest by name or phone"
-                  className="w-full rounded-md border border-input bg-background py-2 pl-9 pr-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+                  className="w-full rounded-[8px] border border-input bg-background py-2 pl-9 pr-3 text-sm outline-none focus:ring-1 focus:ring-ring"
                 />
                 <button
                   onClick={() => setAddOpen((o) => !o)}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-lg p-1 text-ink-faint hover:bg-cream hover:text-ink"
                   title="Add new guest"
                 >
                   <UserPlus className="h-4 w-4" />
@@ -571,17 +592,17 @@ export function BookingPanel({
               </div>
 
               {addOpen && (
-                <div className="mt-2 space-y-2 rounded-lg border border-border bg-background p-3">
-                  <div className="text-xs font-semibold">New client account</div>
+                <div className="mt-2 space-y-2 rounded-xl border border-line bg-surface p-3">
+                  <div className="text-xs font-bold text-ink">New client account</div>
                   <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Full name"
-                    className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring" />
+                    className="w-full rounded-[8px] border border-input bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring" />
                   <input value={newPhone} onChange={(e) => setNewPhone(e.target.value)} placeholder="Phone (required for an account)"
-                    className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring" />
+                    className="w-full rounded-[8px] border border-input bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring" />
                   <button onClick={createGuest} disabled={!newName.trim() || !newPhone.trim()}
-                    className="w-full rounded-md bg-primary py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-40">
+                    className="w-full rounded-[8px] bg-clay py-1.5 text-sm font-semibold text-white transition-colors hover:bg-clay-deep disabled:opacity-40">
                     Create account &amp; select
                   </button>
-                  <p className="text-[10.5px] text-muted-foreground">
+                  <p className="text-[10.5px] text-ink-faint">
                     Bringing someone along? Add them later as a name-only guest, no account needed.
                   </p>
                 </div>
@@ -592,21 +613,21 @@ export function BookingPanel({
                   <button
                     key={c.id}
                     onClick={() => pickGuest(c)}
-                    className="flex w-full items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 text-left hover:border-border hover:bg-accent"
+                    className="flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left hover:border-line hover:bg-cream"
                   >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-semibold">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-clay-tint text-xs font-bold text-clay">
                       {c.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{c.name}</span>
-                      <span className="block text-[11px] text-muted-foreground">{c.phone} · {c.visits} visits</span>
+                      <span className="block truncate text-sm font-semibold text-ink">{c.name}</span>
+                      <span className="block text-[11px] text-ink-faint">{c.phone} · {c.visits} visits</span>
                     </span>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    <ChevronRight className="h-4 w-4 text-ink-faint" />
                   </button>
                 ))}
                 {matches.length === 0 && (
-                  <div className="py-8 text-center text-sm text-muted-foreground">
-                    No clients match, <button onClick={() => setAddOpen(true)} className="text-sky-500 underline">create their account</button>
+                  <div className="py-8 text-center text-sm text-ink-faint">
+                    No clients match, <button onClick={() => setAddOpen(true)} className="text-clay underline">create their account</button>
                   </div>
                 )}
               </div>
@@ -621,27 +642,27 @@ export function BookingPanel({
                   <button
                     key={g.id}
                     onClick={() => setActiveGuest(i)}
-                    className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                      activeGuest === i ? 'border-sky-500/60 bg-sky-500/10 text-foreground' : 'border-border text-muted-foreground hover:border-sky-500/40'
+                    className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      activeGuest === i ? 'border-clay/60 bg-clay-tint text-ink' : 'border-line text-ink-faint hover:border-clay/40'
                     }`}
                     title={`Select services for ${g.name}`}
                   >
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-secondary text-[10px] font-semibold">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-clay-tint text-[10px] font-bold text-clay">
                       {g.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
                     </span>
                     {g.name}
                     {g.isGuest ? (
-                      <span className="rounded-full bg-secondary px-1.5 text-[10px] font-medium text-muted-foreground">guest</span>
+                      <span className="rounded-full bg-cream px-1.5 text-[10px] font-semibold text-ink-faint">guest</span>
                     ) : isParty && hostIdx === i && (
-                      <span className="rounded-full bg-violet-500/15 px-1.5 text-[10px] font-medium text-violet-500">host</span>
+                      <span className="rounded-full bg-amberw-tint px-1.5 text-[10px] font-semibold text-amberw">host</span>
                     )}
-                    <span className="rounded-full bg-emerald-500/15 px-1.5 text-[10px] text-emerald-600">
+                    <span className="rounded-full bg-olive-tint px-1.5 text-[10px] text-olive">
                       {(svcsByGuest[i] ?? []).length} svc
                     </span>
                     <span
                       role="button"
                       onClick={(e) => { e.stopPropagation(); removeGuest(i) }}
-                      className="hover:text-red-400"
+                      className="hover:text-rust"
                       title={`Remove ${g.name}`}
                     >
                       <X className="h-3 w-3" />
@@ -665,10 +686,10 @@ export function BookingPanel({
               />
 
               {/* tabs */}
-              <div className="mb-3 mt-4 flex gap-4 border-b border-border text-sm">
+              <div className="mb-3 mt-4 flex gap-4 border-b border-line text-sm">
                 {(['services', 'history', 'notes'] as const).map((t) => (
                   <button key={t} onClick={() => setTab(t)}
-                    className={`-mb-px border-b-2 pb-2 capitalize ${tab === t ? 'border-sky-500 font-medium text-foreground' : 'border-transparent text-muted-foreground'}`}>
+                    className={`-mb-px border-b-2 pb-2 capitalize ${tab === t ? 'border-clay font-semibold text-ink' : 'border-transparent text-ink-faint'}`}>
                     {t === 'history' ? 'Appointments' : t}
                   </button>
                 ))}
@@ -678,7 +699,7 @@ export function BookingPanel({
                 <>
                   {parallelBanner(activeGuest)}
                   <div className="space-y-1">
-                    <div className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <div className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
                       Services for {guests[activeGuest]?.name}
                     </div>
                     {SERVICES.map((s) => {
@@ -687,15 +708,15 @@ export function BookingPanel({
                         <button
                           key={s.id}
                           onClick={() => toggleService(s.id)}
-                          className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm ${
-                            selected ? 'border-sky-500/60 bg-sky-500/10' : 'border-transparent hover:border-border hover:bg-accent'
+                          className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm ${
+                            selected ? 'border-clay/60 bg-clay-tint/30' : 'border-transparent hover:border-line hover:bg-cream'
                           }`}
                         >
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate font-medium">{s.name}</span>
-                            <span className="block text-[11px] text-muted-foreground">${s.price} · {s.durationMin}min</span>
+                            <span className="block truncate font-semibold text-ink">{s.name}</span>
+                            <span className="block text-[11px] text-ink-faint">${s.price} · {s.durationMin}min</span>
                           </span>
-                          <span className={`flex h-5 w-5 items-center justify-center rounded-full border ${selected ? 'border-sky-500 bg-sky-500 text-white' : 'border-border'}`}>
+                          <span className={`flex h-5 w-5 items-center justify-center rounded-full border ${selected ? 'border-clay bg-clay text-white' : 'border-line'}`}>
                             {selected ? <Check className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
                           </span>
                         </button>
@@ -709,7 +730,7 @@ export function BookingPanel({
                 const pg = guests[activeGuest] ?? guests[0]
                 if (pg?.isGuest) {
                   return (
-                    <div className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+                    <div className="rounded-xl border border-dashed border-line p-4 text-center text-sm text-ink-faint">
                       Name-only guest, their visits are tracked under {guests[0]?.name}&rsquo;s profile, in the Guests tab.
                     </div>
                   )
@@ -718,19 +739,19 @@ export function BookingPanel({
                 return (
                   <div className="space-y-2">
                     {acc && fakeHistory(acc).map((h, i) => (
-                      <div key={i} className="rounded-lg border border-border p-3 text-sm">
-                        <div className="text-[11px] text-muted-foreground">{h.when}</div>
-                        <div className="font-medium">{h.svc.name}</div>
-                        <div className="text-[11px] text-muted-foreground">Gloss Nail Bar · ${h.svc.price}</div>
+                      <div key={i} className="rounded-xl border border-line p-3 text-sm">
+                        <div className="text-[11px] text-ink-faint">{h.when}</div>
+                        <div className="font-semibold text-ink">{h.svc.name}</div>
+                        <div className="text-[11px] text-ink-faint">Gloss Nail Bar · ${h.svc.price}</div>
                       </div>
                     ))}
-                    {(acc?.visits ?? 0) === 0 && <div className="py-6 text-center text-sm text-muted-foreground">New client, no past visits</div>}
+                    {(acc?.visits ?? 0) === 0 && <div className="py-6 text-center text-sm text-ink-faint">New client, no past visits</div>}
                   </div>
                 )
               })()}
 
               {tab === 'notes' && (
-                <div className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+                <div className="rounded-xl border border-dashed border-line p-4 text-center text-sm text-ink-faint">
                   No notes yet for this guest.
                 </div>
               )}
@@ -740,13 +761,13 @@ export function BookingPanel({
           {step === 'details' && (
             <div className="space-y-3">
               {isParty && (
-                <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2 rounded-xl border border-line bg-cream px-3 py-2 text-xs text-ink-faint">
                   <Users className="h-3.5 w-3.5" />
                   <input
                     value={groupName}
                     onChange={(e) => setGroupName(e.target.value)}
                     placeholder="Group name (optional)"
-                    className="w-40 rounded-md border border-input bg-background px-2 py-1 text-[11px] outline-none"
+                    className="w-40 rounded-[8px] border border-input bg-background px-2 py-1 text-[11px] outline-none"
                   />
                   Party of {guests.length}, pick the host
                 </div>
@@ -757,15 +778,15 @@ export function BookingPanel({
                 return (
                   <div key={g.id} className="space-y-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold">{g.name}</span>
+                      <span className="text-sm font-bold text-ink">{g.name}</span>
                       {isParty && (
-                        <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <label className="flex items-center gap-1 text-[11px] text-ink-faint">
                           <input
                             type="radio"
                             name="host"
                             checked={hostIdx === gi}
                             onChange={() => setHostIdx(gi)}
-                            className="accent-violet-500"
+                            className="accent-clay"
                           />
                           Host of the group?
                         </label>
@@ -773,8 +794,8 @@ export function BookingPanel({
                     </div>
                     {parallelBanner(gi)}
                     {isPar && (
-                      <div className="rounded-lg border border-sky-500/40 p-3">
-                        <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-sky-600">
+                      <div className="rounded-xl border border-clay/40 p-3">
+                        <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-clay">
                           <Zap className="h-3.5 w-3.5" /> Parallel Services, shared start
                         </div>
                         {/* start picker + dynamic end: ends whenever the LONGEST service finishes —
@@ -785,17 +806,17 @@ export function BookingPanel({
                           const end = time + longest
                           return (
                             <div className="mb-2.5 flex items-center gap-1.5">
-                              <Clock className="h-3 w-3 shrink-0 text-muted-foreground" />
+                              <Clock className="h-3 w-3 shrink-0 text-ink-faint" />
                               <Sel value={cur.start} onChange={(v) => editStart(gi, svcs, time, Number(v))} title="Shared start time" className="tnum w-[86px] shrink-0 font-semibold">
                                 {Array.from({ length: DAY_MIN / increment }, (_, i) => i * increment).map((m) => (
                                   <option key={m} value={m}>{fmtTime(m)}</option>
                                 ))}
                               </Sel>
-                              <span className="text-[10px] font-semibold text-muted-foreground">to</span>
-                              <span className="tnum rounded-md border border-dashed border-input bg-secondary/40 px-2 py-1 text-[11px] font-bold text-muted-foreground" title="Ends when the longest service finishes">
+                              <span className="text-[10px] font-semibold text-ink-faint">to</span>
+                              <span className="tnum rounded-[8px] border border-dashed border-input bg-cream px-2 py-1 text-[11px] font-bold text-ink-faint" title="Ends when the longest service finishes">
                                 {fmtTime(end)}
                               </span>
-                              <span className="text-[10px] text-muted-foreground">({longest}m, longest)</span>
+                              <span className="text-[10px] text-ink-faint">({longest}m, longest)</span>
                             </div>
                           )
                         })()}
@@ -806,10 +827,10 @@ export function BookingPanel({
                           {svcs.map((id) => {
                             const cur = timesFor(gi, id, time ?? 0, svcById[id].durationMin)
                             return (
-                              <div key={id} className="rounded-lg border border-border p-2">
+                              <div key={id} className="rounded-xl border border-line p-2">
                                 <div className="flex items-center gap-2 text-sm">
-                                  <span className="min-w-0 flex-1 truncate font-medium">{svcById[id].name}
-                                    <span className="ml-1 text-[10.5px] font-normal text-muted-foreground">
+                                  <span className="min-w-0 flex-1 truncate font-semibold text-ink">{svcById[id].name}
+                                    <span className="ml-1 text-[10.5px] font-normal text-ink-faint">
                                       ${priceWithAddons(gi, id)}{time != null && ` · ends ${fmtTime(cur.end)}`}
                                     </span>
                                   </span>
@@ -834,10 +855,10 @@ export function BookingPanel({
                       const svc0 = svcById[item.serviceId]
                       const cur = timesFor(gi, item.serviceId, (time ?? 0) + item.offset, svc0.durationMin)
                       return (
-                        <div key={item.serviceId} className="rounded-lg border border-border p-3">
+                        <div key={item.serviceId} className="rounded-xl border border-line p-3">
                           <div className="flex items-center justify-between text-sm">
-                            <span className="font-medium">{svc0.name}</span>
-                            <span className="text-muted-foreground">${priceWithAddons(gi, item.serviceId)} · {cur.end - cur.start}m</span>
+                            <span className="font-semibold text-ink">{svc0.name}</span>
+                            <span className="text-ink-faint">${priceWithAddons(gi, item.serviceId)} · {cur.end - cur.start}m</span>
                           </div>
                           {time != null && (
                             <div className="mt-2">{timeEditor(gi, [item.serviceId], time + item.offset, item.serviceId)}</div>
@@ -854,7 +875,7 @@ export function BookingPanel({
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder={isParty ? 'Add group notes, occasion, preferences' : 'Add note, allergies, design refs'}
-                className="w-full rounded-md border border-input bg-background px-2.5 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
+                className="w-full rounded-[8px] border border-input bg-background px-2.5 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
               />
             </div>
           )}
@@ -862,20 +883,20 @@ export function BookingPanel({
 
         {/* day + available-times rail */}
         {step !== 'guest' && (
-          <div className="w-48 shrink-0 overflow-y-auto border-l border-border p-3">
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Day</div>
+          <div className="w-48 shrink-0 overflow-y-auto border-l border-line p-3">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Day</div>
             <div className="mb-3 flex items-center gap-1">
               <button
                 onClick={() => shiftDay(-1)}
                 title="Previous day"
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border border-line text-ink-faint hover:bg-cream hover:text-ink"
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={(e) => setDayPickerAnchor(e.currentTarget.getBoundingClientRect())}
                 title="Choose a date"
-                className="flex min-w-0 flex-1 items-center justify-center gap-1 rounded-md border border-border px-1.5 py-1.5 text-[11px] font-medium text-foreground hover:bg-accent"
+                className="flex min-w-0 flex-1 items-center justify-center gap-1 rounded-[8px] border border-line px-1.5 py-1.5 text-[11px] font-semibold text-ink hover:bg-cream"
               >
                 <Calendar className="h-3 w-3 shrink-0" />
                 <span className="truncate">{dayLabelOf(dateKey)}</span>
@@ -883,16 +904,16 @@ export function BookingPanel({
               <button
                 onClick={() => shiftDay(1)}
                 title="Next day"
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border border-line text-ink-faint hover:bg-cream hover:text-ink"
               >
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
-            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
               {isParty || parallelGuest.some(Boolean) ? 'Start together' : 'Available times'}
             </div>
             {slotPlans.length === 0 && (
-              <div className="text-[11px] text-muted-foreground">
+              <div className="text-[11px] text-ink-faint">
                 {allSvcs.length === 0 || !guests.every((_g, i) => (svcsByGuest[i] ?? []).length > 0)
                   ? isParty ? 'Pick services for each guest' : 'Select services to view openings'
                   : !allTechsReady ? 'Choose who’s requested to see available times'
@@ -913,12 +934,12 @@ export function BookingPanel({
                     : status === 'movable' ? `Selecting this moves ${moves!.length} other booking${moves!.length > 1 ? 's' : ''} to make room`
                     : undefined
                   }
-                  className={`flex w-full items-center gap-1.5 rounded-md border px-2 py-1.5 text-[12px] ${
+                  className={`flex w-full items-center gap-1.5 rounded-[8px] border px-2 py-1.5 text-[12px] ${
                     time === s
-                      ? 'border-sky-500 bg-sky-500/15 font-bold text-foreground'
+                      ? 'border-clay bg-clay-tint font-bold text-clay'
                       : status === 'blocked'
                         ? 'border-amber-400/60 bg-amber-400/10 font-bold text-amber-700 hover:bg-amber-400/20'
-                        : 'border-border font-bold text-foreground hover:border-sky-400 hover:bg-sky-500/5'
+                        : 'border-line font-bold text-ink hover:bg-cream'
                   }`}
                 >
                   {status === 'blocked' ? <AlertTriangle className="h-3 w-3 shrink-0" /> : <Clock className="h-3 w-3 shrink-0" />}
@@ -942,12 +963,12 @@ export function BookingPanel({
       )}
 
       {/* footer */}
-      <div className="flex items-center gap-3 border-t border-border px-4 py-3">
+      <div className="flex items-center gap-3 border-t border-line p-3">
         <div className="text-sm">
-          <span className="font-semibold">
+          <span className="font-bold text-ink">
             {allSvcs.length > 0 ? `${allSvcs.length} Selected` : 'Total'}
           </span>
-          <span className="ml-2 text-muted-foreground">
+          <span className="ml-2 text-ink-faint">
             {totalMin > 0 && `${totalMin}min · `}{`$${total.toFixed(2)}`}
           </span>
         </div>
@@ -955,20 +976,20 @@ export function BookingPanel({
           <button
             onClick={() => setStep('details')}
             disabled={!canProceedToDetails}
-            className="ml-auto rounded-md bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-40"
+            className="ml-auto flex items-center justify-center gap-2 rounded-[10px] bg-clay px-5 py-2 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep disabled:opacity-40"
           >
-            Proceed
+            Proceed <ChevronRight className="h-4 w-4" />
           </button>
         ) : step === 'details' ? (
           <button
             onClick={book}
             disabled={!canProceed}
-            className="ml-auto rounded-md bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-40"
+            className="ml-auto flex items-center justify-center gap-2 rounded-[10px] bg-clay px-5 py-2 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep disabled:opacity-40"
           >
-            Book now
+            <Check className="h-4 w-4" /> Book now
           </button>
         ) : (
-          <button onClick={onClose} className="ml-auto rounded-md border border-border px-4 py-2 text-sm text-muted-foreground">
+          <button onClick={onClose} className="ml-auto rounded-[8px] border border-line px-4 py-2 text-sm font-semibold text-ink-faint transition-colors hover:bg-cream hover:text-ink">
             Cancel
           </button>
         )}
@@ -1007,62 +1028,62 @@ function AddAnotherGuest({ clients, guests, primaryName, onPick, onPickNameOnly,
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false)
       }}
     >
-      <Search className="pointer-events-none absolute left-2.5 top-[7px] h-3.5 w-3.5 text-muted-foreground" />
+      <Search className="pointer-events-none absolute left-2.5 top-[7px] h-3.5 w-3.5 text-ink-faint" />
       <input
         value={q}
         onChange={(e) => { setQ(e.target.value); setOpen(true) }}
         onFocus={() => setOpen(true)}
         placeholder={guests.length === 0 ? 'Search another guest' : 'Add another guest, name or phone'}
-        className="w-full rounded-md border border-dashed border-input bg-background py-1.5 pl-8 pr-3 text-[12px] outline-none focus:ring-1 focus:ring-ring"
+        className="w-full rounded-[8px] border border-dashed border-input bg-background py-1.5 pl-8 pr-3 text-[12px] outline-none focus:ring-1 focus:ring-ring"
       />
       {open && q.trim() && (
-        <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-md border border-border bg-popover shadow-xl">
+        <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-xl border border-line bg-popover shadow-xl">
           {matches.map((c) => (
             <button
               key={c.id}
               type="button"
               onMouseDown={() => { onPick(c); setQ('') }}
-              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] hover:bg-accent"
+              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] hover:bg-cream"
             >
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary text-[9px] font-semibold">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-clay-tint text-[9px] font-bold text-clay">
                 {c.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
               </span>
-              <span className="min-w-0 flex-1 truncate font-medium">{c.name}</span>
-              <span className="text-[10px] text-muted-foreground">{c.phone}</span>
+              <span className="min-w-0 flex-1 truncate font-semibold text-ink">{c.name}</span>
+              <span className="text-[10px] text-ink-faint">{c.phone}</span>
             </button>
           ))}
           {/* name-only guest, no profile, linked to the booking client */}
           <button
             type="button"
             onMouseDown={() => { onPickNameOnly(q.trim()); setQ(''); setPhone('') }}
-            className="flex w-full items-center gap-2 border-t border-border bg-sky-500/5 px-2.5 py-2 text-left text-[12px] hover:bg-sky-500/10"
+            className="flex w-full items-center gap-2 border-t border-line bg-clay-tint/20 px-2.5 py-2 text-left text-[12px] hover:bg-clay-tint/40"
           >
-            <Plus className="h-3.5 w-3.5 shrink-0 text-sky-600" />
+            <Plus className="h-3.5 w-3.5 shrink-0 text-clay" />
             <span className="min-w-0 flex-1">
-              <span className="font-medium">Add &ldquo;{q.trim()}&rdquo; as guest</span>
-              <span className="block text-[10px] text-muted-foreground">name only, no profile, links to {primaryName}</span>
+              <span className="font-semibold text-ink">Add &ldquo;{q.trim()}&rdquo; as guest</span>
+              <span className="block text-[10px] text-ink-faint">name only, no profile, links to {primaryName}</span>
             </span>
           </button>
           {/* or create a full account for them, phone required */}
-          <div className="border-t border-border p-1.5">
+          <div className="border-t border-line p-1.5">
             <div className="flex items-center gap-1">
-              <UserPlus className="h-3.5 w-3.5 shrink-0 text-sky-600" />
+              <UserPlus className="h-3.5 w-3.5 shrink-0 text-clay" />
               <input
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder={`New account "${q}", phone`}
-                className="min-w-0 flex-1 rounded-md border border-input bg-background px-1.5 py-1 text-[11px] outline-none"
+                className="min-w-0 flex-1 rounded-[8px] border border-input bg-background px-1.5 py-1 text-[11px] outline-none"
               />
               <button
                 type="button"
                 disabled={!q.trim() || !phone.trim()}
                 onMouseDown={() => { if (q.trim() && phone.trim()) { onCreate(q.trim(), phone.trim()); setQ(''); setPhone('') } }}
-                className="rounded-md bg-primary px-2 py-1 text-[11px] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-[8px] bg-clay px-2 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-clay-deep disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Add
               </button>
             </div>
-            <p className="mt-1 pl-5 text-[10px] text-muted-foreground">phone required for an account, or use the guest option above</p>
+            <p className="mt-1 pl-5 text-[10px] text-ink-faint">phone required for an account, or use the guest option above</p>
           </div>
         </div>
       )}
