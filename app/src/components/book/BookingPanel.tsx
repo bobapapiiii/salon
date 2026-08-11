@@ -95,6 +95,8 @@ type Step = 'guest' | 'services' | 'details'
 interface SlotItem {
   serviceId: string
   offset: number
+  /** effective duration for this item, including any addon minutes */
+  durationMin: number
   /** a specific requested techId, a soft 'pref-female'/'pref-male' preference,
    *  or undefined for "any qualified tech" */
   techChoice?: string
@@ -107,23 +109,30 @@ export interface SlotGroup {
   parallel: boolean
   /** serviceId → requested techId / 'pref-female' / 'pref-male', when known */
   techChoices?: Record<string, string>
+  /** serviceId → effective total minutes (base + addons), when known —
+   *  falls back to the service's base durationMin when a service is missing here */
+  durations?: Record<string, number>
 }
 
-/** chained (back-to-back) or parallel (same start) layout for a set of services */
-export function layoutItems(svcIds: string[], parallel: boolean): SlotItem[] {
+/** chained (back-to-back) or parallel (same start) layout for a set of services.
+ *  `durationOf` lets callers supply an addon-aware duration per service; defaults
+ *  to the service's base durationMin */
+export function layoutItems(svcIds: string[], parallel: boolean, durationOf?: (id: string) => number): SlotItem[] {
   let offset = 0
   return svcIds.map((id) => {
-    const item = { serviceId: id, offset: parallel ? 0 : offset }
-    if (!parallel) offset += svcById[id].durationMin
+    const dur = durationOf?.(id) ?? svcById[id].durationMin
+    const item = { serviceId: id, offset: parallel ? 0 : offset, durationMin: dur }
+    if (!parallel) offset += dur
     return item
   })
 }
 
-export function spanOf(svcIds: string[], parallel: boolean): number {
+export function spanOf(svcIds: string[], parallel: boolean, durationOf?: (id: string) => number): number {
   if (svcIds.length === 0) return 0
+  const dur = (id: string) => durationOf?.(id) ?? svcById[id].durationMin
   return parallel
-    ? Math.max(...svcIds.map((id) => svcById[id].durationMin))
-    : svcIds.reduce((s, id) => s + svcById[id].durationMin, 0)
+    ? Math.max(...svcIds.map(dur))
+    : svcIds.reduce((s, id) => s + dur(id), 0)
 }
 
 /** can every item get a distinct qualified tech at start `s`? (greedy, least-flexible first).
@@ -138,7 +147,7 @@ export function fitsAt(appts: Appointment[], items: SlotItem[], s: number, block
   const used: { techId: string; from: number; to: number }[] = []
   for (const item of sorted) {
     const from = s + item.offset
-    const to = from + svcById[item.serviceId].durationMin
+    const to = from + item.durationMin
     let pool = boardTechs(getStaff().techs).filter(
       (t) =>
         t.skills.includes(item.serviceId) &&
@@ -168,9 +177,14 @@ export function findSlotsFor(appts: Appointment[], groups: SlotGroup[], blocks: 
 export function allSlotsFor(
   appts: Appointment[], groups: SlotGroup[], blocks: TimeBlock[] = [],
 ): { start: number; available: boolean }[] {
-  const items = groups.flatMap((g) => layoutItems(g.svcIds, g.parallel).map((it) => ({ ...it, techChoice: g.techChoices?.[it.serviceId] })))
+  const items = groups.flatMap((g) => {
+    const durationOf = (id: string) => g.durations?.[id] ?? svcById[id].durationMin
+    return layoutItems(g.svcIds, g.parallel, durationOf).map((it) => ({ ...it, techChoice: g.techChoices?.[it.serviceId] }))
+  })
   if (items.length === 0) return []
-  const span = Math.max(...groups.filter((g) => g.svcIds.length > 0).map((g) => spanOf(g.svcIds, g.parallel)))
+  const span = Math.max(
+    ...groups.filter((g) => g.svcIds.length > 0).map((g) => spanOf(g.svcIds, g.parallel, (id) => g.durations?.[id] ?? svcById[id].durationMin)),
+  )
   const out: { start: number; available: boolean }[] = []
   for (let s = 0; s <= DAY_MIN - span; s += SLOT_MIN) {
     out.push({ start: s, available: fitsAt(appts, items, s, blocks) })
@@ -243,6 +257,11 @@ export function BookingPanel({
   const priceWithAddons = (gi: number, svcId: string) =>
     svcById[svcId].price + (addonsByService[`${gi}:${svcId}`] ?? []).reduce((s, a) => s + a.price, 0)
 
+  // base service duration plus any addon minutes selected for it — the duration
+  // the slot-fitting engine and the details-page time editors should actually use
+  const effectiveDurationMin = (gi: number, svcId: string) =>
+    svcById[svcId].durationMin + (addonsByService[`${gi}:${svcId}`] ?? []).reduce((s, a) => s + a.mins, 0)
+
   const isParty = guests.length > 1
 
   const timesFor = useCallback((gi: number, svcId: string, defStart: number, dur: number) => {
@@ -256,7 +275,7 @@ export function BookingPanel({
       const n = { ...m }
       for (const sid of svcIds) {
         const key = `${gi}:${sid}`
-        const dur = svcById[sid].durationMin
+        const dur = effectiveDurationMin(gi, sid)
         const prev = n[key] ?? { start: defStart, end: defStart + dur }
         n[key] = { start: v, end: Math.min(DAY_MIN, v + (prev.end - prev.start)) }
       }
@@ -267,7 +286,7 @@ export function BookingPanel({
   const editEnd = (gi: number, svcId: string, defStart: number, v: number) => {
     const key = `${gi}:${svcId}`
     setTimeEdits((m) => {
-      const prev = m[key] ?? { start: defStart, end: defStart + svcById[svcId].durationMin }
+      const prev = m[key] ?? { start: defStart, end: defStart + effectiveDurationMin(gi, svcId) }
       return { ...m, [key]: { start: prev.start, end: Math.max(prev.start + SLOT_MIN, v) } }
     })
   }
@@ -312,14 +331,16 @@ export function BookingPanel({
     () => guests.map((_g, i) => {
       const svcIds = svcsByGuest[i] ?? []
       const techChoices: Record<string, string> = {}
+      const durations: Record<string, number> = {}
       for (const sid of svcIds) {
         const choice = techChoiceFor(i, sid)
         if (choice) techChoices[sid] = choice
+        durations[sid] = effectiveDurationMin(i, sid)
       }
-      return { svcIds, parallel: parallelGuest[i] ?? false, techChoices }
+      return { svcIds, parallel: parallelGuest[i] ?? false, techChoices, durations }
     }).filter((x) => x.svcIds.length > 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [guests, svcsByGuest, parallelGuest, typeByService, techByService],
+    [guests, svcsByGuest, parallelGuest, typeByService, techByService, addonsByService],
   )
 
   const allTechsReady = guests.length > 0 &&
@@ -427,13 +448,10 @@ export function BookingPanel({
     const groupNote = [isParty && groupName.trim() ? `Group: ${groupName.trim()}` : '', note]
       .filter(Boolean).join(' · ') || undefined
     guests.forEach((g, gi) => {
-      const items = layoutItems(svcsByGuest[gi] ?? [], parallelGuest[gi] ?? false)
+      const items = layoutItems(svcsByGuest[gi] ?? [], parallelGuest[gi] ?? false, (id) => effectiveDurationMin(gi, id))
       items.forEach((item, ii) => {
-        const svc = svcById[item.serviceId]
-        const t = timesFor(gi, item.serviceId, time! + item.offset, svc.durationMin)
+        const t = timesFor(gi, item.serviceId, time! + item.offset, effectiveDurationMin(gi, item.serviceId))
         const addons = addonsByService[`${gi}:${item.serviceId}`] ?? []
-        const addonMins = addons.reduce((m, a) => m + a.mins, 0)
-        const manual = timeEdits[`${gi}:${item.serviceId}`] != null
         const choiceType = typeByService[`${gi}:${item.serviceId}`] ?? 'any'
         const special = choiceType === 'pref-female' || choiceType === 'pref-male' || choiceType === 'issue'
         const techVal = special ? choiceType : techByService[`${gi}:${item.serviceId}`] ?? (gi === 0 && ii === 0 && preTech ? preTech : 'first')
@@ -442,7 +460,7 @@ export function BookingPanel({
           serviceId: item.serviceId,
           techId: techVal,
           startMin: t.start,
-          durationMin: t.end - t.start + (manual ? 0 : addonMins),
+          durationMin: t.end - t.start,
           notes: groupNote,
           addons,
           guestOf: g.isGuest ? guests[0]?.clientId : undefined,
@@ -459,63 +477,75 @@ export function BookingPanel({
       return { svc, when: `${['Apr', 'May', 'Jun'][i]} ${4 + i * 7}` }
     })
 
+  // shared column template so the time editor (row A) and technician picker (row B)
+  // line up cleanly when stacked — a fixed-width left gutter (to match the Clock icon
+  // in row A) plus a 2-column grid (fixed left column, flexible right column)
+  const gridRow = (icon: React.ReactNode, left: React.ReactNode, right: React.ReactNode) => (
+    <div className="flex items-center gap-1.5">
+      <span className="flex h-3 w-3 shrink-0 items-center justify-center">{icon}</span>
+      <div className="grid min-w-0 flex-1 grid-cols-[112px_1fr] items-center gap-1.5">
+        {left}
+        {right}
+      </div>
+    </div>
+  )
+
   const techSelect = (gi: number, svcId: string) => {
     const key = `${gi}:${svcId}`
     const type = typeByService[key] ?? 'any'
     const tech = techByService[key] ?? (gi === 0 && preTech ? preTech : 'first')
-    return (
-      <div className="flex min-w-0 flex-1 gap-1.5">
-        <Sel
-          value={type}
-          onChange={(v) => setTypeByService((m) => ({ ...m, [key]: v }))}
-          title="Request type"
-          className="w-[112px] shrink-0"
-        >
-          <option value="any">Any tech</option>
-          <option value="requested">Requested</option>
-          <option value="pref-female">Female preferred</option>
-          <option value="pref-male">Male preferred</option>
-          <option value="issue">Issue</option>
-        </Sel>
-        <Sel
-          value={tech}
-          disabled={type !== 'any' && type !== 'requested'}
-          onChange={(v) => setTechByService((m) => ({ ...m, [key]: v }))}
-          title="Technician"
-          className="min-w-0 flex-1"
-        >
-          {type === 'requested' && tech === 'first' && <option value="first" disabled>Choose technician…</option>}
-          {type !== 'requested' && <option value="first">First available</option>}
-          {techs.filter((t) => t.skills.includes(svcId)).map((t) => (
-            <option key={t.id} value={t.id}>{t.name}</option>
-          ))}
-        </Sel>
-      </div>
+    return gridRow(
+      null,
+      <Sel
+        value={type}
+        onChange={(v) => setTypeByService((m) => ({ ...m, [key]: v }))}
+        title="Request type"
+        className="w-full"
+      >
+        <option value="any">Any tech</option>
+        <option value="requested">Requested</option>
+        <option value="pref-female">Female preferred</option>
+        <option value="pref-male">Male preferred</option>
+        <option value="issue">Issue</option>
+      </Sel>,
+      <Sel
+        value={tech}
+        disabled={type !== 'any' && type !== 'requested'}
+        onChange={(v) => setTechByService((m) => ({ ...m, [key]: v }))}
+        title="Technician"
+        className="min-w-0 w-full"
+      >
+        {type === 'requested' && tech === 'first' && <option value="first" disabled>Choose technician…</option>}
+        {type !== 'requested' && <option value="first">First available</option>}
+        {techs.filter((t) => t.skills.includes(svcId)).map((t) => (
+          <option key={t.id} value={t.id}>{t.name}</option>
+        ))}
+      </Sel>,
     )
   }
 
   // pretty start + duration editor for each service on the details page
   const timeEditor = (gi: number, svcIds: string[], defStart: number, svcIdForEnd: string) => {
-    const dur0 = svcById[svcIdForEnd].durationMin
+    const dur0 = effectiveDurationMin(gi, svcIdForEnd)
     const cur = timesFor(gi, svcIdForEnd, defStart, dur0)
-    return (
-      <div className="flex items-center gap-1.5">
-        <Clock className="h-3 w-3 shrink-0 text-ink-faint" />
-        <Sel value={cur.start} onChange={(v) => editStart(gi, svcIds, defStart, Number(v))} title="Start time" className="tnum w-[104px] shrink-0 font-semibold">
-          {Array.from({ length: DAY_MIN / increment }, (_, i) => i * increment).map((m) => (
-            <option key={m} value={m}>{fmtTime(m)}</option>
-          ))}
-        </Sel>
-        <span className="text-[10px] font-semibold text-ink-faint">for</span>
+    return gridRow(
+      <Clock className="h-3 w-3 text-ink-faint" />,
+      <Sel value={cur.start} onChange={(v) => editStart(gi, svcIds, defStart, Number(v))} title="Start time" className="tnum w-full font-semibold">
+        {Array.from({ length: DAY_MIN / increment }, (_, i) => i * increment).map((m) => (
+          <option key={m} value={m}>{fmtTime(m)}</option>
+        ))}
+      </Sel>,
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className="shrink-0 text-[10px] font-semibold text-ink-faint">for</span>
         <Sel
           value={cur.end - cur.start}
           onChange={(v) => editEnd(gi, svcIdForEnd, defStart, cur.start + Number(v))}
           title="Duration"
-          className="tnum w-[80px] shrink-0 font-semibold"
+          className="tnum min-w-0 w-full font-semibold"
         >
           {DUR_OPTS.map((d) => <option key={d} value={d}>{d}m</option>)}
         </Sel>
-      </div>
+      </div>,
     )
   }
 
@@ -833,8 +863,8 @@ export function BookingPanel({
                         {/* start picker + dynamic end: ends whenever the LONGEST service finishes —
                             only meaningful once a time is actually picked */}
                         {time != null && (() => {
-                          const cur = timesFor(gi, svcs[0], time, svcById[svcs[0]].durationMin)
-                          const longest = Math.max(...svcs.map((id) => timesFor(gi, id, time, svcById[id].durationMin).end - time), 0)
+                          const cur = timesFor(gi, svcs[0], time, effectiveDurationMin(gi, svcs[0]))
+                          const longest = Math.max(...svcs.map((id) => timesFor(gi, id, time, effectiveDurationMin(gi, id)).end - time), 0)
                           const end = time + longest
                           return (
                             <div className="mb-2.5 flex items-center gap-1.5">
@@ -857,7 +887,7 @@ export function BookingPanel({
                             being requested first */}
                         <div className="space-y-2">
                           {svcs.map((id) => {
-                            const cur = timesFor(gi, id, time ?? 0, svcById[id].durationMin)
+                            const cur = timesFor(gi, id, time ?? 0, effectiveDurationMin(gi, id))
                             return (
                               <div key={id} className="rounded-xl border border-line p-2">
                                 <div className="flex items-center gap-2 text-sm">
@@ -883,9 +913,9 @@ export function BookingPanel({
                         </div>
                       </div>
                     )}
-                    {!isPar && layoutItems(svcs, false).map((item) => {
+                    {!isPar && layoutItems(svcs, false, (id) => effectiveDurationMin(gi, id)).map((item) => {
                       const svc0 = svcById[item.serviceId]
-                      const cur = timesFor(gi, item.serviceId, (time ?? 0) + item.offset, svc0.durationMin)
+                      const cur = timesFor(gi, item.serviceId, (time ?? 0) + item.offset, effectiveDurationMin(gi, item.serviceId))
                       return (
                         <div key={item.serviceId} className="rounded-xl border border-line p-3">
                           <div className="flex items-center justify-between text-sm">

@@ -1131,7 +1131,10 @@ export function AppointmentBook() {
     groups: SlotGroup[], startMin: number, ignoreIds?: Set<string>,
   ): Appointment[] | null => {
     if (!autoRelocateNonRequested) return null
-    const items = groups.flatMap((g) => layoutItems(g.svcIds, g.parallel).map((it) => ({ ...it, techChoice: g.techChoices?.[it.serviceId] })))
+    const items = groups.flatMap((g) => {
+      const durationOf = (id: string) => g.durations?.[id] ?? svcById[id].durationMin
+      return layoutItems(g.svcIds, g.parallel, durationOf).map((it) => ({ ...it, techChoice: g.techChoices?.[it.serviceId] }))
+    })
     if (items.length === 0) return null
     const skip = ignoreIds ?? new Set<string>()
     const sorted = [...items].sort((a, b) =>
@@ -1141,7 +1144,7 @@ export function AppointmentBook() {
     const allMoves = new Map<string, Appointment>()
     for (const item of sorted) {
       const from = startMin + item.offset
-      const to = from + svcById[item.serviceId].durationMin
+      const to = from + item.durationMin
       let candidates = boardTechs(getStaff().techs)
         .filter((t) =>
           t.skills.includes(item.serviceId) && withinShift(t.id, from, to) &&
