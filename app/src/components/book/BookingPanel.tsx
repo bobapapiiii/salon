@@ -279,15 +279,16 @@ export function BookingPanel({
       .slice(0, 8)
   }, [q, clients])
 
-  // has the salon decided who should do this service? "Any tech" / gender
-  // preference / issue are all decisions on their own; "Requested" also
-  // needs an actual name picked. Until this is true for every service,
-  // times can't be shown — who ends up free depends on the answer
+  // "Any tech" (the default) / gender preference / issue are all fine as-is;
+  // "Requested" is the one case that needs an actual name picked before the
+  // times shown would mean anything — who ends up free depends on the answer
   const serviceReady = (gi: number, svcId: string): boolean => {
     const key = `${gi}:${svcId}`
-    const type = typeByService[key] ?? ''
-    if (type === '') return false
-    if (type === 'requested') return !!techByService[key]
+    const type = typeByService[key] ?? 'any'
+    if (type === 'requested') {
+      const t = techByService[key]
+      return !!t && t !== 'first'
+    }
     return true
   }
 
@@ -296,7 +297,7 @@ export function BookingPanel({
   // under "Any tech" without formally flagging it as Requested)
   const techChoiceFor = (gi: number, svcId: string): string | undefined => {
     const key = `${gi}:${svcId}`
-    const type = typeByService[key] ?? ''
+    const type = typeByService[key] ?? 'any'
     if (type === 'pref-female' || type === 'pref-male') return type
     if (type === 'any' || type === 'requested') {
       const t = techByService[key]
@@ -449,8 +450,8 @@ export function BookingPanel({
 
   const techSelect = (gi: number, svcId: string) => {
     const key = `${gi}:${svcId}`
-    const type = typeByService[key] ?? ''
-    const tech = techByService[key] ?? (type === 'requested' ? '' : gi === 0 && preTech ? preTech : 'first')
+    const type = typeByService[key] ?? 'any'
+    const tech = techByService[key] ?? (gi === 0 && preTech ? preTech : 'first')
     return (
       <div className="flex min-w-0 flex-1 gap-1.5">
         <Sel
@@ -459,7 +460,6 @@ export function BookingPanel({
           title="Request type"
           className="w-[112px] shrink-0"
         >
-          <option value="" disabled>Choose…</option>
           <option value="any">Any tech</option>
           <option value="requested">Requested</option>
           <option value="pref-female">Female preferred</option>
@@ -473,8 +473,8 @@ export function BookingPanel({
           title="Technician"
           className="min-w-0 flex-1"
         >
-          {type === 'requested' && tech === '' && <option value="" disabled>Choose technician…</option>}
-          <option value="first">First available</option>
+          {type === 'requested' && tech === 'first' && <option value="first" disabled>Choose technician…</option>}
+          {type !== 'requested' && <option value="first">First available</option>}
           {techs.filter((t) => t.skills.includes(svcId)).map((t) => (
             <option key={t.id} value={t.id}>{t.name}</option>
           ))}
@@ -772,20 +772,21 @@ export function BookingPanel({
                       )}
                     </div>
                     {parallelBanner(gi)}
-                    {isPar && time != null && (
+                    {isPar && (
                       <div className="rounded-lg border border-sky-500/40 p-3">
                         <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-sky-600">
                           <Zap className="h-3.5 w-3.5" /> Parallel Services, shared start
                         </div>
-                        {/* start picker + dynamic end: ends whenever the LONGEST service finishes */}
-                        {(() => {
-                          const cur = timesFor(gi, svcs[0], time!, svcById[svcs[0]].durationMin)
-                          const longest = Math.max(...svcs.map((id) => timesFor(gi, id, time!, svcById[id].durationMin).end - time!), 0)
-                          const end = time! + longest
+                        {/* start picker + dynamic end: ends whenever the LONGEST service finishes —
+                            only meaningful once a time is actually picked */}
+                        {time != null && (() => {
+                          const cur = timesFor(gi, svcs[0], time, svcById[svcs[0]].durationMin)
+                          const longest = Math.max(...svcs.map((id) => timesFor(gi, id, time, svcById[id].durationMin).end - time), 0)
+                          const end = time + longest
                           return (
                             <div className="mb-2.5 flex items-center gap-1.5">
                               <Clock className="h-3 w-3 shrink-0 text-muted-foreground" />
-                              <Sel value={cur.start} onChange={(v) => editStart(gi, svcs, time!, Number(v))} title="Shared start time" className="tnum w-[86px] shrink-0 font-semibold">
+                              <Sel value={cur.start} onChange={(v) => editStart(gi, svcs, time, Number(v))} title="Shared start time" className="tnum w-[86px] shrink-0 font-semibold">
                                 {Array.from({ length: DAY_MIN / increment }, (_, i) => i * increment).map((m) => (
                                   <option key={m} value={m}>{fmtTime(m)}</option>
                                 ))}
@@ -798,18 +799,23 @@ export function BookingPanel({
                             </div>
                           )
                         })()}
+                        {/* services + technician choices show up front, regardless of whether a
+                            time's been picked yet — picking a time in the rail needs to know who's
+                            being requested first */}
                         <div className="space-y-2">
                           {svcs.map((id) => {
-                            const cur = timesFor(gi, id, time!, svcById[id].durationMin)
+                            const cur = timesFor(gi, id, time ?? 0, svcById[id].durationMin)
                             return (
                               <div key={id} className="rounded-lg border border-border p-2">
                                 <div className="flex items-center gap-2 text-sm">
                                   <span className="min-w-0 flex-1 truncate font-medium">{svcById[id].name}
-                                    <span className="ml-1 text-[10.5px] font-normal text-muted-foreground">${priceWithAddons(gi, id)} · ends {fmtTime(cur.end)}</span>
+                                    <span className="ml-1 text-[10.5px] font-normal text-muted-foreground">
+                                      ${priceWithAddons(gi, id)}{time != null && ` · ends ${fmtTime(cur.end)}`}
+                                    </span>
                                   </span>
                                   <Sel
                                     value={cur.end - cur.start}
-                                    onChange={(v) => editEnd(gi, id, time!, cur.start + Number(v))}
+                                    onChange={(v) => editEnd(gi, id, time ?? 0, cur.start + Number(v))}
                                     title="Duration"
                                     className="tnum w-[70px] shrink-0 font-semibold"
                                   >
@@ -889,7 +895,7 @@ export function BookingPanel({
               <div className="text-[11px] text-muted-foreground">
                 {allSvcs.length === 0 || !guests.every((_g, i) => (svcsByGuest[i] ?? []).length > 0)
                   ? isParty ? 'Pick services for each guest' : 'Select services to view openings'
-                  : !allTechsReady ? 'Choose a technician for each service to see available times'
+                  : !allTechsReady ? 'Choose who’s requested to see available times'
                     : 'No slots this day'}
               </div>
             )}
