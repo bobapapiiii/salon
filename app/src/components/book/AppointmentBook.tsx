@@ -38,6 +38,16 @@ const TECH_H = 64
 const DAY_MIN = CLOSE_MIN - OPEN_MIN
 const DEMO_NOW_MIN = 5 * 60 + 30 // demo "now" at 1:30 PM
 
+// shared between setStatus() and saveDetail() so a status change logs the
+// same way whether it came from the right-click menu or the edit panel
+const STATUS_LOG: Record<string, string> = {
+  booked: 'Set back to booked',
+  confirmed: 'Confirmed',
+  checked_in: `Checked in at ${fmtTime(DEMO_NOW_MIN)}`,
+  in_service: `Service started at ${fmtTime(DEMO_NOW_MIN)}`,
+  completed: `Service completed at ${fmtTime(DEMO_NOW_MIN)}`,
+}
+
 type Column = { kind: 'tech'; tech: Tech } | { kind: 'collapsed'; teamId: string }
 
 interface ClipService {
@@ -1693,13 +1703,6 @@ export function AppointmentBook() {
       ? appts.filter((x) => x.parallelGroup === a.parallelGroup && x.clientName === a.clientName)
       : [a]
     const ids = new Set(targets.map((t) => t.id))
-    const STATUS_LOG: Record<string, string> = {
-      booked: 'Set back to booked',
-      confirmed: 'Confirmed',
-      checked_in: `Checked in at ${fmtTime(DEMO_NOW_MIN)}`,
-      in_service: `Service started at ${fmtTime(DEMO_NOW_MIN)}`,
-      completed: `Service completed at ${fmtTime(DEMO_NOW_MIN)}`,
-    }
     commit(appts.map((x) => (ids.has(x.id)
       ? {
           ...x,
@@ -1812,6 +1815,19 @@ export function AppointmentBook() {
       }
       // a specific tech clears the flag
       return { ...u, issue: undefined, log: [...(u.log ?? []), logEntry('Edited appointment details')] }
+    }).map((u) => {
+      // the Status dropdown can change status right here in the edit panel —
+      // stamp the same checked-in/started/completed timestamps setStatus()
+      // would, but only on an actual transition, not every unrelated save
+      const orig = appts.find((a) => a.id === u.id)
+      if (!orig || orig.status === u.status) return u
+      return {
+        ...u,
+        checkedInMin: u.status === 'checked_in' ? DEMO_NOW_MIN : u.status === 'confirmed' || u.status === 'booked' ? undefined : u.checkedInMin,
+        startedMin: u.status === 'in_service' ? DEMO_NOW_MIN : u.status === 'checked_in' ? undefined : u.startedMin,
+        completedMin: u.status === 'completed' ? DEMO_NOW_MIN : u.completedMin,
+        log: [...(u.log ?? []), logEntry(STATUS_LOG[u.status] ?? `Status set to ${u.status}`)],
+      }
     })
     const moving: MovingItem[] = keep.map((u) => ({
       id: u.id, techId: u.techId, startMin: u.startMin, durationMin: u.durationMin, serviceId: u.serviceId,
@@ -1899,6 +1915,9 @@ export function AppointmentBook() {
         break
       case 'sendtext':
         showFlash(`✉ Text sent to ${a.clientName}`)
+        break
+      case 'log':
+        setLogApptId(a.id)
         break
       case 'cancel': {
         setDetailId(null)
@@ -2332,7 +2351,7 @@ export function AppointmentBook() {
           e.stopPropagation()
           if (!isOverview) { openDetail(a.id) }
         }}
-        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setMenu({ x: e.clientX, y: e.clientY, apptId: a.id }) }}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setHoverTip(null); openDetail(a.id) }}
         className={`group/blk absolute z-10 select-none rounded-[6px] text-left ${
           isMoving ? 'z-40 cursor-grabbing' : 'transition-[box-shadow,transform,opacity] duration-150 ease-out-expo'
         } ${

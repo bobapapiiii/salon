@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  CalendarX, ClipboardCopy, Clock, CreditCard, Heart, Link2, Mail, MessageSquare, Phone, RefreshCw, X,
+  CalendarX, ClipboardCopy, Clock, CreditCard, Heart, Link2, Mail, MessageSquare, Phone, RefreshCw, ScrollText, X,
 } from 'lucide-react'
 import type { Appointment, ClientRecord } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, fmtTime } from '@/lib/booking-types'
@@ -11,7 +11,7 @@ import { svcById } from '@/lib/services-store'
 
 const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
 
-export type DetailAction = 'rebook' | 'cancel' | 'copy' | 'sendtext' | 'checkout'
+export type DetailAction = 'rebook' | 'cancel' | 'copy' | 'sendtext' | 'checkout' | 'log'
 
 interface Props {
   appt: Appointment
@@ -258,6 +258,9 @@ export function AppointmentDetail({ appt, group, clients, error, onSave, onActio
           </button>
           <button onClick={() => onAction('sendtext')} title="Text the client" className="flex flex-1 items-center justify-center gap-1 rounded-[8px] border border-line py-1.5 text-[11px] font-semibold text-ink-faint transition-colors hover:bg-cream hover:text-ink">
             <MessageSquare className="h-3 w-3" /> Text
+          </button>
+          <button onClick={() => onAction('log')} title="Show appointment log" className="flex items-center justify-center gap-1 rounded-[8px] border border-line px-2.5 py-1.5 text-[11px] font-semibold text-ink-faint transition-colors hover:bg-cream hover:text-ink">
+            <ScrollText className="h-3 w-3" />
           </button>
           <button onClick={() => onAction('cancel')} title="Cancel this appointment" className="flex items-center justify-center gap-1 rounded-[8px] border border-rust/40 px-2.5 py-1.5 text-[11px] font-semibold text-rust transition-colors hover:bg-rust-tint">
             <CalendarX className="h-3 w-3" /> Cancel
