@@ -1035,6 +1035,35 @@ export function AppointmentBook() {
     return pool.sort((a, b) => (apptCountByTech.get(a.id) ?? 0) - (apptCountByTech.get(b.id) ?? 0))[0] ?? null
   }
 
+  // resolve a placeholder tech choice ('first' / pref-female / pref-male /
+  // 'issue') at [from,to), never coming back empty-handed if any qualified
+  // tech exists at all. Tries, in order: (1) a genuinely free tech, (2)
+  // quietly making room by relocating a non-requested squatter, (3) falling
+  // back to the least-booked qualified tech regardless of conflicts —
+  // flagging `doubled` so the caller can ask the salon before committing
+  const resolvePlaceholder = (
+    choice: string, serviceId: string, from: number, to: number, ignoreIds?: Set<string>, excludeTechIds?: Set<string>,
+  ): { techId: string | null; moves: Appointment[]; doubled: boolean } => {
+    const free = resolveChoice(choice, serviceId, from, to, ignoreIds, excludeTechIds)
+    if (free) return { techId: free.id, moves: [], doubled: false }
+    let pool = boardTechs(getStaff().techs).filter((t) =>
+      t.skills.includes(serviceId) && withinShift(t.id, from, to) && !excludeTechIds?.has(t.id),
+    )
+    if (choice === 'pref-female' || choice === 'pref-male') {
+      const g = choice === 'pref-female' ? 'female' : 'male'
+      const gp = pool.filter((t) => t.gender === g)
+      if (gp.length > 0) pool = gp
+    }
+    pool = pool.sort((a, b) => (apptCountByTech.get(a.id) ?? 0) - (apptCountByTech.get(b.id) ?? 0))
+    if (autoRelocateNonRequested) {
+      for (const t of pool) {
+        const moved = makeRoom(t.id, from, to, ignoreIds)
+        if (moved) return { techId: t.id, moves: moved, doubled: false }
+      }
+    }
+    return pool[0] ? { techId: pool[0].id, moves: [], doubled: true } : { techId: null, moves: [], doubled: false }
+  }
+
   // free a tech's [from,to) for a tech-requested booking: move any NON-requested
   // appointment sitting there to a qualified tech who's actually free — and if
   // the best candidate is busy too, chase that squatter off of THEM as well,
@@ -1506,26 +1535,35 @@ export function AppointmentBook() {
       // to a specific tech is what should clear squatters out of the way,
       // independent of whether the separate "Requested" flag was also set
       const pinned = techId !== 'first' && techId !== 'pref-female' && techId !== 'pref-male' && techId !== 'issue'
+      // set when the placeholder-resolution branch below already decided the
+      // outcome (silently relocated, or intentionally doubled) — skip the
+      // generic clash handling further down so it isn't re-blocked
+      let placeholderResolved = false
       if (techId === 'first' || techId === 'pref-female' || techId === 'pref-male' || techId === 'issue') {
         // exclude techs already assigned a same-time service in THIS booking,
         // so parallel services never land on one tech (back-to-back still can)
         const busy = new Set(assigned.filter((x) => overlaps(from, to, x.from, x.to)).map((x) => x.techId))
-        const freePool = resolveChoice(techId, s.serviceId, from, to, undefined, busy)
-        if (!freePool) { showFlash(`⚠ No tech free for ${svc.name} at ${fmtTime(from)}`); return }
-        techId = freePool.id
+        const { techId: resolved, moves, doubled } = resolvePlaceholder(techId, s.serviceId, from, to, new Set(relocated.keys()), busy)
+        if (!resolved) { showFlash(`⚠ No qualified tech for ${svc.name} at ${fmtTime(from)}`); return }
+        techId = resolved
+        placeholderResolved = true
+        if (moves.length > 0) for (const m of moves) relocated.set(m.id, m)
+        if (doubled) forceDouble = true // no room anywhere — ask before double booking
       }
       const selfClash = assigned.some((x) => x.techId === techId && overlaps(from, to, x.from, x.to))
       if (selfClash) { showFlash(`⚠ ${techOf(techId).name} is busy at ${fmtTime(from)}`); return }
-      const clash = appts.some((a) =>
-        !relocated.has(a.id) && a.techId === techId && overlaps(from, to, a.startMin, a.startMin + a.durationMin))
-      if (clash && (pinned || s.techRequested)) {
-        // booked for THIS specific tech: move the non-requested booking out of her way
-        const moved = autoRelocateNonRequested ? makeRoom(techId, from, to) : null
-        if (moved) for (const m of moved) relocated.set(m.id, m)
-        else forceDouble = true // feature off, or nowhere to move it — ask about double booking
-      } else if (clash && !allowOverlap) {
-        showFlash(`⚠ ${techOf(techId).name} is busy at ${fmtTime(from)}`)
-        return
+      if (!placeholderResolved) {
+        const clash = appts.some((a) =>
+          !relocated.has(a.id) && a.techId === techId && overlaps(from, to, a.startMin, a.startMin + a.durationMin))
+        if (clash && (pinned || s.techRequested)) {
+          // booked for THIS specific tech: move the non-requested booking out of her way
+          const moved = autoRelocateNonRequested ? makeRoom(techId, from, to) : null
+          if (moved) for (const m of moved) relocated.set(m.id, m)
+          else forceDouble = true // feature off, or nowhere to move it — ask about double booking
+        } else if (clash && !allowOverlap) {
+          showFlash(`⚠ ${techOf(techId).name} is busy at ${fmtTime(from)}`)
+          return
+        }
       }
       // her personal timing/rate applies unless the panel hand-set the duration
       const st = svcForTech(techId, s.serviceId)
@@ -1898,16 +1936,25 @@ export function AppointmentBook() {
           u.techId !== 'first' && u.techId !== 'pref-female' && u.techId !== 'pref-male' && u.techId !== 'issue')
         .map((u) => u.id),
     )
+    // non-requested appointments auto-moved to make room (both for pinned
+    // reassignments below AND placeholder resolution just above them)
+    const relocated = new Map<string, Appointment>()
+    // placeholder-resolved services that had nowhere to go, even after
+    // trying to make room — they're being intentionally double-booked, and
+    // the salon must confirm before this save commits
+    const forcedDoubleIds = new Set<string>()
     const keep = updated.filter((u) => !removedIds.includes(u.id)).map((u) => {
       if (u.techId === 'first' || u.techId === 'pref-female' || u.techId === 'pref-male' || u.techId === 'issue') {
-        const resolved = resolveChoice(u.techId, u.serviceId, u.startMin, u.startMin + u.durationMin, u.id)
+        const { techId: resolved, moves, doubled } = resolvePlaceholder(u.techId, u.serviceId, u.startMin, u.startMin + u.durationMin, new Set([u.id]))
+        if (moves.length > 0) for (const m of moves) relocated.set(m.id, m)
+        if (doubled && resolved) forcedDoubleIds.add(u.id)
         return {
           ...u,
-          techId: resolved?.id ?? u.techId,
+          techId: resolved ?? u.techId,
           issue: u.techId === 'issue' ? true : undefined,
           techRequested: undefined, // an auto-assigned choice isn't a by-name request
           requestedTechChoice: u.techId === 'pref-female' || u.techId === 'pref-male' ? (u.techId as 'pref-female' | 'pref-male') : undefined,
-          log: [...(u.log ?? []), logEntry(`Edited, auto-assigned to ${techOf(resolved?.id ?? u.techId).name}`)],
+          log: [...(u.log ?? []), logEntry(`Edited, auto-assigned to ${techOf(resolved ?? u.techId).name}`)],
         }
       }
       // a specific tech clears the flag
@@ -1937,7 +1984,6 @@ export function AppointmentBook() {
     // approving a tech-requested service does
     const keepIds = new Set(keep.map((u) => u.id))
     const ignoreIds = new Set([...keepIds, ...removedIds])
-    const relocated = new Map<string, Appointment>()
     for (const u of keep) {
       if (!pinnedIds.has(u.id)) continue
       const clash = appts.some((a) =>
@@ -1951,7 +1997,7 @@ export function AppointmentBook() {
       if (moved) for (const m of moved) relocated.set(m.id, m)
     }
 
-    const err = [...checkMove(moving, new Set(relocated.keys())).values()].find(Boolean)
+    const err = [...checkMove(moving, new Set([...relocated.keys(), ...forcedDoubleIds])).values()].find(Boolean)
     if (err) { setDetailError(err); return }
     const doSave = (finalKeep: Appointment[] = keep) => {
       const byId = new Map(finalKeep.map((u) => [u.id, u]))
@@ -1984,10 +2030,25 @@ export function AppointmentBook() {
           : finalKeep.some((u) => u.issue) ? '⚠ Marked as issue, assigned to an available tech' : '✓ Appointment updated')
     }
     const afterGenderCheck = (finalKeep: Appointment[] = keep) => {
+      // a placeholder-resolved service had nowhere to go, even after trying
+      // to make room — it's being intentionally double-booked, always
+      // confirm before saving, regardless of the double-booking setting
+      if (forcedDoubleIds.size > 0) {
+        const hit = finalKeep.find((u) =>
+          forcedDoubleIds.has(u.id) &&
+          appts.some((a) =>
+            !keepIds.has(a.id) && !removedIds.includes(a.id) && !relocated.has(a.id) && a.techId === u.techId &&
+            overlaps(u.startMin, u.startMin + u.durationMin, a.startMin, a.startMin + a.durationMin)))
+        if (hit) {
+          setPendingOverlap({ techId: hit.techId, timeLabel: fmtTime(hit.startMin), apply: () => doSave(finalKeep) })
+          return
+        }
+      }
       // double-booking is enabled, warn before saving one (only for clashes we
       // couldn't clear a path for above)
       if (allowOverlap) {
         const hit = finalKeep.find((u) =>
+          !forcedDoubleIds.has(u.id) &&
           appts.some((a) =>
             !keepIds.has(a.id) && !removedIds.includes(a.id) && !relocated.has(a.id) && a.techId === u.techId &&
             overlaps(u.startMin, u.startMin + u.durationMin, a.startMin, a.startMin + a.durationMin)))

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  ArrowLeftRight, Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, Link2, Mail, MessageSquare, Phone, RefreshCw, ScrollText, X,
+  AlertTriangle, ArrowLeftRight, Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, Link2, Mail, MessageSquare, Phone, RefreshCw, ScrollText, X,
 } from 'lucide-react'
 import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, fmtTime } from '@/lib/booking-types'
@@ -358,14 +358,14 @@ export function AppointmentDetail({
             return (
               <button
                 key={s}
-                disabled={status === 'blocked'}
                 onClick={() => {
                   if (selected) return
                   if (status === 'open') applySlot(s)
                   else if (status === 'movable' && moves) onRequestMakeRoom(moves, s, () => applySlot(s))
+                  else applySlot(s)
                 }}
                 title={
-                  status === 'blocked' ? 'No qualified tech free at this time'
+                  status === 'blocked' ? 'No qualified tech free — saving this will double-book a tech'
                   : status === 'movable' ? `Selecting this moves ${moves!.length} other booking${moves!.length > 1 ? 's' : ''} to make room`
                   : undefined
                 }
@@ -376,10 +376,10 @@ export function AppointmentDetail({
                       ? 'border-line font-bold text-ink hover:bg-cream'
                       : status === 'movable'
                         ? 'border-amber-400/60 bg-amber-400/10 font-bold text-amber-700 hover:bg-amber-400/20'
-                        : 'cursor-not-allowed border-transparent font-normal text-ink-faint/35'
+                        : 'border-rose-400/60 bg-rose-400/10 font-bold text-rose-700 hover:bg-rose-400/20'
                 }`}
               >
-                {status === 'movable' ? <ArrowLeftRight className="h-3 w-3 shrink-0" /> : <Clock className="h-3 w-3 shrink-0" />}
+                {status === 'movable' ? <ArrowLeftRight className="h-3 w-3 shrink-0" /> : status === 'blocked' ? <AlertTriangle className="h-3 w-3 shrink-0" /> : <Clock className="h-3 w-3 shrink-0" />}
                 {fmtTime(s)}
               </button>
             )
