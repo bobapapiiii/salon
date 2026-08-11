@@ -46,6 +46,15 @@ const STATUS_DOT: Record<Appointment['status'], string> = {
   no_show: '#B3402F',
 }
 
+/** matches the heart colors used on the calendar card, so the edit panel reads the same way */
+const REQUEST_HEART_COLOR: Record<string, string | undefined> = {
+  requested: '#16A34A',
+  'pref-female': '#EC4899',
+  'pref-male': '#2563EB',
+  issue: '#F59E0B',
+  any: undefined,
+}
+
 export function AppointmentDetail({ appt, group, clients, error, onSave, onAction, onCopyService, onViewProfile, onClose }: Props) {
   const increment = useSettingsStore().booking.increment
   const TIME_OPTIONS = Array.from({ length: (CLOSE_MIN - OPEN_MIN) / increment }, (_, i) => i * increment)
@@ -119,6 +128,12 @@ export function AppointmentDetail({ appt, group, clients, error, onSave, onActio
           <div className="space-y-2">
             {draft.filter((d) => !removed.includes(d.id)).map((d) => {
               const isRequested = !!d.techRequested
+              const requestKind =
+                d.techId === 'pref-female' || d.techId === 'pref-male' || d.techId === 'issue' ? d.techId
+                : d.techRequested ? 'requested'
+                : d.requestedTechChoice === 'pref-female' || d.requestedTechChoice === 'pref-male' ? d.requestedTechChoice
+                : 'any'
+              const heartColor = REQUEST_HEART_COLOR[requestKind]
               return (
                 <div key={d.id} className={`rounded-xl border p-2.5 ${isRequested ? 'border-clay/30 bg-clay-tint/30' : 'border-line'}`}>
                   <div className="flex items-center gap-2">
@@ -171,16 +186,11 @@ export function AppointmentDetail({ appt, group, clients, error, onSave, onActio
                   </div>
                   <div className="mt-1.5 flex items-center gap-2">
                     <span className="flex shrink-0 items-center gap-1 text-[10.5px] font-bold uppercase tracking-wide text-ink-faint">
-                      {isRequested && <Heart className="h-3 w-3 fill-clay text-clay" />}
+                      {heartColor && <Heart className="h-3 w-3 shrink-0" style={{ color: heartColor, fill: heartColor }} />}
                       Request
                     </span>
                     <select
-                      value={
-                        d.techId === 'pref-female' || d.techId === 'pref-male' || d.techId === 'issue' ? d.techId
-                        : d.techRequested ? 'requested'
-                        : d.requestedTechChoice === 'pref-female' || d.requestedTechChoice === 'pref-male' ? d.requestedTechChoice
-                        : 'any'
-                      }
+                      value={requestKind}
                       onChange={(e) => {
                         const v = e.target.value
                         if (v === 'pref-female' || v === 'pref-male' || v === 'issue') {
