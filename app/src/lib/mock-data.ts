@@ -140,6 +140,23 @@ export function generateDay(seedKey = '2026-07-24'): Appointment[] {
   let pg = 1
   const newClient = () => pick(CLIENTS).name
 
+  // a status of checked_in/in_service/completed implies the client actually
+  // passed through the earlier stages too — back-fill plausible timestamps so
+  // the hover card has something to show, not just the current status
+  const statusTimestamps = (status: Appointment['status'], startMin: number, durationMin: number) => {
+    const out: Pick<Appointment, 'checkedInMin' | 'startedMin' | 'completedMin'> = {}
+    if (status === 'checked_in' || status === 'in_service' || status === 'completed') {
+      out.checkedInMin = Math.max(0, startMin - int(2, 8))
+    }
+    if (status === 'in_service' || status === 'completed') {
+      out.startedMin = startMin + int(0, 5)
+    }
+    if (status === 'completed') {
+      out.completedMin = startMin + Math.max(5, durationMin - int(0, 5))
+    }
+    return out
+  }
+
   for (const tech of TECHS) {
     // ~20% of the day booked (demo mode: lots of open spots), 1-2 small blocks
     const blocks = int(1, 2)
@@ -153,6 +170,7 @@ export function generateDay(seedKey = '2026-07-24'): Appointment[] {
         if (startMin < 0 || rand() < 0.12) { cursor += 30; continue } // gaps
         const snapped = Math.round(startMin / SLOT_MIN) * SLOT_MIN
         const isRequested = rand() < 0.05
+        const status = isRequested ? 'requested' : pick(STATUSES)
         appts.push({
           id: `a${id++}`,
           techId: tech.id,
@@ -160,7 +178,8 @@ export function generateDay(seedKey = '2026-07-24'): Appointment[] {
           serviceId: svc.id,
           startMin: snapped,
           durationMin: svc.durationMin,
-          status: isRequested ? 'requested' : pick(STATUSES),
+          status,
+          ...statusTimestamps(status, snapped, svc.durationMin),
           notes: rand() < 0.18 ? pick(NOTES) : undefined,
           bookingSource: isRequested ? 'online' : rand() < 0.15 ? 'walk_in' : 'front_desk',
         })
@@ -187,9 +206,11 @@ export function generateDay(seedKey = '2026-07-24'): Appointment[] {
     if (hasConflict(pt.id, startMin, startMin + dur) || hasConflict(mt.id, startMin, startMin + dur)) continue
     const client = newClient()
     const group = `pg${pg++}`
+    const maniStatus = pick(['confirmed', 'checked_in', 'in_service'] as const)
+    const pediStatus = pick(['confirmed', 'checked_in', 'in_service'] as const)
     appts.push(
-      { id: `a${id++}`, techId: mt.id, clientName: client, serviceId: 'm-gel', startMin, durationMin: dur, status: pick(['confirmed', 'checked_in', 'in_service']), parallelGroup: group, notes: rand() < 0.4 ? 'Doing hands while pedi runs' : undefined, bookingSource: 'front_desk' },
-      { id: `a${id++}`, techId: pt.id, clientName: client, serviceId: 'p-gel', startMin, durationMin: dur, status: pick(['confirmed', 'checked_in', 'in_service']), parallelGroup: group, bookingSource: 'front_desk' },
+      { id: `a${id++}`, techId: mt.id, clientName: client, serviceId: 'm-gel', startMin, durationMin: dur, status: maniStatus, ...statusTimestamps(maniStatus, startMin, dur), parallelGroup: group, notes: rand() < 0.4 ? 'Doing hands while pedi runs' : undefined, bookingSource: 'front_desk' },
+      { id: `a${id++}`, techId: pt.id, clientName: client, serviceId: 'p-gel', startMin, durationMin: dur, status: pediStatus, ...statusTimestamps(pediStatus, startMin, dur), parallelGroup: group, bookingSource: 'front_desk' },
     )
     pairs++
   }
