@@ -480,15 +480,30 @@ export function BookingPanel({
   // shared column template so the time editor (row A) and technician picker (row B)
   // line up cleanly when stacked — a fixed-width left gutter (to match the Clock icon
   // in row A) plus a 2-column grid (fixed left column, flexible right column)
-  const gridRow = (icon: React.ReactNode, left: React.ReactNode, right: React.ReactNode) => (
+  // shared column template so the time editor (row A) and technician picker (row B) line
+  // up cleanly when stacked — a fixed-width left gutter (to match the Clock icon in row A),
+  // a fixed-width "for" gutter in the middle, and matching left/right select columns, so the
+  // start-time select lines up with the request-type select, and the duration select lines
+  // up with the technician-name select (this is what makes "First available" sit directly
+  // under/over the duration value instead of drifting depending on the "for" label's width)
+  const gridRow = (icon: React.ReactNode, left: React.ReactNode, mid: React.ReactNode, right: React.ReactNode) => (
     <div className="flex items-center gap-1.5">
       <span className="flex h-3 w-3 shrink-0 items-center justify-center">{icon}</span>
-      <div className="grid min-w-0 flex-1 grid-cols-[112px_1fr] items-center gap-1.5">
+      <div className="grid min-w-0 flex-1 grid-cols-[112px_20px_1fr] items-center gap-1.5">
         {left}
+        <span className="flex items-center justify-center text-[10px] font-semibold text-ink-faint">{mid}</span>
         {right}
       </div>
     </div>
   )
+
+  // the duration select's fixed option list is a set of "clean" round numbers — when addon
+  // minutes push the real duration off that grid (e.g. base 45 + a 20-minute addon = 65),
+  // the value wouldn't match any <option> and the browser would silently fall back to
+  // displaying the first option (15m) even though the underlying duration is correct.
+  // Always including the actual current value as an option keeps the display honest.
+  const durOptions = (current: number) =>
+    (DUR_OPTS.includes(current) ? DUR_OPTS : [...DUR_OPTS, current].sort((a, b) => a - b))
 
   const techSelect = (gi: number, svcId: string) => {
     const key = `${gi}:${svcId}`
@@ -508,6 +523,7 @@ export function BookingPanel({
         <option value="pref-male">Male preferred</option>
         <option value="issue">Issue</option>
       </Sel>,
+      null,
       <Sel
         value={tech}
         disabled={type !== 'any' && type !== 'requested'}
@@ -528,6 +544,7 @@ export function BookingPanel({
   const timeEditor = (gi: number, svcIds: string[], defStart: number, svcIdForEnd: string) => {
     const dur0 = effectiveDurationMin(gi, svcIdForEnd)
     const cur = timesFor(gi, svcIdForEnd, defStart, dur0)
+    const durVal = cur.end - cur.start
     return gridRow(
       <Clock className="h-3 w-3 text-ink-faint" />,
       <Sel value={cur.start} onChange={(v) => editStart(gi, svcIds, defStart, Number(v))} title="Start time" className="tnum w-full font-semibold">
@@ -535,17 +552,15 @@ export function BookingPanel({
           <option key={m} value={m}>{fmtTime(m)}</option>
         ))}
       </Sel>,
-      <div className="flex min-w-0 items-center gap-1.5">
-        <span className="shrink-0 text-[10px] font-semibold text-ink-faint">for</span>
-        <Sel
-          value={cur.end - cur.start}
-          onChange={(v) => editEnd(gi, svcIdForEnd, defStart, cur.start + Number(v))}
-          title="Duration"
-          className="tnum min-w-0 w-full font-semibold"
-        >
-          {DUR_OPTS.map((d) => <option key={d} value={d}>{d}m</option>)}
-        </Sel>
-      </div>,
+      'for',
+      <Sel
+        value={durVal}
+        onChange={(v) => editEnd(gi, svcIdForEnd, defStart, cur.start + Number(v))}
+        title="Duration"
+        className="tnum w-full font-semibold"
+      >
+        {durOptions(durVal).map((d) => <option key={d} value={d}>{d}m</option>)}
+      </Sel>,
     )
   }
 
@@ -888,6 +903,7 @@ export function BookingPanel({
                         <div className="space-y-2">
                           {svcs.map((id) => {
                             const cur = timesFor(gi, id, time ?? 0, effectiveDurationMin(gi, id))
+                            const durVal = cur.end - cur.start
                             return (
                               <div key={id} className="rounded-xl border border-line p-2">
                                 <div className="flex items-center gap-2 text-sm">
@@ -897,12 +913,12 @@ export function BookingPanel({
                                     </span>
                                   </span>
                                   <Sel
-                                    value={cur.end - cur.start}
+                                    value={durVal}
                                     onChange={(v) => editEnd(gi, id, time ?? 0, cur.start + Number(v))}
                                     title="Duration"
                                     className="tnum w-[76px] shrink-0 font-semibold"
                                   >
-                                    {DUR_OPTS.map((d) => <option key={d} value={d}>{d}m</option>)}
+                                    {durOptions(durVal).map((d) => <option key={d} value={d}>{d}m</option>)}
                                   </Sel>
                                 </div>
                                 <div className="mt-1.5">{techSelect(gi, id)}</div>
