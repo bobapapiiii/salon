@@ -402,9 +402,13 @@ export function BookingPanel({
     setNewName(''); setNewPhone('')
   }
 
-  const canProceed =
+  // guest + services picked — enough to move from the services step into the
+  // details step, where the technician choices that unlock times actually live
+  const canProceedToDetails =
     guests.length >= 1 && guests[0]?.clientId != null &&
-    guests.every((_g, i) => (svcsByGuest[i] ?? []).length > 0) && time != null
+    guests.every((_g, i) => (svcsByGuest[i] ?? []).length > 0)
+  // additionally needs an actual time picked — required to book
+  const canProceed = canProceedToDetails && time != null
 
   const book = () => {
     const out: BookedService[] = []
@@ -944,7 +948,7 @@ export function BookingPanel({
         {step === 'services' ? (
           <button
             onClick={() => setStep('details')}
-            disabled={!canProceed}
+            disabled={!canProceedToDetails}
             className="ml-auto rounded-md bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-40"
           >
             Proceed
