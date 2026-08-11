@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronRight, Clock, GripVertical, Heart, Link2, Moon, MoreHorizontal, Play, Redo2, StickyNote, Sun, Undo2, X } from 'lucide-react'
 import type { Appointment, ClientRecord, Scale, Tech, TimeBlock } from '@/lib/booking-types'
 import { logEntry } from '@/lib/booking-types'
@@ -222,6 +222,30 @@ const STATUS_STYLE: Record<string, { fill: string; line: string; text: string }>
   late: { fill: '#E6DEFB', line: '#8B5CF6', text: '#4C2D95' },
 }
 
+// one-time migration for days generated/edited before check-in/start/complete
+// timestamps existed: a status of checked_in/in_service/completed implies the
+// client already passed through the earlier stages too, so back-fill
+// plausible timestamps instead of leaving the hover card blank for them
+function backfillStageTimestamps(list: Appointment[]): Appointment[] {
+  let changed = false
+  const next = list.map((a) => {
+    const patch: Partial<Appointment> = {}
+    if ((a.status === 'checked_in' || a.status === 'in_service' || a.status === 'completed') && a.checkedInMin == null) {
+      patch.checkedInMin = Math.max(0, a.startMin - 5)
+    }
+    if ((a.status === 'in_service' || a.status === 'completed') && a.startedMin == null) {
+      patch.startedMin = a.startMin
+    }
+    if (a.status === 'completed' && a.completedMin == null) {
+      patch.completedMin = a.startMin + Math.max(5, a.durationMin - 3)
+    }
+    if (Object.keys(patch).length === 0) return a
+    changed = true
+    return { ...a, ...patch }
+  })
+  return changed ? next : list
+}
+
 function dayKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
@@ -242,7 +266,7 @@ export function AppointmentBook() {
   const [dateKey, setDateKey] = usePersistentState<string>(upref('ui-date'), () => dayKey(new Date()))
   const date = useMemo(() => new Date(dateKey + 'T12:00:00'), [dateKey])
   const [apptDays, setApptDays] = usePersistentState<Record<string, Appointment[]>>(sdata('appts-v1'), {})
-  const [appts, setAppts] = useState<Appointment[]>(() => apptDays[dateKey] ?? generateDay(dateKey))
+  const [appts, setAppts] = useState<Appointment[]>(() => backfillStageTimestamps(apptDays[dateKey] ?? generateDay(dateKey)))
   const [scale, setScaleRaw] = usePersistentState<Scale>(upref('ui-scale'), { colW: 112, ppm: 1.15 })
   const [density, setDensity] = usePersistentState<15 | 30 | 60 | null>(upref('ui-density'), null)
   const [colorMode, setColorMode] = usePersistentState<'category' | 'status'>(upref('ui-colormode'), 'status')
@@ -399,6 +423,21 @@ export function AppointmentBook() {
   const [detailError, setDetailError] = useState<string | null>(null)
   const [darkMode, setDarkMode] = usePersistentState(upref('ui-dark'), false)
   const [hoverTip, setHoverTip] = useState<{ apptId: string; x: number; y: number } | null>(null)
+  // measured after render — the card's row count varies (notes, tech-choice
+  // line, and the checked-in/started/completed rows are all conditional), so
+  // a fixed height guess isn't enough to keep it from running off the bottom
+  const hoverTipRef = useRef<HTMLDivElement>(null)
+  const [hoverTipPos, setHoverTipPos] = useState<{ left: number; top: number } | null>(null)
+  useLayoutEffect(() => {
+    if (!hoverTip) { setHoverTipPos(null); return }
+    const el = hoverTipRef.current
+    if (!el) return
+    const { width, height } = el.getBoundingClientRect()
+    setHoverTipPos({
+      left: Math.max(8, Math.min(hoverTip.x + 14, window.innerWidth - width - 8)),
+      top: Math.max(8, Math.min(hoverTip.y + 14, window.innerHeight - height - 8)),
+    })
+  }, [hoverTip])
   const [profileName, setProfileName] = useState<string | null>(null)
   const [notesByClient, setNotesByClient] = usePersistentState<Record<string, ClientNote[]>>(sdata('notes-v1'), {})
   const [fitOpen, setFitOpen] = useState(false)
@@ -470,7 +509,7 @@ export function AppointmentBook() {
   // ── day navigation (persisted per-day books keep edits while you browse) ──
   const goDay = (d: Date) => {
     const key = dayKey(d)
-    setAppts(apptDays[key] ?? generateDay(key))
+    setAppts(backfillStageTimestamps(apptDays[key] ?? generateDay(key)))
     setDateKey(key)
     historyRef.current = []
     redoRef.current = []
@@ -3231,13 +3270,15 @@ export function AppointmentBook() {
             <span className="min-w-0 flex-1 font-medium">{value}</span>
           </div>
         )
+        const pos = hoverTipPos ?? {
+          left: Math.min(hoverTip.x + 14, window.innerWidth - 300),
+          top: Math.min(hoverTip.y + 14, window.innerHeight - 190),
+        }
         return (
           <div
+            ref={hoverTipRef}
             className="pointer-events-none fixed z-[75] w-72 space-y-1 rounded-lg bg-slate-900/95 p-3 text-[11px] text-white shadow-2xl"
-            style={{
-              left: Math.min(hoverTip.x + 14, window.innerWidth - 300),
-              top: Math.min(hoverTip.y + 14, window.innerHeight - 190),
-            }}
+            style={{ left: pos.left, top: pos.top }}
           >
             {row('Start time', fmtTime(a.startMin))}
             {a.checkedInMin != null && row('Checked in', <span className="text-emerald-400">{fmtTime(a.checkedInMin)}</span>)}

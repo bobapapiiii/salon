@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   CalendarX, Check, CheckCircle2, ClipboardCopy, CreditCard, Link2, Pencil, Play, Receipt, ScrollText, Undo2, UserCheck, X,
 } from 'lucide-react'
@@ -24,8 +24,22 @@ interface MenuProps {
 }
 
 export function ApptContextMenu({ x, y, appt, pairCount, onAction, onClose }: MenuProps) {
-  const left = Math.min(x, window.innerWidth - 240)
-  const top = Math.min(y, window.innerHeight - 340)
+  const menuRef = useRef<HTMLDivElement>(null)
+  // start with a rough estimate so it renders somewhere sane, then re-measure
+  // the actual menu once it's in the DOM — the row count varies a lot by
+  // status (checked-in alone can run 8 rows deep), so a fixed height guess
+  // isn't enough to keep the bottom options from running off-screen
+  const [pos, setPos] = useState({ left: Math.min(x, window.innerWidth - 240), top: Math.min(y, window.innerHeight - 340) })
+
+  useLayoutEffect(() => {
+    const el = menuRef.current
+    if (!el) return
+    const { width, height } = el.getBoundingClientRect()
+    setPos({
+      left: Math.max(8, Math.min(x, window.innerWidth - width - 8)),
+      top: Math.max(8, Math.min(y, window.innerHeight - height - 8)),
+    })
+  }, [x, y])
 
   const item = (
     action: MenuAction, label: string, icon: React.ReactNode, danger = false,
@@ -45,8 +59,9 @@ export function ApptContextMenu({ x, y, appt, pairCount, onAction, onClose }: Me
   return (
     <div className="fixed inset-0 z-[90]" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose() }}>
       <div
+        ref={menuRef}
         className="absolute w-56 overflow-hidden rounded-lg border border-border bg-popover py-1 shadow-2xl"
-        style={{ left, top }}
+        style={{ left: pos.left, top: pos.top }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-border px-3 py-1.5">
