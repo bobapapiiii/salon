@@ -1,13 +1,15 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
-  CalendarX, ClipboardCopy, Clock, CreditCard, Heart, Link2, Mail, MessageSquare, Phone, RefreshCw, ScrollText, X,
+  Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, Link2, Mail, MessageSquare, Phone, RefreshCw, ScrollText, X,
 } from 'lucide-react'
-import type { Appointment, ClientRecord } from '@/lib/booking-types'
+import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, fmtTime } from '@/lib/booking-types'
 import { useSettingsStore } from '@/lib/settings-store'
 import { SERVICES } from '@/lib/mock-data'
 import { boardTechs, useStaffStore } from '@/lib/staff-store'
 import { svcById } from '@/lib/services-store'
+import { findSlotsFor, layoutItems, spanOf } from './BookingPanel'
+import { DatePickerPopover } from './LegendPopover'
 
 const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
 
@@ -18,11 +20,24 @@ interface Props {
   group: Appointment[]
   clients: ClientRecord[]
   error: string | null
-  onSave: (updated: Appointment[], removedIds: string[]) => void
+  /** the day currently open on the calendar, i.e. the day this appointment lives on right now */
+  dateKey: string
+  /** appointments for any day (today or otherwise), used to preview openings before jumping there */
+  dayAppts: (key: string) => Appointment[]
+  dayBlocks: (key: string) => TimeBlock[]
+  onSave: (updated: Appointment[], removedIds: string[], moveToDayKey?: string) => void
   onAction: (a: DetailAction) => void
   onCopyService?: (appt: Appointment) => void
   onViewProfile: () => void
   onClose: () => void
+}
+
+/** small local date helpers, duplicated from AppointmentBook to avoid a circular import */
+function dayKeyOf(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function dayLabelOf(key: string) {
+  return new Date(key + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
 const STATUS_LABELS: Record<Appointment['status'], string> = {
@@ -55,7 +70,7 @@ const REQUEST_HEART_COLOR: Record<string, string | undefined> = {
   any: undefined,
 }
 
-export function AppointmentDetail({ appt, group, clients, error, onSave, onAction, onCopyService, onViewProfile, onClose }: Props) {
+export function AppointmentDetail({ appt, group, clients, error, dateKey, dayAppts, dayBlocks, onSave, onAction, onCopyService, onViewProfile, onClose }: Props) {
   const increment = useSettingsStore().booking.increment
   const TIME_OPTIONS = Array.from({ length: (CLOSE_MIN - OPEN_MIN) / increment }, (_, i) => i * increment)
   const { roles, techs: allTechs } = useStaffStore()
@@ -64,6 +79,10 @@ export function AppointmentDetail({ appt, group, clients, error, onSave, onActio
   const [removed, setRemoved] = useState<string[]>([])
   const [status, setStatus] = useState(appt.status)
   const [notes, setNotes] = useState(appt.notes ?? '')
+  // which day the "available times" rail is previewing, defaults to today's
+  // board; changing it doesn't move anything until Save changes is clicked
+  const [pickedDay, setPickedDay] = useState(dateKey)
+  const [dayPickerAnchor, setDayPickerAnchor] = useState<DOMRect | null>(null)
 
   const client = clients.find((c) => c.name === appt.clientName)
   const setSvc = (id: string, patch: Partial<Appointment>) =>
@@ -71,8 +90,32 @@ export function AppointmentDetail({ appt, group, clients, error, onSave, onActio
 
   const total = draft.filter((d) => !removed.includes(d.id)).reduce((s, d) => s + svcById[d.serviceId].price, 0)
 
+  // ── day & time rail, same slot-finding mechanism as booking a new appointment ──
+  const activeServices = draft.filter((d) => !removed.includes(d.id))
+  const svcIds = activeServices.map((d) => d.serviceId)
+  const isParallelGroup = activeServices.length > 1 && activeServices.every((d) => d.startMin === activeServices[0].startMin)
+  const groupStart = activeServices[0]?.startMin
+  const selfIds = new Set(group.map((g) => g.id))
+  const slots = useMemo(() => {
+    if (svcIds.length === 0) return []
+    const others = dayAppts(pickedDay).filter((a) => !selfIds.has(a.id))
+    return findSlotsFor(others, [{ svcIds, parallel: isParallelGroup }], dayBlocks(pickedDay))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickedDay, JSON.stringify(svcIds), isParallelGroup])
+
+  const applySlot = (s: number) => {
+    const items = layoutItems(svcIds, isParallelGroup)
+    activeServices.forEach((d, i) => setSvc(d.id, { startMin: s + (items[i]?.offset ?? 0) }))
+  }
+
+  const shiftDay = (delta: number) => {
+    const d = new Date(pickedDay + 'T12:00:00')
+    d.setDate(d.getDate() + delta)
+    setPickedDay(dayKeyOf(d))
+  }
+
   return (
-    <div className="fixed inset-y-0 right-0 z-[85] flex w-[440px] max-w-[95vw] flex-col border-l border-line bg-popover shadow-2xl">
+    <div className="fixed inset-y-0 right-0 z-[85] flex w-[634px] max-w-[95vw] flex-col border-l border-line bg-popover shadow-2xl">
       {/* guest header */}
       <div className="border-b border-line bg-cream px-4 py-3.5">
         <div className="flex items-start gap-3">
@@ -107,7 +150,8 @@ export function AppointmentDetail({ appt, group, clients, error, onSave, onActio
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+      <div className="flex min-h-0 flex-1">
+      <div className="min-h-0 w-[440px] flex-1 space-y-4 overflow-y-auto p-4">
         {/* status */}
         <div>
           <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Status</label>
@@ -246,6 +290,73 @@ export function AppointmentDetail({ appt, group, clients, error, onSave, onActio
         {error && <p className="text-[12px] font-medium text-rust">{error}</p>}
       </div>
 
+      {/* day & time rail, same slot-finding mechanism as booking a new appointment */}
+      <div className="w-[194px] shrink-0 overflow-y-auto border-l border-line p-3">
+        <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Day</label>
+        <div className="mb-3 flex items-center gap-1">
+          <button
+            onClick={() => shiftDay(-1)}
+            title="Previous day"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border border-line text-ink-faint hover:bg-cream hover:text-ink"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={(e) => setDayPickerAnchor(e.currentTarget.getBoundingClientRect())}
+            title="Choose a date"
+            className="flex min-w-0 flex-1 items-center justify-center gap-1 rounded-[8px] border border-line px-1.5 py-1.5 text-[11px] font-semibold text-ink hover:bg-cream"
+          >
+            <Calendar className="h-3 w-3 shrink-0" />
+            <span className="truncate">{dayLabelOf(pickedDay)}</span>
+          </button>
+          <button
+            onClick={() => shiftDay(1)}
+            title="Next day"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] border border-line text-ink-faint hover:bg-cream hover:text-ink"
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        {pickedDay !== dateKey && (
+          <div className="mb-3 rounded-[8px] border border-clay/30 bg-clay-tint/30 px-2 py-1.5 text-[10.5px] font-semibold text-clay">
+            Save changes to move this appointment to {dayLabelOf(pickedDay)}
+          </div>
+        )}
+        <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+          Available times{spanOf(svcIds, isParallelGroup) > 0 && ` (${spanOf(svcIds, isParallelGroup)}m)`}
+        </label>
+        {slots.length === 0 && (
+          <div className="text-[11px] text-ink-faint">No open slots this day</div>
+        )}
+        <div className="space-y-1">
+          {slots.slice(0, 60).map((s) => (
+            <button
+              key={s}
+              onClick={() => applySlot(s)}
+              className={`flex w-full items-center gap-1.5 rounded-[8px] border px-2 py-1.5 text-[12px] ${
+                pickedDay === dateKey && s === groupStart
+                  ? 'border-clay bg-clay-tint font-semibold text-clay'
+                  : 'border-line text-ink-faint hover:text-ink'
+              }`}
+            >
+              <Clock className="h-3 w-3 shrink-0" /> {fmtTime(s)}
+            </button>
+          ))}
+        </div>
+      </div>
+      </div>
+
+      {dayPickerAnchor && (
+        <DatePickerPopover
+          anchor={dayPickerAnchor}
+          selected={pickedDay}
+          today={dayKeyOf(new Date())}
+          appointmentDates={new Set()}
+          onSelect={(ds) => { setPickedDay(ds); setDayPickerAnchor(null) }}
+          onClose={() => setDayPickerAnchor(null)}
+        />
+      )}
+
       {/* footer actions */}
       <div className="space-y-2 border-t border-line p-3">
         {/* secondary actions, small row on top */}
@@ -275,10 +386,14 @@ export function AppointmentDetail({ appt, group, clients, error, onSave, onActio
           </button>
         )}
         <button
-          onClick={() => onSave(draft.map((d) => ({ ...d, status: d.id === appt.id ? status : d.status, notes: d.id === appt.id ? notes || undefined : d.notes })), removed)}
+          onClick={() => onSave(
+            draft.map((d) => ({ ...d, status: d.id === appt.id ? status : d.status, notes: d.id === appt.id ? notes || undefined : d.notes })),
+            removed,
+            pickedDay !== dateKey ? pickedDay : undefined,
+          )}
           className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"
         >
-          <Clock className="h-4 w-4" /> Save changes
+          <Clock className="h-4 w-4" /> {pickedDay !== dateKey ? `Save & move to ${dayLabelOf(pickedDay)}` : 'Save changes'}
         </button>
       </div>
     </div>

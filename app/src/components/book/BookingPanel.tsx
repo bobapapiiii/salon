@@ -78,7 +78,7 @@ interface SlotItem {
 }
 
 /** chained (back-to-back) or parallel (same start) layout for a set of services */
-function layoutItems(svcIds: string[], parallel: boolean): SlotItem[] {
+export function layoutItems(svcIds: string[], parallel: boolean): SlotItem[] {
   let offset = 0
   return svcIds.map((id) => {
     const item = { serviceId: id, offset: parallel ? 0 : offset }
@@ -87,7 +87,7 @@ function layoutItems(svcIds: string[], parallel: boolean): SlotItem[] {
   })
 }
 
-function spanOf(svcIds: string[], parallel: boolean): number {
+export function spanOf(svcIds: string[], parallel: boolean): number {
   if (svcIds.length === 0) return 0
   return parallel
     ? Math.max(...svcIds.map((id) => svcById[id].durationMin))
@@ -118,7 +118,7 @@ function fitsAt(appts: Appointment[], items: SlotItem[], s: number, blocks: Time
   return true
 }
 
-function findSlotsFor(appts: Appointment[], groups: { svcIds: string[]; parallel: boolean }[], blocks: TimeBlock[] = []): number[] {
+export function findSlotsFor(appts: Appointment[], groups: { svcIds: string[]; parallel: boolean }[], blocks: TimeBlock[] = []): number[] {
   const items = groups.flatMap((g) => layoutItems(g.svcIds, g.parallel))
   if (items.length === 0) return []
   const span = Math.max(...groups.filter((g) => g.svcIds.length > 0).map((g) => spanOf(g.svcIds, g.parallel)))

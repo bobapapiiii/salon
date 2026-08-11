@@ -532,6 +532,18 @@ export function AppointmentBook() {
     setApptDays((m) => (m[dateKey] === appts ? m : { ...m, [dateKey]: appts }))
   }, [appts, dateKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // appts/blocks for an arbitrary day, not just the one on screen — lets the
+  // edit panel's "available times" rail preview other days without visiting
+  // them (same stable-preview-cache pattern as the tech week/month takeover)
+  const dayApptsFor = (k: string): Appointment[] => {
+    if (k === dateKey) return appts
+    if (apptDays[k]) return apptDays[k]
+    let v = dayPreviewCache.current.get(k)
+    if (!v) { v = generateDay(k); dayPreviewCache.current.set(k, v) }
+    return v
+  }
+  const dayBlocksFor = (k: string): TimeBlock[] => blocksByDay[k] ?? []
+
   // ── columns model (role groups from the staff store; techs A to Z within a role) ──
   const columns = useMemo<Column[]>(() => {
     const cols: Column[] = []
@@ -1789,7 +1801,55 @@ export function AppointmentBook() {
       : [detailAppt]
     : []
 
-  const saveDetail = (updated: Appointment[], removedIds: string[]) => {
+  const saveDetail = (updated: Appointment[], removedIds: string[], moveToDayKey?: string) => {
+    // the edit panel's "available times" rail already found a conflict-free
+    // slot on the TARGET day (findSlotsFor ran against that day's own board),
+    // so a cross-day move skips the same-day pinned-tech relocation/overlap
+    // pipeline below entirely — that pipeline exists to keep today's board
+    // consistent and isn't meaningful once the booking is leaving today
+    if (moveToDayKey && moveToDayKey !== dateKey) {
+      const targetAppts = dayApptsFor(moveToDayKey)
+      const targetBlocks = dayBlocksFor(moveToDayKey)
+      const keepIds = new Set(updated.filter((u) => !removedIds.includes(u.id)).map((u) => u.id))
+      const resolveForTarget = (choice: string, serviceId: string, from: number, to: number): Tech | null => {
+        let pool = boardTechs(getStaff().techs).filter((t) =>
+          t.skills.includes(serviceId) &&
+          !targetAppts.some((a) => !keepIds.has(a.id) && a.techId === t.id && overlaps(from, to, a.startMin, a.startMin + a.durationMin)) &&
+          !targetBlocks.some((b) => b.techId === t.id && overlaps(from, to, b.startMin, b.startMin + b.durationMin)),
+        )
+        if (choice === 'pref-female' || choice === 'pref-male') {
+          const g = choice === 'pref-female' ? 'female' : 'male'
+          const gp = pool.filter((t) => t.gender === g)
+          if (gp.length > 0) pool = gp
+        }
+        return pool.sort((a, b) => (apptCountByTech.get(a.id) ?? 0) - (apptCountByTech.get(b.id) ?? 0))[0] ?? null
+      }
+      const moveLabel = dayLabel(new Date(moveToDayKey + 'T12:00:00'))
+      const keep = updated.filter((u) => !removedIds.includes(u.id)).map((u) => {
+        if (u.techId === 'first' || u.techId === 'pref-female' || u.techId === 'pref-male' || u.techId === 'issue') {
+          const resolved = resolveForTarget(u.techId, u.serviceId, u.startMin, u.startMin + u.durationMin)
+          return {
+            ...u,
+            techId: resolved?.id ?? u.techId,
+            issue: u.techId === 'issue' ? true : undefined,
+            techRequested: undefined,
+            requestedTechChoice: u.techId === 'pref-female' || u.techId === 'pref-male' ? (u.techId as 'pref-female' | 'pref-male') : undefined,
+            log: [...(u.log ?? []), logEntry(`Moved to ${moveLabel}, auto-assigned to ${resolved ? resolved.name : 'an available tech'}`)],
+          }
+        }
+        return { ...u, issue: undefined, log: [...(u.log ?? []), logEntry(`Moved to ${moveLabel}`)] }
+      })
+      const byId = new Map(keep.map((u) => [u.id, u]))
+      commit(appts.filter((a) => !removedIds.includes(a.id) && !byId.has(a.id)))
+      setApptDays((m) => ({
+        ...m,
+        [moveToDayKey]: [...(m[moveToDayKey] ?? generateDay(moveToDayKey)), ...keep],
+      }))
+      setDetailId(null)
+      showFlash(`✓ Moved to ${moveLabel}, jump there with ◀ ▶ to see it`)
+      return
+    }
+
     // a service is "pinned" when the form has it set to an actual tech by
     // name, as opposed to First available / gender preference / issue — this
     // is what should trigger auto-relocation below, independent of whether
@@ -1912,6 +1972,8 @@ export function AppointmentBook() {
         break
       case 'copy':
         copyToClipboard(a)
+        // close the edit panel so the salon can switch days and drop it in
+        setDetailId(null)
         break
       case 'sendtext':
         showFlash(`✉ Text sent to ${a.clientName}`)
@@ -3356,6 +3418,9 @@ export function AppointmentBook() {
           group={detailGroup}
           clients={clients}
           error={detailError}
+          dateKey={dateKey}
+          dayAppts={dayApptsFor}
+          dayBlocks={dayBlocksFor}
           onSave={saveDetail}
           onAction={onDetailAction}
           onCopyService={copyServiceToClipboard}
