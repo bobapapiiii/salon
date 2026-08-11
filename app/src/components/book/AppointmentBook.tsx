@@ -522,11 +522,15 @@ export function AppointmentBook() {
   }, [columns])
 
   // columns stretch to fill the viewport — but never squeeze below readable
-  // text width just because a side rail/panel stole space (scroll instead)
+  // text width just because a side rail/panel (or a narrower window, e.g.
+  // devtools docked open) stole space (scroll instead). Only exception: the
+  // user deliberately zoomed out to block/overview mode (colW below the
+  // overview threshold) — that stays a plain colored block at any width.
   const cw = useMemo(() => {
+    if (colW < OVERVIEW_COL_W) return colW
     const n = Math.max(1, columns.length)
     const fill = Math.floor((viewW - GUTTER_W) / n)
-    return fill >= OVERVIEW_COL_W ? Math.max(colW, fill, TEXT_COL_W) : colW
+    return Math.max(colW, fill, TEXT_COL_W)
   }, [columns.length, viewW, colW])
   const colXAt = useCallback((i: number) => i * cw, [cw])
   const colWAt = useCallback((_i: number) => cw, [cw])
