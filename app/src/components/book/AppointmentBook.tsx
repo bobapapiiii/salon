@@ -337,7 +337,6 @@ export function AppointmentBook() {
   const [pendingOverlap, setPendingOverlap] = useState<{ techId: string; timeLabel: string; apply: () => void } | null>(null)
   const [pendingTechRequest, setPendingTechRequest] = useState<{ fromName: string; toName: string; clientName: string; apply: () => void } | null>(null)
   const [pendingGenderMismatch, setPendingGenderMismatch] = useState<{ pref: 'female' | 'male'; toName: string; clientName: string; apply: () => void } | null>(null)
-  const [pendingMakeRoom, setPendingMakeRoom] = useState<{ moves: Appointment[]; startMin: number; apply: () => void } | null>(null)
   const blocksRef = useRef<TimeBlock[]>([])
   blocksRef.current = blocksByDay[dateKey] ?? []
   // blocks drag like appointments, but self-contained (no conflict rules)
@@ -1137,20 +1136,14 @@ export function AppointmentBook() {
     return allMoves.size > 0 ? [...allMoves.values()] : null
   }
 
-  // a "movable" slot in the booking/edit panel's rail was clicked — confirm
-  // the relocation, then hand control back to the panel (via `thenSelect`)
-  // so it can select that time for the appointment being booked/moved
+  // a "movable" slot in the booking/edit panel's rail was clicked — apply
+  // the relocation silently (no prompt) and hand control back to the panel
+  // (via `thenSelect`) so it can select that time for the appointment
   const onRequestMakeRoom = (moves: Appointment[], startMin: number, thenSelect: () => void) => {
-    setPendingMakeRoom({
-      moves,
-      startMin,
-      apply: () => {
-        const byId = new Map(moves.map((m) => [m.id, m]))
-        commit(appts.map((a) => byId.get(a.id) ?? a))
-        thenSelect()
-        showFlash(`✓ Moved ${moves.length} booking${moves.length > 1 ? 's' : ''} to open ${fmtTime(startMin)}`)
-      },
-    })
+    const byId = new Map(moves.map((m) => [m.id, m]))
+    commit(appts.map((a) => byId.get(a.id) ?? a))
+    thenSelect()
+    showFlash(`✓ Moved ${moves.length} booking${moves.length > 1 ? 's' : ''} to open ${fmtTime(startMin)}`)
   }
 
   // move every NON-requested appointment off a tech to the least-booked
@@ -3404,20 +3397,6 @@ export function AppointmentBook() {
           confirmLabel="Double-book anyway"
           onConfirm={pendingOverlap.apply}
           onClose={() => setPendingOverlap(null)}
-        />
-      )}
-
-      {/* the requested time is full, but a non-requested booking blocking it
-          can be relocated elsewhere to open it up — confirm before moving */}
-      {pendingMakeRoom && (
-        <ConfirmDialog
-          title={`Move ${pendingMakeRoom.moves.length} booking${pendingMakeRoom.moves.length > 1 ? 's' : ''} to open ${fmtTime(pendingMakeRoom.startMin)}?`}
-          body={pendingMakeRoom.moves
-            .map((m) => `${m.clientName}, ${svcById[m.serviceId].short} at ${fmtTime(m.startMin)} → ${techOf(m.techId).name}`)
-            .join('; ')}
-          confirmLabel="Move & select this time"
-          onConfirm={pendingMakeRoom.apply}
-          onClose={() => setPendingMakeRoom(null)}
         />
       )}
 

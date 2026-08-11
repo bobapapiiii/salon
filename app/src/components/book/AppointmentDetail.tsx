@@ -366,7 +366,7 @@ export function AppointmentDetail({
                 }}
                 title={
                   status === 'blocked' ? 'No qualified tech free at this time'
-                  : status === 'movable' ? `Fits by moving ${moves!.length} other booking${moves!.length > 1 ? 's' : ''} — click to review`
+                  : status === 'movable' ? `Selecting this moves ${moves!.length} other booking${moves!.length > 1 ? 's' : ''} to make room`
                   : undefined
                 }
                 className={`flex w-full items-center gap-1.5 rounded-[8px] border px-2 py-1.5 text-[12px] ${
