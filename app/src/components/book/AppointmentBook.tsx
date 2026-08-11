@@ -1161,7 +1161,8 @@ export function AppointmentBook() {
       }
     }
     // moving a gender-preferred service onto a tech of the OTHER gender always confirms first
-    if ((!firstErr || isSkip) && d.kind === 'appt' && d.mode === 'move') {
+    // (but not if we just came from that very confirmation — otherwise it loops forever)
+    if ((!firstErr || firstErr === 'skip-tech-request') && d.kind === 'appt' && d.mode === 'move') {
       const primary = appts.find((a) => a.id === d.primaryId)
       const pref = primary?.requestedTechChoice
       if (primary && (pref === 'pref-female' || pref === 'pref-male') && d.targetTechId !== primary.techId) {
