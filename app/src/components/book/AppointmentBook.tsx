@@ -2298,6 +2298,9 @@ export function AppointmentBook() {
     const isRequested = a.status === 'requested'
     const isNoShow = a.status === 'no_show'
     const isCompleted = a.status === 'completed'
+    // completed just means the service is done — it fades out only once the
+    // client has actually paid and checked out, not the moment it's marked done
+    const isPaid = isCompleted && payments.some((p) => p.apptIds?.includes(a.id))
     const isInService = a.status === 'in_service'
     const elapsed = isInService && isToday(date)
       ? Math.min(1, Math.max(0.05, (DEMO_NOW_MIN - a.startMin) / Math.max(1, a.durationMin)))
@@ -2347,7 +2350,7 @@ export function AppointmentBook() {
                 : isRequested
                   ? `1.5px dashed ${lineC}`
                   : `1px solid ${lineC}66`,
-          opacity: isMoving ? 0.95 : isCompleted ? 0.55 : isNoShow ? 0.7 : undefined,
+          opacity: isMoving ? 0.95 : isPaid ? 0.55 : isNoShow ? 0.7 : undefined,
           transform: isMoving && float ? `translate(${float.x}px, ${float.y}px)` : undefined,
           boxShadow: isMoving ? '0 12px 28px rgba(38,37,43,.25)' : undefined,
           pointerEvents: isMoving ? 'none' : undefined,
@@ -3258,6 +3261,7 @@ export function AppointmentBook() {
           x={menu.x} y={menu.y}
           appt={appts.find((a) => a.id === menu.apptId)!}
           pairCount={appts.filter((a) => a.parallelGroup && a.parallelGroup === appts.find((x) => x.id === menu.apptId)?.parallelGroup).length}
+          hasPayment={payments.some((p) => p.apptIds?.includes(menu.apptId))}
           onAction={onMenuAction}
           onClose={() => setMenu(null)}
         />

@@ -19,11 +19,13 @@ interface MenuProps {
   y: number
   appt: Appointment
   pairCount: number
+  /** a payment record actually exists for this appointment (only then is there anything to invoice) */
+  hasPayment: boolean
   onAction: (a: MenuAction) => void
   onClose: () => void
 }
 
-export function ApptContextMenu({ x, y, appt, pairCount, onAction, onClose }: MenuProps) {
+export function ApptContextMenu({ x, y, appt, pairCount, hasPayment, onAction, onClose }: MenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   // start with a rough estimate so it renders somewhere sane, then re-measure
   // the actual menu once it's in the DOM — the row count varies a lot by
@@ -88,7 +90,7 @@ export function ApptContextMenu({ x, y, appt, pairCount, onAction, onClose }: Me
         {appt.status === 'in_service' && item('complete', 'Mark completed', <CheckCircle2 className="h-3.5 w-3.5" />)}
         {appt.status === 'in_service' && item('backtocheckin', 'Back to checked in', <Undo2 className="h-3.5 w-3.5" />)}
         {appt.status === 'checked_in' && item('backtoconfirmed', 'Back to confirmed', <Undo2 className="h-3.5 w-3.5" />)}
-        {appt.status === 'completed' && item('invoice', 'View invoice / Print', <Receipt className="h-3.5 w-3.5" />)}
+        {appt.status === 'completed' && hasPayment && item('invoice', 'View invoice / Print', <Receipt className="h-3.5 w-3.5" />)}
         {(appt.status === 'booked' || appt.status === 'confirmed' || appt.status === 'checked_in' || appt.status === 'completed' || appt.status === 'in_service') &&
           item('checkout', 'Check out', <CreditCard className="h-3.5 w-3.5" />)}
         {(appt.status === 'booked' || appt.status === 'confirmed' || appt.status === 'checked_in') && (
