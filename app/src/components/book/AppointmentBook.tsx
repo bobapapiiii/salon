@@ -1372,7 +1372,27 @@ export function AppointmentBook() {
       if (firstErr) {
         showFlash(`⚠ Can't drop here, ${firstErr}`)
       } else {
-        const group = d.clip!.isPair ? `pg${Date.now()}` : undefined
+        // a walk-in guest's services are dragged onto the board one at a time
+        // (a separate clip/drop per service), so unlike a party/pair clip
+        // there's no single moment where every one of them is known at once —
+        // link this drop to any of that same guest's services already placed
+        // from the same walk-in group, retroactively tagging the earlier one
+        // with a shared parallelGroup if it didn't have one yet, so check-in/
+        // confirm/etc. (which act on the whole parallelGroup) reach both
+        const walkinKey = d.clip!.source?.kind === 'walkin' ? `${d.clip!.source.id}:${d.clip!.source.guestName}` : null
+        const walkinSibling = walkinKey ? appts.find((a) => a.walkinOrigin === walkinKey) : undefined
+        let retroTagId: string | null = null
+        let group: string | undefined
+        if (walkinSibling) {
+          if (walkinSibling.parallelGroup) {
+            group = walkinSibling.parallelGroup
+          } else {
+            group = `pg${Date.now()}`
+            retroTagId = walkinSibling.id
+          }
+        } else {
+          group = d.clip!.isPair ? `pg${Date.now()}` : undefined
+        }
         const newAppts: Appointment[] = moving.map((m, i) => {
           const st = svcForTech(m.techId, m.serviceId)
           const base = svcById[m.serviceId]
@@ -1387,6 +1407,7 @@ export function AppointmentBook() {
             status: d.clip!.source?.kind === 'approved' ? 'confirmed' as const : 'booked' as const,
             notes: d.clip!.services[i].notes,
             parallelGroup: group,
+            walkinOrigin: walkinKey ?? undefined,
             requestedTechChoice: d.clip!.services[i].requestedTechChoice,
             techRequested: d.clip!.services[i].techRequested,
             bookingSource: d.clip!.source?.kind === 'walkin' ? 'walk_in' as const
@@ -1395,7 +1416,13 @@ export function AppointmentBook() {
             log: [logEntry(`Placed at ${fmtTime(m.startMin)} with ${techOf(m.techId).name}`)],
           }
         })
-        commit([...appts.map((a) => relocated.get(a.id) ?? a), ...newAppts])
+        commit([
+          ...appts.map((a) => {
+            const r = relocated.get(a.id) ?? a
+            return a.id === retroTagId ? { ...r, parallelGroup: group } : r
+          }),
+          ...newAppts,
+        ])
         if (d.clip!.source) {
           const src = d.clip!.source
           if (src.kind === 'walkin' && src.guestName && src.serviceId) {

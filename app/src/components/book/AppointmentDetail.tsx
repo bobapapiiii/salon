@@ -99,6 +99,23 @@ export function AppointmentDetail({
   const setSvc = (id: string, patch: Partial<Appointment>) =>
     setDraft((d) => d.map((x) => (x.id === id ? { ...x, ...patch } : x)))
 
+  // changing the Status dropdown applies to every one of this client's own
+  // linked services (mirrors the right-click Confirm/Check in/etc. actions,
+  // which move a whole booking as one unit) and saves immediately — no
+  // separate "Save changes" click needed for a plain status change. onSave
+  // (saveDetail in AppointmentBook) closes the panel itself once the save
+  // actually goes through, so a pending double-book/gender-mismatch
+  // confirmation still keeps the panel's error state visible instead of
+  // being masked by an unconditional close here
+  const applyStatus = (v: Appointment['status']) => {
+    setStatus(v)
+    onSave(
+      draft.map((d) => ({ ...d, status: v, notes: d.id === appt.id ? notes || undefined : d.notes })),
+      removed,
+      dateKey !== originDateKey ? dateKey : undefined,
+    )
+  }
+
   const total = draft.filter((d) => !removed.includes(d.id)).reduce((s, d) => s + svcById[d.serviceId].price, 0)
 
   // ── day & time rail, same slot-finding mechanism as booking a new appointment.
@@ -180,7 +197,7 @@ export function AppointmentDetail({
           <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Status</label>
           <select
             value={status}
-            onChange={(e) => setStatus(e.target.value as Appointment['status'])}
+            onChange={(e) => applyStatus(e.target.value as Appointment['status'])}
             className="w-full rounded-[8px] border border-input bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           >
             {Object.entries(STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}

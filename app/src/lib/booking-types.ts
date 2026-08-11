@@ -170,6 +170,11 @@ export interface Appointment {
   log?: { at: number; text: string }[]
   /** how the booking came in; undefined on older records predating this field */
   bookingSource?: 'front_desk' | 'walk_in' | 'online'
+  /** internal bookkeeping only, not shown in the UI — `${walkInGroupId}:${guestName}`,
+   *  set when this appointment was dragged in from the walk-in queue, so a second
+   *  service dragged in later for the same walk-in guest can be linked to the first
+   *  via a shared parallelGroup instead of landing as a separate, unlinked booking */
+  walkinOrigin?: string
 }
 
 export const logEntry = (text: string) => ({ at: Date.now(), text })
