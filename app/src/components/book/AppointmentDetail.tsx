@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  AlertTriangle, ArrowLeftRight, Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, Link2, Mail, MessageSquare, Phone, RefreshCw, ScrollText, X,
+  AlertTriangle, Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, Link2, Mail, MessageSquare, Phone, RefreshCw, ScrollText, X,
 } from 'lucide-react'
 import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, fmtTime } from '@/lib/booking-types'
@@ -8,7 +8,7 @@ import { useSettingsStore } from '@/lib/settings-store'
 import { SERVICES } from '@/lib/mock-data'
 import { boardTechs, useStaffStore } from '@/lib/staff-store'
 import { svcById } from '@/lib/services-store'
-import { allSlotsFor, layoutItems, spanOf } from './BookingPanel'
+import { allSlotsFor, layoutItems, spanOf, type SlotGroup } from './BookingPanel'
 import { DatePickerPopover } from './LegendPopover'
 
 const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
@@ -33,7 +33,7 @@ interface Props {
   dayBlocks: (key: string) => TimeBlock[]
   /** a slot that doesn't currently fit — search whether relocating some other
    *  (non-requested) booking would open it up; null when there's no way */
-  findMakeRoomPlan: (groups: { svcIds: string[]; parallel: boolean }[], startMin: number, ignoreIds?: Set<string>) => Appointment[] | null
+  findMakeRoomPlan: (groups: SlotGroup[], startMin: number, ignoreIds?: Set<string>) => Appointment[] | null
   /** confirm and apply a make-room plan found above, then run `thenSelect` */
   onRequestMakeRoom: (moves: Appointment[], startMin: number, thenSelect: () => void) => void
   onSave: (updated: Appointment[], removedIds: string[], moveToDayKey?: string) => void
@@ -372,14 +372,12 @@ export function AppointmentDetail({
                 className={`flex w-full items-center gap-1.5 rounded-[8px] border px-2 py-1.5 text-[12px] ${
                   selected
                     ? 'border-clay bg-clay-tint font-bold text-clay'
-                    : status === 'open'
-                      ? 'border-line font-bold text-ink hover:bg-cream'
-                      : status === 'movable'
-                        ? 'border-amber-400/60 bg-amber-400/10 font-bold text-amber-700 hover:bg-amber-400/20'
-                        : 'border-rose-400/60 bg-rose-400/10 font-bold text-rose-700 hover:bg-rose-400/20'
+                    : status === 'blocked'
+                      ? 'border-amber-400/60 bg-amber-400/10 font-bold text-amber-700 hover:bg-amber-400/20'
+                      : 'border-line font-bold text-ink hover:bg-cream'
                 }`}
               >
-                {status === 'movable' ? <ArrowLeftRight className="h-3 w-3 shrink-0" /> : status === 'blocked' ? <AlertTriangle className="h-3 w-3 shrink-0" /> : <Clock className="h-3 w-3 shrink-0" />}
+                {status === 'blocked' ? <AlertTriangle className="h-3 w-3 shrink-0" /> : <Clock className="h-3 w-3 shrink-0" />}
                 {fmtTime(s)}
               </button>
             )

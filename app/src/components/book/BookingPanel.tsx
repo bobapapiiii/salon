@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import {
-  AlertTriangle, ArrowLeft, ArrowLeftRight, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Plus, Search, UserPlus, Users, X, Zap,
+  AlertTriangle, ArrowLeft, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Plus, Search, UserPlus, Users, X, Zap,
 } from 'lucide-react'
 import { useSettingsStore } from '@/lib/settings-store'
 import type { Appointment, ClientRecord, ServiceAddon, TimeBlock } from '@/lib/booking-types'
@@ -81,7 +81,7 @@ interface Props {
   onPreviewDay: (key: string) => void
   /** a slot that doesn't currently fit — search whether relocating some other
    *  (non-requested) booking would open it up; null when there's no way */
-  findMakeRoomPlan: (groups: { svcIds: string[]; parallel: boolean }[], startMin: number) => Appointment[] | null
+  findMakeRoomPlan: (groups: SlotGroup[], startMin: number) => Appointment[] | null
   /** confirm and apply a make-room plan found above, then run `thenSelect` */
   onRequestMakeRoom: (moves: Appointment[], startMin: number, thenSelect: () => void) => void
   onBook: (services: BookedService[], linkGroup: boolean) => void
@@ -93,6 +93,18 @@ type Step = 'guest' | 'services' | 'details'
 interface SlotItem {
   serviceId: string
   offset: number
+  /** a specific requested techId, a soft 'pref-female'/'pref-male' preference,
+   *  or undefined for "any qualified tech" */
+  techChoice?: string
+}
+
+/** a set of services to book together, plus who (if anyone specific) each one is for —
+ *  shared by the new-appointment panel and the edit panel's time rail */
+export interface SlotGroup {
+  svcIds: string[]
+  parallel: boolean
+  /** serviceId → requested techId / 'pref-female' / 'pref-male', when known */
+  techChoices?: Record<string, string>
 }
 
 /** chained (back-to-back) or parallel (same start) layout for a set of services */
@@ -112,7 +124,9 @@ export function spanOf(svcIds: string[], parallel: boolean): number {
     : svcIds.reduce((s, id) => s + svcById[id].durationMin, 0)
 }
 
-/** can every item get a distinct qualified tech at start `s`? (greedy, least-flexible first) */
+/** can every item get a distinct qualified tech at start `s`? (greedy, least-flexible first).
+ *  an item with a specific techChoice must get exactly that tech; a pref-female/pref-male
+ *  choice is a soft filter (falls back to any qualified tech if nobody of that gender is free) */
 export function fitsAt(appts: Appointment[], items: SlotItem[], s: number, blocks: TimeBlock[] = []): boolean {
   const sorted = [...items].sort(
     (a, b) =>
@@ -123,29 +137,36 @@ export function fitsAt(appts: Appointment[], items: SlotItem[], s: number, block
   for (const item of sorted) {
     const from = s + item.offset
     const to = from + svcById[item.serviceId].durationMin
-    const tech = boardTechs(getStaff().techs).find(
+    let pool = boardTechs(getStaff().techs).filter(
       (t) =>
         t.skills.includes(item.serviceId) &&
         !used.some((u) => u.techId === t.id && overlaps(from, to, u.from, u.to)) &&
         !appts.some((a) => a.techId === t.id && overlaps(from, to, a.startMin, a.startMin + a.durationMin)) &&
         !blocks.some((b) => b.techId === t.id && overlaps(from, to, b.startMin, b.startMin + b.durationMin)),
     )
+    if (item.techChoice === 'pref-female' || item.techChoice === 'pref-male') {
+      const gp = pool.filter((t) => t.gender === (item.techChoice === 'pref-female' ? 'female' : 'male'))
+      if (gp.length > 0) pool = gp
+    } else if (item.techChoice) {
+      pool = pool.filter((t) => t.id === item.techChoice)
+    }
+    const tech = pool[0]
     if (!tech) return false
     used.push({ techId: tech.id, from, to })
   }
   return true
 }
 
-export function findSlotsFor(appts: Appointment[], groups: { svcIds: string[]; parallel: boolean }[], blocks: TimeBlock[] = []): number[] {
+export function findSlotsFor(appts: Appointment[], groups: SlotGroup[], blocks: TimeBlock[] = []): number[] {
   return allSlotsFor(appts, groups, blocks).filter((x) => x.available).map((x) => x.start)
 }
 
 /** every start-of-day time the group could begin at, each flagged available or not —
  *  lets the UI show the whole day with the closed-off times greyed out instead of hidden */
 export function allSlotsFor(
-  appts: Appointment[], groups: { svcIds: string[]; parallel: boolean }[], blocks: TimeBlock[] = [],
+  appts: Appointment[], groups: SlotGroup[], blocks: TimeBlock[] = [],
 ): { start: number; available: boolean }[] {
-  const items = groups.flatMap((g) => layoutItems(g.svcIds, g.parallel))
+  const items = groups.flatMap((g) => layoutItems(g.svcIds, g.parallel).map((it) => ({ ...it, techChoice: g.techChoices?.[it.serviceId] })))
   if (items.length === 0) return []
   const span = Math.max(...groups.filter((g) => g.svcIds.length > 0).map((g) => spanOf(g.svcIds, g.parallel)))
   const out: { start: number; available: boolean }[] = []
@@ -178,6 +199,8 @@ export function BookingPanel({
   const [techByService, setTechByService] = useState<Record<string, string>>(
     preTech ? { '0:__first__': preTech } : {},
   )
+  // request type per service: '' (not yet chosen) / any / requested-by-name / gender preference / issue
+  const [typeByService, setTypeByService] = useState<Record<string, string>>({})
   const [time, setTime] = useState<number | null>(prefillTime)
   const [dayPickerAnchor, setDayPickerAnchor] = useState<DOMRect | null>(null)
   const [note, setNote] = useState('')
@@ -256,23 +279,61 @@ export function BookingPanel({
       .slice(0, 8)
   }, [q, clients])
 
-  const groups = useMemo(
-    () => guests.map((_g, i) => ({ svcIds: svcsByGuest[i] ?? [], parallel: parallelGuest[i] ?? false })).filter((x) => x.svcIds.length > 0),
-    [guests, svcsByGuest, parallelGuest],
+  // has the salon decided who should do this service? "Any tech" / gender
+  // preference / issue are all decisions on their own; "Requested" also
+  // needs an actual name picked. Until this is true for every service,
+  // times can't be shown — who ends up free depends on the answer
+  const serviceReady = (gi: number, svcId: string): boolean => {
+    const key = `${gi}:${svcId}`
+    const type = typeByService[key] ?? ''
+    if (type === '') return false
+    if (type === 'requested') return !!techByService[key]
+    return true
+  }
+
+  // the specific techId / gender preference to fit this service against, or
+  // undefined for "any qualified tech" (also covers a specific name picked
+  // under "Any tech" without formally flagging it as Requested)
+  const techChoiceFor = (gi: number, svcId: string): string | undefined => {
+    const key = `${gi}:${svcId}`
+    const type = typeByService[key] ?? ''
+    if (type === 'pref-female' || type === 'pref-male') return type
+    if (type === 'any' || type === 'requested') {
+      const t = techByService[key]
+      return t && t !== 'first' ? t : undefined
+    }
+    return undefined
+  }
+
+  const groups = useMemo<SlotGroup[]>(
+    () => guests.map((_g, i) => {
+      const svcIds = svcsByGuest[i] ?? []
+      const techChoices: Record<string, string> = {}
+      for (const sid of svcIds) {
+        const choice = techChoiceFor(i, sid)
+        if (choice) techChoices[sid] = choice
+      }
+      return { svcIds, parallel: parallelGuest[i] ?? false, techChoices }
+    }).filter((x) => x.svcIds.length > 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [guests, svcsByGuest, parallelGuest, typeByService, techByService],
   )
+
+  const allTechsReady = guests.length > 0 &&
+    guests.every((_g, i) => (svcsByGuest[i] ?? []).length > 0 && (svcsByGuest[i] ?? []).every((sid) => serviceReady(i, sid)))
 
   // each slot is 'open' (fits as-is), 'movable' (fits if a non-requested
   // booking blocking it gets relocated — findMakeRoomPlan only runs for
   // slots that don't already fit, to keep this cheap), or 'blocked'
   const slotPlans = useMemo(() => {
-    if (guests.length === 0 || !guests.every((_g, i) => (svcsByGuest[i] ?? []).length > 0)) return []
+    if (guests.length === 0 || !guests.every((_g, i) => (svcsByGuest[i] ?? []).length > 0) || !allTechsReady) return []
     return allSlotsFor(appts, groups, blocks).map(({ start, available }) => {
       if (available) return { start, status: 'open' as const, moves: undefined as Appointment[] | undefined }
       const moves = findMakeRoomPlan(groups, start)
       return { start, status: moves ? ('movable' as const) : ('blocked' as const), moves: moves ?? undefined }
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appts, blocks, groups, guests, svcsByGuest])
+  }, [appts, blocks, groups, guests, svcsByGuest, allTechsReady])
 
   const shiftDay = (delta: number) => {
     const d = new Date(dateKey + 'T12:00:00')
@@ -382,12 +443,10 @@ export function BookingPanel({
       return { svc, when: `${['Apr', 'May', 'Jun'][i]} ${4 + i * 7}` }
     })
 
-  // request type per service: any / requested-by-name / gender preference / issue
-  const [typeByService, setTypeByService] = useState<Record<string, string>>({})
   const techSelect = (gi: number, svcId: string) => {
     const key = `${gi}:${svcId}`
-    const type = typeByService[key] ?? 'any'
-    const tech = techByService[key] ?? (gi === 0 && preTech ? preTech : 'first')
+    const type = typeByService[key] ?? ''
+    const tech = techByService[key] ?? (type === 'requested' ? '' : gi === 0 && preTech ? preTech : 'first')
     return (
       <div className="flex min-w-0 flex-1 gap-1.5">
         <Sel
@@ -396,6 +455,7 @@ export function BookingPanel({
           title="Request type"
           className="w-[112px] shrink-0"
         >
+          <option value="" disabled>Choose…</option>
           <option value="any">Any tech</option>
           <option value="requested">Requested</option>
           <option value="pref-female">Female preferred</option>
@@ -409,6 +469,7 @@ export function BookingPanel({
           title="Technician"
           className="min-w-0 flex-1"
         >
+          {type === 'requested' && tech === '' && <option value="" disabled>Choose technician…</option>}
           <option value="first">First available</option>
           {techs.filter((t) => t.skills.includes(svcId)).map((t) => (
             <option key={t.id} value={t.id}>{t.name}</option>
@@ -824,7 +885,8 @@ export function BookingPanel({
               <div className="text-[11px] text-muted-foreground">
                 {allSvcs.length === 0 || !guests.every((_g, i) => (svcsByGuest[i] ?? []).length > 0)
                   ? isParty ? 'Pick services for each guest' : 'Select services to view openings'
-                  : 'No slots this day'}
+                  : !allTechsReady ? 'Choose a technician for each service to see available times'
+                    : 'No slots this day'}
               </div>
             )}
             <div className="space-y-1">
@@ -844,14 +906,12 @@ export function BookingPanel({
                   className={`flex w-full items-center gap-1.5 rounded-md border px-2 py-1.5 text-[12px] ${
                     time === s
                       ? 'border-sky-500 bg-sky-500/15 font-bold text-foreground'
-                      : status === 'open'
-                        ? 'border-border font-bold text-foreground hover:border-sky-400 hover:bg-sky-500/5'
-                        : status === 'movable'
-                          ? 'border-amber-400/60 bg-amber-400/10 font-bold text-amber-700 hover:bg-amber-400/20'
-                          : 'border-rose-400/60 bg-rose-400/10 font-bold text-rose-700 hover:bg-rose-400/20'
+                      : status === 'blocked'
+                        ? 'border-amber-400/60 bg-amber-400/10 font-bold text-amber-700 hover:bg-amber-400/20'
+                        : 'border-border font-bold text-foreground hover:border-sky-400 hover:bg-sky-500/5'
                   }`}
                 >
-                  {status === 'movable' ? <ArrowLeftRight className="h-3 w-3 shrink-0" /> : status === 'blocked' ? <AlertTriangle className="h-3 w-3 shrink-0" /> : <Clock className="h-3 w-3 shrink-0" />}
+                  {status === 'blocked' ? <AlertTriangle className="h-3 w-3 shrink-0" /> : <Clock className="h-3 w-3 shrink-0" />}
                   {fmtTime(s)}
                 </button>
               ))}

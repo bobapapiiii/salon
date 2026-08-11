@@ -13,7 +13,7 @@ import { svcById } from '@/lib/services-store'
 import { Toolbar } from './Toolbar'
 import { ApptContextMenu, ConfirmCancelDialog, type MenuAction } from './ApptMenus'
 import { ConfirmDialog } from './ConfirmDialog'
-import { BookingPanel, layoutItems, type BookedService } from './BookingPanel'
+import { BookingPanel, layoutItems, type BookedService, type SlotGroup } from './BookingPanel'
 import { AppointmentDetail, type DetailAction } from './AppointmentDetail'
 import { ClientProfile, type ClientNote } from './ClientProfile'
 import { RequestsRail } from './RequestsRail'
@@ -1128,10 +1128,10 @@ export function AppointmentBook() {
   // used by both the front-desk booking panel and the edit panel's day
   // rail, and reusable as-is once online booking gets a "smart find" step
   const findMakeRoomPlan = (
-    groups: { svcIds: string[]; parallel: boolean }[], startMin: number, ignoreIds?: Set<string>,
+    groups: SlotGroup[], startMin: number, ignoreIds?: Set<string>,
   ): Appointment[] | null => {
     if (!autoRelocateNonRequested) return null
-    const items = groups.flatMap((g) => layoutItems(g.svcIds, g.parallel))
+    const items = groups.flatMap((g) => layoutItems(g.svcIds, g.parallel).map((it) => ({ ...it, techChoice: g.techChoices?.[it.serviceId] })))
     if (items.length === 0) return null
     const skip = ignoreIds ?? new Set<string>()
     const sorted = [...items].sort((a, b) =>
@@ -1142,12 +1142,20 @@ export function AppointmentBook() {
     for (const item of sorted) {
       const from = startMin + item.offset
       const to = from + svcById[item.serviceId].durationMin
-      const candidates = boardTechs(getStaff().techs)
+      let candidates = boardTechs(getStaff().techs)
         .filter((t) =>
           t.skills.includes(item.serviceId) && withinShift(t.id, from, to) &&
           !usedTechAt.some((u) => u.techId === t.id && overlaps(from, to, u.from, u.to)) &&
           !blocksRef.current.some((b) => b.techId === t.id && overlaps(from, to, b.startMin, b.startMin + b.durationMin)))
-        .sort((a, b) => (apptCountByTech.get(a.id) ?? 0) - (apptCountByTech.get(b.id) ?? 0))
+      // a specific requested tech only makes room on THAT tech; a gender
+      // preference narrows the pool but still falls back if nobody matches
+      if (item.techChoice === 'pref-female' || item.techChoice === 'pref-male') {
+        const gp = candidates.filter((t) => t.gender === (item.techChoice === 'pref-female' ? 'female' : 'male'))
+        if (gp.length > 0) candidates = gp
+      } else if (item.techChoice) {
+        candidates = candidates.filter((t) => t.id === item.techChoice)
+      }
+      candidates = candidates.sort((a, b) => (apptCountByTech.get(a.id) ?? 0) - (apptCountByTech.get(b.id) ?? 0))
       let placed = false
       for (const t of candidates) {
         const plan = makeRoom(t.id, from, to, new Set([...skip, ...allMoves.keys()]))
