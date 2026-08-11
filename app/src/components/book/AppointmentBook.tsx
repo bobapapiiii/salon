@@ -1934,7 +1934,19 @@ export function AppointmentBook() {
   // preview other days while it's open, and the panel itself must stay put
   const detailBoard = dayApptsFor(detailOriginDay ?? dateKey)
   const detailAppt = detailId ? detailBoard.find((a) => a.id === detailId) : undefined
+  // a `parallelGroup` id is shared both by one client's own linked services
+  // (e.g. mani+pedi booked together) AND by a whole party of different
+  // clients booked at the same time — the edit panel must only ever show,
+  // total, save, copy, or rebook THIS client's own services, so it filters
+  // on clientName too (mirrors setStatus's `targets` a few lines up)
   const detailGroup = detailAppt
+    ? detailAppt.parallelGroup
+      ? detailBoard.filter((a) => a.parallelGroup === detailAppt.parallelGroup && a.clientName === detailAppt.clientName)
+      : [detailAppt]
+    : []
+  // the whole party sharing this booking's parallelGroup, across every guest —
+  // used only for the checkout ticket below, which intentionally covers everyone
+  const detailParty = detailAppt
     ? detailAppt.parallelGroup
       ? detailBoard.filter((a) => a.parallelGroup === detailAppt.parallelGroup)
       : [detailAppt]
@@ -2121,10 +2133,11 @@ export function AppointmentBook() {
     if (originKey !== dateKey) goDay(new Date(originKey + 'T12:00:00'))
     switch (action) {
       case 'checkout':
-        // pass detailGroup explicitly — it's already resolved against the
-        // appointment's own day, whereas `appts` may not have caught up to
-        // the goDay() above yet within this same synchronous handler
-        openCheckout(a, detailGroup)
+        // pass detailParty (the whole party, not just this client) explicitly —
+        // it's already resolved against the appointment's own day, whereas
+        // `appts` may not have caught up to the goDay() above yet within this
+        // same synchronous handler
+        openCheckout(a, detailParty)
         break
       case 'copy':
         detailGroup.forEach((g) => copyServiceToClipboard(g, true))
