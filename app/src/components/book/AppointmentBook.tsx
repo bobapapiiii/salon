@@ -531,9 +531,10 @@ export function AppointmentBook() {
   const colXAt = useCallback((i: number) => i * cw, [cw])
   const colWAt = useCallback((_i: number) => cw, [cw])
 
-  // right-side panels (booking 580px, checkout/POS 460px) overlay the scroller —
-  // pad the content so the last columns can scroll out from under them
-  const panelPad = bookingOpen ? 580 : checkoutName || posOpen ? 460 : 0
+  // right-side panels (booking 580px, checkout/POS 460px, appointment detail
+  // 440px) overlay the scroller — pad the content so the last columns can
+  // scroll out from under them
+  const panelPad = bookingOpen ? 580 : checkoutName || posOpen ? 460 : detailId ? 440 : 0
   const totalW = GUTTER_W + columns.length * cw + panelPad
 
   const showText = cw >= TEXT_COL_W
