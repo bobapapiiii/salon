@@ -1541,8 +1541,13 @@ export function AppointmentBook() {
     }))
 
   // ── checkout ──────────────────────────────────────────────────────────────
-  // one ticket per client visit, or the whole party for linked groups
-  const payable = (a: Appointment) => a.status !== 'completed' && a.status !== 'no_show' && a.status !== 'requested'
+  // one ticket per client visit, or the whole party for linked groups.
+  // 'completed' status alone doesn't mean paid — "Mark completed" sets it the
+  // moment the service is done, before checkout ever runs, and checkout ALSO
+  // sets it once payment goes through. The payments ledger is the only
+  // reliable record of what's actually been paid for.
+  const payable = (a: Appointment) =>
+    a.status !== 'no_show' && a.status !== 'requested' && !payments.some((p) => p.apptIds?.includes(a.id))
   const checkoutItems = useMemo(() => {
     if (!checkoutName) return []
     const notRemoved = (a: Appointment) => !(checkoutDraft?.removedIds ?? []).includes(a.id)
@@ -1740,7 +1745,7 @@ export function AppointmentBook() {
       case 'checkout': {
         const payableNow = appts.some((x) =>
           (x.clientName === a.clientName || (a.guestOf && x.guestOf === a.guestOf) || (a.parallelGroup && x.parallelGroup === a.parallelGroup)) &&
-          x.status !== 'completed' && x.status !== 'no_show' && x.status !== 'requested')
+          payable(x))
         if (!payableNow) { showFlash('Already checked out, right-click and choose View invoice / Print'); break }
         openCheckout(a)
         break
