@@ -1685,10 +1685,13 @@ export function AppointmentBook() {
   // ── context menu actions ──────────────────────────────────────────────────
   const setStatus = (a: Appointment, status: Appointment['status'], msg: string) => {
     // confirm, check-in, start, complete, and undo all apply to every service
-    // belonging to this client, party members move individually
+    // in THIS booking (a multi-service visit shares a parallelGroup, so e.g.
+    // mani+pedi booked together check in as one unit) — but never sweep in a
+    // client's OTHER, unrelated appointments elsewhere on the day just
+    // because the name matches; party members move individually
     const targets = a.parallelGroup
       ? appts.filter((x) => x.parallelGroup === a.parallelGroup && x.clientName === a.clientName)
-      : appts.filter((x) => x.clientName === a.clientName)
+      : [a]
     const ids = new Set(targets.map((t) => t.id))
     const STATUS_LOG: Record<string, string> = {
       booked: 'Set back to booked',
