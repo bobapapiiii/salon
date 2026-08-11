@@ -21,7 +21,7 @@ function dayLabelOf(key: string) {
 }
 
 /** select with a proper chevron that never covers the text */
-function Sel({ value, onChange, title, disabled, className = '', children }: {
+export function Sel({ value, onChange, title, disabled, className = '', children }: {
   value: string | number
   onChange: (v: string) => void
   title?: string

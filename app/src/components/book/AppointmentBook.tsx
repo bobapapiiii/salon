@@ -14,6 +14,7 @@ import { Toolbar } from './Toolbar'
 import { ApptContextMenu, ConfirmCancelDialog, type MenuAction } from './ApptMenus'
 import { ConfirmDialog } from './ConfirmDialog'
 import { BookingPanel, layoutItems, type BookedService, type SlotGroup } from './BookingPanel'
+import { AvailabilityFinder } from './AvailabilityFinder'
 import { AppointmentDetail, type DetailAction } from './AppointmentDetail'
 import { ClientProfile, type ClientNote } from './ClientProfile'
 import { RequestsRail } from './RequestsRail'
@@ -432,6 +433,7 @@ export function AppointmentBook() {
   const [clients, setClients] = usePersistentState<ClientRecord[]>(sdata('clients-v1'), CLIENTS)
   const [bookingOpen, setBookingOpen] = useState(false)
   const [bookingPrefill, setBookingPrefill] = useState<{ techId: string; startMin: number } | null>(null)
+  const [finderOpen, setFinderOpen] = useState(false)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [darkMode, setDarkMode] = usePersistentState(upref('ui-dark'), false)
@@ -606,7 +608,7 @@ export function AppointmentBook() {
   // right-side panels (booking 580px, checkout/POS 460px, appointment detail
   // 440px) overlay the scroller — pad the content so the last columns can
   // scroll out from under them
-  const panelPad = bookingOpen ? 580 : checkoutName || posOpen ? 460 : detailId ? 440 : 0
+  const panelPad = bookingOpen ? 580 : finderOpen ? 720 : checkoutName || posOpen ? 460 : detailId ? 440 : 0
   const totalW = GUTTER_W + columns.length * cw + panelPad
 
   const showText = cw >= TEXT_COL_W
@@ -1013,6 +1015,7 @@ export function AppointmentBook() {
     setBookingPrefill({ techId: col.tech.id, startMin: Math.round(yMin / SLOT_MIN) * SLOT_MIN })
     closeCheckout()
     setPosOpen(false)
+    setFinderOpen(false)
     setBookingOpen(true)
   }
 
@@ -1517,7 +1520,17 @@ export function AppointmentBook() {
     setBookingPrefill(null)
     closeCheckout()
     setPosOpen(false)
+    setFinderOpen(false)
     setBookingOpen(true)
+  }
+
+  // opens the group availability finder — closes every other exclusive right panel first
+  const openFinder = () => {
+    closeCheckout()
+    setPosOpen(false)
+    setBookingOpen(false)
+    setDetailId(null)
+    setFinderOpen(true)
   }
 
   const onBookFromPanel = (services: BookedService[], linkGroup: boolean) => {
@@ -1628,6 +1641,7 @@ export function AppointmentBook() {
       }))
     }
     setBookingOpen(false)
+    setFinderOpen(false)
     const names = [...new Set(services.map((s) => s.clientName))].join(' & ')
     const movedNote = relocated.size > 0 ? `, moved ${relocated.size} booking${relocated.size > 1 ? 's' : ''} to make room` : ''
     showFlash(`✓ ${names} booked at ${fmtTime(services[0].startMin)}${movedNote}, confirmation sent`)
@@ -1716,6 +1730,7 @@ export function AppointmentBook() {
     setDetailId(null)
     setBookingOpen(false) // right-side panels are exclusive, never stack
     setPosOpen(false)
+    setFinderOpen(false)
     // groupOverride lets a caller pass an already-resolved group (e.g. the
     // edit panel, whose day rail may have navigated the live calendar away
     // from this appointment's own day within this same synchronous call)
@@ -1820,6 +1835,7 @@ export function AppointmentBook() {
     setDetailOriginDay(dateKey)
     setBookingOpen(false)
     setPosOpen(false)
+    setFinderOpen(false)
     closeCheckout()
   }
 
@@ -2744,9 +2760,11 @@ export function AppointmentBook() {
         onBook={openBooking}
         onPos={() => {
           setBookingOpen(false)
+          setFinderOpen(false)
           closeCheckout()
           setPosOpen(true)
         }}
+        onFindTime={openFinder}
         requestCount={requested.length}
         onToggleRail={() => setRailOpen((o) => !o)}
       />
@@ -3162,6 +3180,7 @@ export function AppointmentBook() {
               setBookingPrefill({ techId, startMin })
               closeCheckout()
               setPosOpen(false)
+              setFinderOpen(false)
               setBookingOpen(true)
             }}
             onApptMenu={(e, apptId) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, apptId }) }}
@@ -3285,6 +3304,7 @@ export function AppointmentBook() {
                 setBookingPrefill({ techId: gridMenu.techId, startMin: gridMenu.startMin })
                 closeCheckout()
                 setPosOpen(false)
+                setFinderOpen(false)
                 setBookingOpen(true)
                 setGridMenu(null)
               }}
@@ -3557,6 +3577,23 @@ export function AppointmentBook() {
           onBook={onBookFromPanel}
           onViewProfile={openProfile}
           onClose={() => setBookingOpen(false)}
+        />
+      )}
+
+      {/* group availability finder */}
+      {finderOpen && (
+        <AvailabilityFinder
+          appts={appts}
+          blocks={dayBlocks}
+          clients={clients}
+          onAddClient={(c) => setClients((x) => [...x, c])}
+          dateKey={dateKey}
+          onPreviewDay={(k) => goDay(new Date(k + 'T12:00:00'))}
+          findMakeRoomPlan={(groups, s) => findMakeRoomPlan(groups, s)}
+          onRequestMakeRoom={onRequestMakeRoom}
+          onBook={onBookFromPanel}
+          onViewProfile={openProfile}
+          onClose={() => setFinderOpen(false)}
         />
       )}
 

@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react'
 import {
-  CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Eye, ListFilter, PanelRight, Plus, Search, Store,
+  CalendarDays, CalendarSearch, ChevronDown, ChevronLeft, ChevronRight, Eye, ListFilter, PanelRight, Plus, Search, Store,
 } from 'lucide-react'
 import { useCategoriesStore } from '@/lib/categories-store'
 
@@ -32,6 +32,7 @@ interface Props {
   onCatFilter: (c: string) => void
   onBook: () => void
   onPos: () => void
+  onFindTime: () => void
   requestCount: number
   onToggleRail: () => void
 }
@@ -205,6 +206,16 @@ export function Toolbar(p: Props) {
         >
           <Store className="h-4 w-4" />
           POS
+        </button>
+
+        <button
+          type="button"
+          onClick={p.onFindTime}
+          title="Find a shared opening across multiple guests and specific tech requests"
+          className="flex h-10 items-center gap-1.5 rounded-[10px] border border-line bg-surface px-3.5 text-[14px] font-semibold text-ink-soft transition-all duration-150 hover:-translate-y-px hover:bg-cream active:translate-y-0"
+        >
+          <CalendarSearch className="h-4 w-4" />
+          Find a Time
         </button>
 
         <IconBtn title="Requests panel" badge={p.requestCount} onClick={p.onToggleRail}>
