@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import {
-  AlertTriangle, ArrowLeft, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Plus, Search, UserPlus, Users, X, Zap,
+  AlertTriangle, ArrowLeft, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Link2, Mail, Phone, Plus, Search, UserPlus, Users, X, Zap,
 } from 'lucide-react'
 import { useSettingsStore } from '@/lib/settings-store'
 import type { Appointment, ClientRecord, ServiceAddon, TimeBlock } from '@/lib/booking-types'
@@ -85,6 +85,8 @@ interface Props {
   /** confirm and apply a make-room plan found above, then run `thenSelect` */
   onRequestMakeRoom: (moves: Appointment[], startMin: number, thenSelect: () => void) => void
   onBook: (services: BookedService[], linkGroup: boolean) => void
+  /** open the guest's full profile, when they already have an account */
+  onViewProfile: (clientName: string) => void
   onClose: () => void
 }
 
@@ -180,7 +182,7 @@ const DUR_OPTS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
 
 export function BookingPanel({
   appts, blocks, clients, onAddClient, prefillTime, prefillTechId, dateKey, onPreviewDay,
-  findMakeRoomPlan, onRequestMakeRoom, onBook, onClose,
+  findMakeRoomPlan, onRequestMakeRoom, onBook, onViewProfile, onClose,
 }: Props) {
   const { techs: allTechs } = useStaffStore()
   const techs = boardTechs(allTechs)
@@ -536,7 +538,7 @@ export function BookingPanel({
     <div className="fixed inset-y-0 right-0 z-[85] flex w-[596px] max-w-[95vw] flex-col border-l border-line bg-popover shadow-2xl">
       {/* header */}
       <div className="border-b border-line bg-cream px-4 py-3.5">
-        <div className="flex items-center gap-3">
+        <div className="flex items-start gap-3">
           {step !== 'guest' && (
             <button
               onClick={() => setStep(step === 'details' ? 'services' : 'guest')}
@@ -547,15 +549,36 @@ export function BookingPanel({
           )}
           {guests[0] ? (
             <>
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-clay-tint text-xs font-bold text-clay">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-clay-tint text-sm font-bold text-clay">
                 {guests[0].name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[14px] font-bold text-ink">
-                  {guests[0].name}{guests.length > 1 ? ` + ${guests.length - 1} more` : ''}
+                <div className="flex items-center gap-2">
+                  {guests[0].isGuest ? (
+                    <span className="truncate text-[14px] font-bold text-ink">{guests[0].name}</span>
+                  ) : (
+                    <button onClick={() => onViewProfile(guests[0].name)} className="truncate text-[14px] font-bold text-ink hover:text-clay" title="Open guest profile">
+                      {guests[0].name}
+                    </button>
+                  )}
+                  <span className="flex items-center gap-1 rounded-full bg-clay-tint px-1.5 py-0.5 text-[9.5px] font-bold uppercase tracking-wide text-clay">
+                    <span className="h-1.5 w-1.5 rounded-full bg-clay" />
+                    New
+                  </span>
                 </div>
-                <div className="text-[11px] text-ink-faint">
-                  New appointment{guests[0].phone ? ` · ${guests[0].phone}` : ''}
+                <div className="mt-1 space-y-0.5 text-[11px] text-ink-faint">
+                  {guests[0].phone && (
+                    <div className="flex items-center gap-1.5"><Phone className="h-3 w-3" /> {guests[0].phone}</div>
+                  )}
+                  {!guests[0].isGuest && (
+                    <div className="flex items-center gap-1.5"><Mail className="h-3 w-3" /> {guests[0].name.split(' ')[0].toLowerCase()}@email.com</div>
+                  )}
+                  <div className="flex items-center gap-1.5">Host: Front desk{guests.length > 1 && (
+                    <span className="flex items-center gap-0.5 text-clay"><Link2 className="h-3 w-3" /> group of {guests.length}</span>
+                  )}</div>
+                  {!guests[0].isGuest && (
+                    <button onClick={() => onViewProfile(guests[0].name)} className="font-semibold text-clay hover:underline">View full profile →</button>
+                  )}
                 </div>
               </div>
             </>

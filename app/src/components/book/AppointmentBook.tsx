@@ -3552,6 +3552,7 @@ export function AppointmentBook() {
           findMakeRoomPlan={(groups, s) => findMakeRoomPlan(groups, s)}
           onRequestMakeRoom={onRequestMakeRoom}
           onBook={onBookFromPanel}
+          onViewProfile={openProfile}
           onClose={() => setBookingOpen(false)}
         />
       )}
