@@ -8,7 +8,7 @@ import { useSettingsStore } from '@/lib/settings-store'
 import { SERVICES } from '@/lib/mock-data'
 import { boardTechs, useStaffStore } from '@/lib/staff-store'
 import { svcById } from '@/lib/services-store'
-import { findSlotsFor, layoutItems, spanOf } from './BookingPanel'
+import { allSlotsFor, layoutItems, spanOf } from './BookingPanel'
 import { DatePickerPopover } from './LegendPopover'
 
 const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
@@ -20,8 +20,14 @@ interface Props {
   group: Appointment[]
   clients: ClientRecord[]
   error: string | null
-  /** the day currently open on the calendar, i.e. the day this appointment lives on right now */
+  /** the day this appointment actually lives on, fixed for the life of this panel even
+   *  while the calendar behind it is browsed to preview other days */
+  originDateKey: string
+  /** the day currently shown on the calendar behind this panel — changes as the day
+   *  rail below is used, via onPreviewDay, to actually navigate the background board */
   dateKey: string
+  /** switch which day the calendar behind this panel is showing */
+  onPreviewDay: (key: string) => void
   /** appointments for any day (today or otherwise), used to preview openings before jumping there */
   dayAppts: (key: string) => Appointment[]
   dayBlocks: (key: string) => TimeBlock[]
@@ -70,7 +76,7 @@ const REQUEST_HEART_COLOR: Record<string, string | undefined> = {
   any: undefined,
 }
 
-export function AppointmentDetail({ appt, group, clients, error, dateKey, dayAppts, dayBlocks, onSave, onAction, onCopyService, onViewProfile, onClose }: Props) {
+export function AppointmentDetail({ appt, group, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks, onSave, onAction, onCopyService, onViewProfile, onClose }: Props) {
   const increment = useSettingsStore().booking.increment
   const TIME_OPTIONS = Array.from({ length: (CLOSE_MIN - OPEN_MIN) / increment }, (_, i) => i * increment)
   const { roles, techs: allTechs } = useStaffStore()
@@ -79,9 +85,6 @@ export function AppointmentDetail({ appt, group, clients, error, dateKey, dayApp
   const [removed, setRemoved] = useState<string[]>([])
   const [status, setStatus] = useState(appt.status)
   const [notes, setNotes] = useState(appt.notes ?? '')
-  // which day the "available times" rail is previewing, defaults to today's
-  // board; changing it doesn't move anything until Save changes is clicked
-  const [pickedDay, setPickedDay] = useState(dateKey)
   const [dayPickerAnchor, setDayPickerAnchor] = useState<DOMRect | null>(null)
 
   const client = clients.find((c) => c.name === appt.clientName)
@@ -90,18 +93,22 @@ export function AppointmentDetail({ appt, group, clients, error, dateKey, dayApp
 
   const total = draft.filter((d) => !removed.includes(d.id)).reduce((s, d) => s + svcById[d.serviceId].price, 0)
 
-  // ── day & time rail, same slot-finding mechanism as booking a new appointment ──
+  // ── day & time rail, same slot-finding mechanism as booking a new appointment.
+  // `dateKey` is the day the calendar behind this panel is showing right now —
+  // browsing it via the rail below actually navigates that calendar (onPreviewDay)
+  // so the salon can see the board, while `originDateKey` stays fixed at the
+  // appointment's real day so Save knows whether this is actually a move ──
   const activeServices = draft.filter((d) => !removed.includes(d.id))
   const svcIds = activeServices.map((d) => d.serviceId)
   const isParallelGroup = activeServices.length > 1 && activeServices.every((d) => d.startMin === activeServices[0].startMin)
   const groupStart = activeServices[0]?.startMin
   const selfIds = new Set(group.map((g) => g.id))
-  const slots = useMemo(() => {
+  const allSlots = useMemo(() => {
     if (svcIds.length === 0) return []
-    const others = dayAppts(pickedDay).filter((a) => !selfIds.has(a.id))
-    return findSlotsFor(others, [{ svcIds, parallel: isParallelGroup }], dayBlocks(pickedDay))
+    const others = dayAppts(dateKey).filter((a) => !selfIds.has(a.id))
+    return allSlotsFor(others, [{ svcIds, parallel: isParallelGroup }], dayBlocks(dateKey))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pickedDay, JSON.stringify(svcIds), isParallelGroup])
+  }, [dateKey, JSON.stringify(svcIds), isParallelGroup])
 
   const applySlot = (s: number) => {
     const items = layoutItems(svcIds, isParallelGroup)
@@ -109,9 +116,9 @@ export function AppointmentDetail({ appt, group, clients, error, dateKey, dayApp
   }
 
   const shiftDay = (delta: number) => {
-    const d = new Date(pickedDay + 'T12:00:00')
+    const d = new Date(dateKey + 'T12:00:00')
     d.setDate(d.getDate() + delta)
-    setPickedDay(dayKeyOf(d))
+    onPreviewDay(dayKeyOf(d))
   }
 
   return (
@@ -290,7 +297,8 @@ export function AppointmentDetail({ appt, group, clients, error, dateKey, dayApp
         {error && <p className="text-[12px] font-medium text-rust">{error}</p>}
       </div>
 
-      {/* day & time rail, same slot-finding mechanism as booking a new appointment */}
+      {/* day & time rail, same slot-finding mechanism as booking a new appointment.
+          picking a day here navigates the calendar behind this panel so it's visible */}
       <div className="w-[194px] shrink-0 overflow-y-auto border-l border-line p-3">
         <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Day</label>
         <div className="mb-3 flex items-center gap-1">
@@ -307,7 +315,7 @@ export function AppointmentDetail({ appt, group, clients, error, dateKey, dayApp
             className="flex min-w-0 flex-1 items-center justify-center gap-1 rounded-[8px] border border-line px-1.5 py-1.5 text-[11px] font-semibold text-ink hover:bg-cream"
           >
             <Calendar className="h-3 w-3 shrink-0" />
-            <span className="truncate">{dayLabelOf(pickedDay)}</span>
+            <span className="truncate">{dayLabelOf(dateKey)}</span>
           </button>
           <button
             onClick={() => shiftDay(1)}
@@ -317,31 +325,38 @@ export function AppointmentDetail({ appt, group, clients, error, dateKey, dayApp
             <ChevronRight className="h-3.5 w-3.5" />
           </button>
         </div>
-        {pickedDay !== dateKey && (
+        {dateKey !== originDateKey && (
           <div className="mb-3 rounded-[8px] border border-clay/30 bg-clay-tint/30 px-2 py-1.5 text-[10.5px] font-semibold text-clay">
-            Save changes to move this appointment to {dayLabelOf(pickedDay)}
+            Save changes to move this appointment to {dayLabelOf(dateKey)}
           </div>
         )}
         <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
           Available times{spanOf(svcIds, isParallelGroup) > 0 && ` (${spanOf(svcIds, isParallelGroup)}m)`}
         </label>
-        {slots.length === 0 && (
-          <div className="text-[11px] text-ink-faint">No open slots this day</div>
+        {allSlots.length === 0 && (
+          <div className="text-[11px] text-ink-faint">No slots this day</div>
         )}
         <div className="space-y-1">
-          {slots.slice(0, 60).map((s) => (
-            <button
-              key={s}
-              onClick={() => applySlot(s)}
-              className={`flex w-full items-center gap-1.5 rounded-[8px] border px-2 py-1.5 text-[12px] ${
-                pickedDay === dateKey && s === groupStart
-                  ? 'border-clay bg-clay-tint font-semibold text-clay'
-                  : 'border-line text-ink-faint hover:text-ink'
-              }`}
-            >
-              <Clock className="h-3 w-3 shrink-0" /> {fmtTime(s)}
-            </button>
-          ))}
+          {allSlots.map(({ start: s, available }) => {
+            const selected = dateKey === originDateKey && s === groupStart
+            return (
+              <button
+                key={s}
+                disabled={!available}
+                onClick={() => available && applySlot(s)}
+                title={available ? undefined : 'No qualified tech free at this time'}
+                className={`flex w-full items-center gap-1.5 rounded-[8px] border px-2 py-1.5 text-[12px] ${
+                  selected
+                    ? 'border-clay bg-clay-tint font-semibold text-clay'
+                    : available
+                      ? 'border-line text-ink-faint hover:text-ink'
+                      : 'cursor-not-allowed border-transparent text-ink-faint/35'
+                }`}
+              >
+                <Clock className="h-3 w-3 shrink-0" /> {fmtTime(s)}
+              </button>
+            )
+          })}
         </div>
       </div>
       </div>
@@ -349,10 +364,10 @@ export function AppointmentDetail({ appt, group, clients, error, dateKey, dayApp
       {dayPickerAnchor && (
         <DatePickerPopover
           anchor={dayPickerAnchor}
-          selected={pickedDay}
+          selected={dateKey}
           today={dayKeyOf(new Date())}
           appointmentDates={new Set()}
-          onSelect={(ds) => { setPickedDay(ds); setDayPickerAnchor(null) }}
+          onSelect={(ds) => { setDayPickerAnchor(null); onPreviewDay(ds) }}
           onClose={() => setDayPickerAnchor(null)}
         />
       )}
@@ -389,11 +404,11 @@ export function AppointmentDetail({ appt, group, clients, error, dateKey, dayApp
           onClick={() => onSave(
             draft.map((d) => ({ ...d, status: d.id === appt.id ? status : d.status, notes: d.id === appt.id ? notes || undefined : d.notes })),
             removed,
-            pickedDay !== dateKey ? pickedDay : undefined,
+            dateKey !== originDateKey ? dateKey : undefined,
           )}
           className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"
         >
-          <Clock className="h-4 w-4" /> {pickedDay !== dateKey ? `Save & move to ${dayLabelOf(pickedDay)}` : 'Save changes'}
+          <Clock className="h-4 w-4" /> {dateKey !== originDateKey ? `Save & move to ${dayLabelOf(dateKey)}` : 'Save changes'}
         </button>
       </div>
     </div>

@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import {
-  ArrowLeft, Check, ChevronDown, ChevronRight, Clock, Plus, Search, UserPlus, Users, X, Zap,
+  ArrowLeft, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Plus, Search, UserPlus, Users, X, Zap,
 } from 'lucide-react'
 import { useSettingsStore } from '@/lib/settings-store'
 import type { Appointment, ClientRecord, ServiceAddon, TimeBlock } from '@/lib/booking-types'
@@ -8,8 +8,17 @@ import { DAY_SLOTS, SLOT_MIN, fmtTime, overlaps } from '@/lib/booking-types'
 import { SERVICES } from '@/lib/mock-data'
 import { boardTechs, getStaff, useStaffStore } from '@/lib/staff-store'
 import { svcById } from '@/lib/services-store'
+import { DatePickerPopover } from './LegendPopover'
 
 const DAY_MIN = DAY_SLOTS * SLOT_MIN
+
+/** small local date helpers, duplicated from AppointmentBook to avoid a circular import */
+function dayKeyOf(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function dayLabelOf(key: string) {
+  return new Date(key + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+}
 
 /** select with a proper chevron that never covers the text */
 function Sel({ value, onChange, title, disabled, className = '', children }: {
@@ -66,6 +75,10 @@ interface Props {
   onAddClient: (c: ClientRecord) => void
   prefillTime: number | null
   prefillTechId?: string | null
+  /** the day currently open on the calendar behind this panel */
+  dateKey: string
+  /** switch the day shown on the calendar behind this panel (and in `appts`/`blocks` above) */
+  onPreviewDay: (key: string) => void
   onBook: (services: BookedService[], linkGroup: boolean) => void
   onClose: () => void
 }
@@ -95,7 +108,7 @@ export function spanOf(svcIds: string[], parallel: boolean): number {
 }
 
 /** can every item get a distinct qualified tech at start `s`? (greedy, least-flexible first) */
-function fitsAt(appts: Appointment[], items: SlotItem[], s: number, blocks: TimeBlock[] = []): boolean {
+export function fitsAt(appts: Appointment[], items: SlotItem[], s: number, blocks: TimeBlock[] = []): boolean {
   const sorted = [...items].sort(
     (a, b) =>
       boardTechs(getStaff().techs).filter((t) => t.skills.includes(a.serviceId)).length -
@@ -119,19 +132,27 @@ function fitsAt(appts: Appointment[], items: SlotItem[], s: number, blocks: Time
 }
 
 export function findSlotsFor(appts: Appointment[], groups: { svcIds: string[]; parallel: boolean }[], blocks: TimeBlock[] = []): number[] {
+  return allSlotsFor(appts, groups, blocks).filter((x) => x.available).map((x) => x.start)
+}
+
+/** every start-of-day time the group could begin at, each flagged available or not —
+ *  lets the UI show the whole day with the closed-off times greyed out instead of hidden */
+export function allSlotsFor(
+  appts: Appointment[], groups: { svcIds: string[]; parallel: boolean }[], blocks: TimeBlock[] = [],
+): { start: number; available: boolean }[] {
   const items = groups.flatMap((g) => layoutItems(g.svcIds, g.parallel))
   if (items.length === 0) return []
   const span = Math.max(...groups.filter((g) => g.svcIds.length > 0).map((g) => spanOf(g.svcIds, g.parallel)))
-  const out: number[] = []
+  const out: { start: number; available: boolean }[] = []
   for (let s = 0; s <= DAY_MIN - span; s += SLOT_MIN) {
-    if (fitsAt(appts, items, s, blocks)) out.push(s)
+    out.push({ start: s, available: fitsAt(appts, items, s, blocks) })
   }
   return out
 }
 
 const DUR_OPTS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
 
-export function BookingPanel({ appts, blocks, clients, onAddClient, prefillTime, prefillTechId, onBook, onClose }: Props) {
+export function BookingPanel({ appts, blocks, clients, onAddClient, prefillTime, prefillTechId, dateKey, onPreviewDay, onBook, onClose }: Props) {
   const { techs: allTechs } = useStaffStore()
   const techs = boardTechs(allTechs)
   const increment = useSettingsStore().booking.increment
@@ -150,6 +171,7 @@ export function BookingPanel({ appts, blocks, clients, onAddClient, prefillTime,
     preTech ? { '0:__first__': preTech } : {},
   )
   const [time, setTime] = useState<number | null>(prefillTime)
+  const [dayPickerAnchor, setDayPickerAnchor] = useState<DOMRect | null>(null)
   const [note, setNote] = useState('')
   const [tab, setTab] = useState<'services' | 'history' | 'notes'>('services')
   const [groupName, setGroupName] = useState('')
@@ -231,10 +253,16 @@ export function BookingPanel({ appts, blocks, clients, onAddClient, prefillTime,
     [guests, svcsByGuest, parallelGuest],
   )
 
-  const slots = useMemo(() => {
+  const allSlots = useMemo(() => {
     if (guests.length === 0 || !guests.every((_g, i) => (svcsByGuest[i] ?? []).length > 0)) return []
-    return findSlotsFor(appts, groups, blocks)
+    return allSlotsFor(appts, groups, blocks)
   }, [appts, blocks, groups, guests, svcsByGuest])
+
+  const shiftDay = (delta: number) => {
+    const d = new Date(dateKey + 'T12:00:00')
+    d.setDate(d.getDate() + delta)
+    onPreviewDay(dayKeyOf(d))
+  }
 
   const allSvcs = groups.flatMap((g) => g.svcIds)
   const total = allSvcs.reduce((sum, id) => sum + svcById[id].price, 0) +
@@ -424,7 +452,7 @@ export function BookingPanel({ appts, blocks, clients, onAddClient, prefillTime,
   }
 
   return (
-    <div className="fixed inset-y-0 right-0 z-[85] flex w-[580px] max-w-[95vw] flex-col border-l border-border bg-popover shadow-2xl">
+    <div className="fixed inset-y-0 right-0 z-[85] flex w-[596px] max-w-[95vw] flex-col border-l border-border bg-popover shadow-2xl">
       {/* header */}
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
         {step !== 'guest' && (
@@ -745,26 +773,57 @@ export function BookingPanel({ appts, blocks, clients, onAddClient, prefillTime,
           )}
         </div>
 
-        {/* available-times rail */}
+        {/* day + available-times rail */}
         {step !== 'guest' && (
-          <div className="w-44 shrink-0 overflow-y-auto border-l border-border p-3">
+          <div className="w-48 shrink-0 overflow-y-auto border-l border-border p-3">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Day</div>
+            <div className="mb-3 flex items-center gap-1">
+              <button
+                onClick={() => shiftDay(-1)}
+                title="Previous day"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              <button
+                onClick={(e) => setDayPickerAnchor(e.currentTarget.getBoundingClientRect())}
+                title="Choose a date"
+                className="flex min-w-0 flex-1 items-center justify-center gap-1 rounded-md border border-border px-1.5 py-1.5 text-[11px] font-medium text-foreground hover:bg-accent"
+              >
+                <Calendar className="h-3 w-3 shrink-0" />
+                <span className="truncate">{dayLabelOf(dateKey)}</span>
+              </button>
+              <button
+                onClick={() => shiftDay(1)}
+                title="Next day"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
             <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               {isParty || parallelGuest.some(Boolean) ? 'Start together' : 'Available times'}
             </div>
-            {slots.length === 0 && (
+            {allSlots.length === 0 && (
               <div className="text-[11px] text-muted-foreground">
                 {allSvcs.length === 0 || !guests.every((_g, i) => (svcsByGuest[i] ?? []).length > 0)
                   ? isParty ? 'Pick services for each guest' : 'Select services to view openings'
-                  : 'No open slots today'}
+                  : 'No slots this day'}
               </div>
             )}
             <div className="space-y-1">
-              {slots.slice(0, 60).map((s) => (
+              {allSlots.map(({ start: s, available }) => (
                 <button
                   key={s}
-                  onClick={() => setTime(s)}
+                  disabled={!available}
+                  onClick={() => available && setTime(s)}
+                  title={available ? undefined : 'No qualified tech free at this time'}
                   className={`flex w-full items-center gap-1.5 rounded-md border px-2 py-1.5 text-[12px] ${
-                    time === s ? 'border-sky-500 bg-sky-500/15 font-medium text-foreground' : 'border-border text-muted-foreground hover:text-foreground'
+                    time === s
+                      ? 'border-sky-500 bg-sky-500/15 font-medium text-foreground'
+                      : available
+                        ? 'border-border text-muted-foreground hover:text-foreground'
+                        : 'cursor-not-allowed border-transparent text-muted-foreground/35'
                   }`}
                 >
                   <Clock className="h-3 w-3" /> {fmtTime(s)}
@@ -774,6 +833,17 @@ export function BookingPanel({ appts, blocks, clients, onAddClient, prefillTime,
           </div>
         )}
       </div>
+
+      {dayPickerAnchor && (
+        <DatePickerPopover
+          anchor={dayPickerAnchor}
+          selected={dateKey}
+          today={dayKeyOf(new Date())}
+          appointmentDates={new Set()}
+          onSelect={(ds) => { setDayPickerAnchor(null); onPreviewDay(ds) }}
+          onClose={() => setDayPickerAnchor(null)}
+        />
+      )}
 
       {/* footer */}
       <div className="flex items-center gap-3 border-t border-border px-4 py-3">

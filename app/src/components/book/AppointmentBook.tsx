@@ -325,6 +325,9 @@ export function AppointmentBook() {
   const [techSchedView, setTechSchedView] = useState<{ techId: string; mode: 'week' | 'month' } | null>(null)
   const [moveApptsTechId, setMoveApptsTechId] = useState<string | null>(null)
   const [logApptId, setLogApptId] = useState<string | null>(null)
+  // the day the appointment in the edit panel actually lives on, fixed while
+  // that panel's day rail browses the calendar elsewhere (see openDetail)
+  const [detailOriginDay, setDetailOriginDay] = useState<string | null>(null)
   // stable per-day previews for the availability modal (unvisited days generate once)
   const dayPreviewCache = useRef(new Map<string, Appointment[]>())
   const [blockEdit, setBlockEdit] = useState<{ id: string | null; techId: string; draft: BlockDraft } | null>(null)
@@ -1601,12 +1604,17 @@ export function AppointmentBook() {
       return n
     })
 
-  const openCheckout = (a: Appointment) => {
+  const openCheckout = (a: Appointment, groupOverride?: Appointment[]) => {
     setDetailId(null)
     setBookingOpen(false) // right-side panels are exclusive, never stack
     setPosOpen(false)
+    // groupOverride lets a caller pass an already-resolved group (e.g. the
+    // edit panel, whose day rail may have navigated the live calendar away
+    // from this appointment's own day within this same synchronous call)
+    // instead of re-deriving it from `appts`, which might not be it yet
+    const source = groupOverride ?? appts
     const people = a.parallelGroup
-      ? [...new Set(appts.filter((x) => x.parallelGroup === a.parallelGroup && payable(x)).map((x) => x.clientName))]
+      ? [...new Set(source.filter((x) => x.parallelGroup === a.parallelGroup && payable(x)).map((x) => x.clientName))]
       : []
     const name = a.parallelGroup
       ? a.clientName
@@ -1699,6 +1707,9 @@ export function AppointmentBook() {
   const openDetail = (id: string) => {
     setDetailError(null)
     setDetailId(id)
+    // the day this appointment actually lives on, fixed for the life of the
+    // panel even while its day rail browses the calendar to other days
+    setDetailOriginDay(dateKey)
     setBookingOpen(false)
     setPosOpen(false)
     closeCheckout()
@@ -1794,61 +1805,28 @@ export function AppointmentBook() {
   }
 
   // ── appointment detail panel ──────────────────────────────────────────────
-  const detailAppt = detailId ? appts.find((a) => a.id === detailId) : undefined
+  // sourced from the appointment's OWN day (detailOriginDay), not the live
+  // `appts`/dateKey — the panel's day rail can navigate the live calendar to
+  // preview other days while it's open, and the panel itself must stay put
+  const detailBoard = dayApptsFor(detailOriginDay ?? dateKey)
+  const detailAppt = detailId ? detailBoard.find((a) => a.id === detailId) : undefined
   const detailGroup = detailAppt
     ? detailAppt.parallelGroup
-      ? appts.filter((a) => a.parallelGroup === detailAppt.parallelGroup)
+      ? detailBoard.filter((a) => a.parallelGroup === detailAppt.parallelGroup)
       : [detailAppt]
     : []
 
   const saveDetail = (updated: Appointment[], removedIds: string[], moveToDayKey?: string) => {
-    // the edit panel's "available times" rail already found a conflict-free
-    // slot on the TARGET day (findSlotsFor ran against that day's own board),
-    // so a cross-day move skips the same-day pinned-tech relocation/overlap
-    // pipeline below entirely — that pipeline exists to keep today's board
-    // consistent and isn't meaningful once the booking is leaving today
-    if (moveToDayKey && moveToDayKey !== dateKey) {
-      const targetAppts = dayApptsFor(moveToDayKey)
-      const targetBlocks = dayBlocksFor(moveToDayKey)
-      const keepIds = new Set(updated.filter((u) => !removedIds.includes(u.id)).map((u) => u.id))
-      const resolveForTarget = (choice: string, serviceId: string, from: number, to: number): Tech | null => {
-        let pool = boardTechs(getStaff().techs).filter((t) =>
-          t.skills.includes(serviceId) &&
-          !targetAppts.some((a) => !keepIds.has(a.id) && a.techId === t.id && overlaps(from, to, a.startMin, a.startMin + a.durationMin)) &&
-          !targetBlocks.some((b) => b.techId === t.id && overlaps(from, to, b.startMin, b.startMin + b.durationMin)),
-        )
-        if (choice === 'pref-female' || choice === 'pref-male') {
-          const g = choice === 'pref-female' ? 'female' : 'male'
-          const gp = pool.filter((t) => t.gender === g)
-          if (gp.length > 0) pool = gp
-        }
-        return pool.sort((a, b) => (apptCountByTech.get(a.id) ?? 0) - (apptCountByTech.get(b.id) ?? 0))[0] ?? null
-      }
-      const moveLabel = dayLabel(new Date(moveToDayKey + 'T12:00:00'))
-      const keep = updated.filter((u) => !removedIds.includes(u.id)).map((u) => {
-        if (u.techId === 'first' || u.techId === 'pref-female' || u.techId === 'pref-male' || u.techId === 'issue') {
-          const resolved = resolveForTarget(u.techId, u.serviceId, u.startMin, u.startMin + u.durationMin)
-          return {
-            ...u,
-            techId: resolved?.id ?? u.techId,
-            issue: u.techId === 'issue' ? true : undefined,
-            techRequested: undefined,
-            requestedTechChoice: u.techId === 'pref-female' || u.techId === 'pref-male' ? (u.techId as 'pref-female' | 'pref-male') : undefined,
-            log: [...(u.log ?? []), logEntry(`Moved to ${moveLabel}, auto-assigned to ${resolved ? resolved.name : 'an available tech'}`)],
-          }
-        }
-        return { ...u, issue: undefined, log: [...(u.log ?? []), logEntry(`Moved to ${moveLabel}`)] }
-      })
-      const byId = new Map(keep.map((u) => [u.id, u]))
-      commit(appts.filter((a) => !removedIds.includes(a.id) && !byId.has(a.id)))
-      setApptDays((m) => ({
-        ...m,
-        [moveToDayKey]: [...(m[moveToDayKey] ?? generateDay(moveToDayKey)), ...keep],
-      }))
-      setDetailId(null)
-      showFlash(`✓ Moved to ${moveLabel}, jump there with ◀ ▶ to see it`)
-      return
-    }
+    // the edit panel's day rail actually navigates the live calendar as the
+    // salon browses (so they can see the board), so moveToDayKey — when set
+    // — always equals the CURRENT live day; that means the whole pinned-tech
+    // relocation / gender-mismatch / overlap pipeline below can run exactly
+    // as it does for a same-day edit (it already targets `appts`, i.e.
+    // "whichever day is live"), and a cross-day move only additionally needs
+    // to drop the appointment's old copy from the day it used to live on
+    const originDay = detailOriginDay ?? dateKey
+    const originBoard = dayApptsFor(originDay)
+    const crossDay = !!moveToDayKey && moveToDayKey !== originDay
 
     // a service is "pinned" when the form has it set to an actual tech by
     // name, as opposed to First available / gender preference / issue — this
@@ -1878,8 +1856,10 @@ export function AppointmentBook() {
     }).map((u) => {
       // the Status dropdown can change status right here in the edit panel —
       // stamp the same checked-in/started/completed timestamps setStatus()
-      // would, but only on an actual transition, not every unrelated save
-      const orig = appts.find((a) => a.id === u.id)
+      // would, but only on an actual transition, not every unrelated save.
+      // Compare against originBoard (the appointment's own day), not `appts`
+      // (the live/target day), since those differ for a cross-day move
+      const orig = originBoard.find((a) => a.id === u.id)
       if (!orig || orig.status === u.status) return u
       return {
         ...u,
@@ -1916,6 +1896,25 @@ export function AppointmentBook() {
     if (err) { setDetailError(err); return }
     const doSave = (finalKeep: Appointment[] = keep) => {
       const byId = new Map(finalKeep.map((u) => [u.id, u]))
+      if (crossDay) {
+        // finalKeep's ids live on originDay, not today's board — drop them
+        // from there and append them (already resolved above against the
+        // live day) onto today, alongside any relocated squatters
+        setApptDays((m) => ({
+          ...m,
+          [originDay]: (m[originDay] ?? originBoard).filter((a) => !byId.has(a.id) && !removedIds.includes(a.id)),
+        }))
+        commit([
+          ...appts.filter((a) => !removedIds.includes(a.id)).map((a) => relocated.get(a.id) ?? a),
+          ...finalKeep,
+        ])
+        setDetailId(null)
+        showFlash(
+          relocated.size > 0
+            ? `✓ Moved to ${dayLabel(date)}, moved ${relocated.size} booking${relocated.size > 1 ? 's' : ''} to make room`
+            : `✓ Moved to ${dayLabel(date)}`)
+        return
+      }
       commit(appts
         .filter((a) => !removedIds.includes(a.id))
         .map((a) => byId.get(a.id) ?? relocated.get(a.id) ?? a))
@@ -1946,7 +1945,7 @@ export function AppointmentBook() {
       const pref = u.requestedTechChoice
       if (pref !== 'pref-female' && pref !== 'pref-male') return false
       if (u.genderMismatchOk) return false
-      const orig = appts.find((a) => a.id === u.id)
+      const orig = originBoard.find((a) => a.id === u.id)
       if (!orig || orig.techId === u.techId) return false
       const wantGender = pref === 'pref-female' ? 'female' : 'male'
       return techOf(u.techId).gender !== wantGender
@@ -1966,12 +1965,25 @@ export function AppointmentBook() {
   const onDetailAction = (action: DetailAction) => {
     const a = detailAppt
     if (!a) return
+    const originKey = detailOriginDay ?? dateKey
+    // the edit panel's day rail may have navigated the live calendar away
+    // from this appointment's own day (to preview another day) — snap back
+    // before any follow-up flow that reads the live board (cancel confirm,
+    // checkout, the log modal all resolve their target by id against `appts`
+    // on a later render, so this restores it in time for them)
+    if (originKey !== dateKey) goDay(new Date(originKey + 'T12:00:00'))
     switch (action) {
       case 'checkout':
-        openCheckout(a)
+        // pass detailGroup explicitly — it's already resolved against the
+        // appointment's own day, whereas `appts` may not have caught up to
+        // the goDay() above yet within this same synchronous handler
+        openCheckout(a, detailGroup)
         break
       case 'copy':
-        copyToClipboard(a)
+        detailGroup.forEach((g) => copyServiceToClipboard(g, true))
+        showFlash(detailGroup.length > 1
+          ? `⧉ ${detailGroup.length} services on the clipboard as separate entries, drag each one in`
+          : `⧉ Copied ${a.clientName}, switch days and drag it in`)
         // close the edit panel so the salon can switch days and drop it in
         setDetailId(null)
         break
@@ -1987,7 +1999,8 @@ export function AppointmentBook() {
         break
       }
       case 'rebook': {
-        const target = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 7)
+        const originDate = new Date(originKey + 'T12:00:00')
+        const target = new Date(originDate.getFullYear(), originDate.getMonth(), originDate.getDate() + 7)
         const key = dayKey(target)
         const newGroup = a.parallelGroup ? `pg${Date.now()}` : undefined
         setApptDays((m) => ({
@@ -3406,6 +3419,8 @@ export function AppointmentBook() {
           onAddClient={(c) => setClients((x) => [...x, c])}
           prefillTime={bookingPrefill?.startMin ?? null}
           prefillTechId={bookingPrefill?.techId ?? null}
+          dateKey={dateKey}
+          onPreviewDay={(k) => goDay(new Date(k + 'T12:00:00'))}
           onBook={onBookFromPanel}
           onClose={() => setBookingOpen(false)}
         />
@@ -3418,7 +3433,9 @@ export function AppointmentBook() {
           group={detailGroup}
           clients={clients}
           error={detailError}
+          originDateKey={detailOriginDay ?? dateKey}
           dateKey={dateKey}
+          onPreviewDay={(k) => goDay(new Date(k + 'T12:00:00'))}
           dayAppts={dayApptsFor}
           dayBlocks={dayBlocksFor}
           onSave={saveDetail}
