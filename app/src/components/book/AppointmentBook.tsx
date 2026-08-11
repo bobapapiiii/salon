@@ -1145,24 +1145,23 @@ export function AppointmentBook() {
 
   const continueAfterPrompts = (
     d: DragState, moving: MovingItem[], firstErr: string | null, relocated: Map<string, Appointment> = new Map(),
+    confirmed: { techRequest?: boolean; genderMismatch?: boolean } = {},
   ) => {
-    const isSkip = firstErr === 'skip-tech-request' || firstErr === 'skip-gender-mismatch'
     // moving a requested-tech service onto a DIFFERENT tech always confirms first
-    if (!firstErr && d.kind === 'appt' && d.mode === 'move') {
+    if (!firstErr && !confirmed.techRequest && d.kind === 'appt' && d.mode === 'move') {
       const primary = appts.find((a) => a.id === d.primaryId)
       if (primary?.techRequested && d.targetTechId !== primary.techId) {
         setPendingTechRequest({
           fromName: techOf(primary.techId).name,
           toName: techOf(d.targetTechId).name,
           clientName: primary.clientName,
-          apply: () => continueAfterPrompts(d, moving, 'skip-tech-request', relocated),
+          apply: () => continueAfterPrompts(d, moving, null, relocated, { ...confirmed, techRequest: true }),
         })
         return
       }
     }
     // moving a gender-preferred service onto a tech of the OTHER gender always confirms first
-    // (but not if we just came from that very confirmation — otherwise it loops forever)
-    if ((!firstErr || firstErr === 'skip-tech-request') && d.kind === 'appt' && d.mode === 'move') {
+    if (!firstErr && !confirmed.genderMismatch && d.kind === 'appt' && d.mode === 'move') {
       const primary = appts.find((a) => a.id === d.primaryId)
       const pref = primary?.requestedTechChoice
       if (primary && (pref === 'pref-female' || pref === 'pref-male') && d.targetTechId !== primary.techId) {
@@ -1173,14 +1172,14 @@ export function AppointmentBook() {
             pref: wantGender,
             toName: target.name,
             clientName: primary.clientName,
-            apply: () => continueAfterPrompts(d, moving, 'skip-gender-mismatch', relocated),
+            apply: () => continueAfterPrompts(d, moving, null, relocated, { ...confirmed, genderMismatch: true }),
           })
           return
         }
       }
     }
-    if ((firstErr && !isSkip) || !allowOverlap || !warnOnDoubleBook) {
-      applyDropRef.current(d, moving, isSkip ? null : firstErr, relocated)
+    if (firstErr || !allowOverlap || !warnOnDoubleBook) {
+      applyDropRef.current(d, moving, firstErr, relocated)
       return
     }
     const hit = overlapHitFor(moving, new Set(relocated.keys()))
