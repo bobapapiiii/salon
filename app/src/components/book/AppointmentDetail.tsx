@@ -347,10 +347,10 @@ export function AppointmentDetail({ appt, group, clients, error, originDateKey, 
                 title={available ? undefined : 'No qualified tech free at this time'}
                 className={`flex w-full items-center gap-1.5 rounded-[8px] border px-2 py-1.5 text-[12px] ${
                   selected
-                    ? 'border-clay bg-clay-tint font-semibold text-clay'
+                    ? 'border-clay bg-clay-tint font-bold text-clay'
                     : available
-                      ? 'border-line text-ink-faint hover:text-ink'
-                      : 'cursor-not-allowed border-transparent text-ink-faint/35'
+                      ? 'border-line font-bold text-ink hover:bg-cream'
+                      : 'cursor-not-allowed border-transparent font-normal text-ink-faint/35'
                 }`}
               >
                 <Clock className="h-3 w-3 shrink-0" /> {fmtTime(s)}

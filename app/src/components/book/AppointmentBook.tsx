@@ -577,8 +577,11 @@ export function AppointmentBook() {
     [roles],
   )
 
-  // also clear the detail panel & tooltip when changing days
-  useEffect(() => { setDetailId(null); setHoverTip(null) }, [date])
+  // clear the hover tooltip when changing days — the detail panel is left
+  // alone: its own day rail intentionally navigates this same `date` to
+  // preview other days while staying open (detailOriginDay keeps track of
+  // which day the appointment being edited actually lives on)
+  useEffect(() => { setHoverTip(null) }, [date])
 
   const colIndex = useMemo(() => {
     const m = new Map<string, number>()

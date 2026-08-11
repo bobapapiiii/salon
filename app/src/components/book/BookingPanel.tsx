@@ -820,10 +820,10 @@ export function BookingPanel({ appts, blocks, clients, onAddClient, prefillTime,
                   title={available ? undefined : 'No qualified tech free at this time'}
                   className={`flex w-full items-center gap-1.5 rounded-md border px-2 py-1.5 text-[12px] ${
                     time === s
-                      ? 'border-sky-500 bg-sky-500/15 font-medium text-foreground'
+                      ? 'border-sky-500 bg-sky-500/15 font-bold text-foreground'
                       : available
-                        ? 'border-border text-muted-foreground hover:text-foreground'
-                        : 'cursor-not-allowed border-transparent text-muted-foreground/35'
+                        ? 'border-border font-bold text-foreground hover:border-sky-400 hover:bg-sky-500/5'
+                        : 'cursor-not-allowed border-transparent font-normal text-muted-foreground/35'
                   }`}
                 >
                   <Clock className="h-3 w-3" /> {fmtTime(s)}
