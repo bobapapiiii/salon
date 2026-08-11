@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import {
-  ArrowLeft, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Plus, Search, UserPlus, Users, X, Zap,
+  ArrowLeft, ArrowLeftRight, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Plus, Search, UserPlus, Users, X, Zap,
 } from 'lucide-react'
 import { useSettingsStore } from '@/lib/settings-store'
 import type { Appointment, ClientRecord, ServiceAddon, TimeBlock } from '@/lib/booking-types'
@@ -79,6 +79,11 @@ interface Props {
   dateKey: string
   /** switch the day shown on the calendar behind this panel (and in `appts`/`blocks` above) */
   onPreviewDay: (key: string) => void
+  /** a slot that doesn't currently fit — search whether relocating some other
+   *  (non-requested) booking would open it up; null when there's no way */
+  findMakeRoomPlan: (groups: { svcIds: string[]; parallel: boolean }[], startMin: number) => Appointment[] | null
+  /** confirm and apply a make-room plan found above, then run `thenSelect` */
+  onRequestMakeRoom: (moves: Appointment[], startMin: number, thenSelect: () => void) => void
   onBook: (services: BookedService[], linkGroup: boolean) => void
   onClose: () => void
 }
@@ -152,7 +157,10 @@ export function allSlotsFor(
 
 const DUR_OPTS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
 
-export function BookingPanel({ appts, blocks, clients, onAddClient, prefillTime, prefillTechId, dateKey, onPreviewDay, onBook, onClose }: Props) {
+export function BookingPanel({
+  appts, blocks, clients, onAddClient, prefillTime, prefillTechId, dateKey, onPreviewDay,
+  findMakeRoomPlan, onRequestMakeRoom, onBook, onClose,
+}: Props) {
   const { techs: allTechs } = useStaffStore()
   const techs = boardTechs(allTechs)
   const increment = useSettingsStore().booking.increment
@@ -253,9 +261,17 @@ export function BookingPanel({ appts, blocks, clients, onAddClient, prefillTime,
     [guests, svcsByGuest, parallelGuest],
   )
 
-  const allSlots = useMemo(() => {
+  // each slot is 'open' (fits as-is), 'movable' (fits if a non-requested
+  // booking blocking it gets relocated — findMakeRoomPlan only runs for
+  // slots that don't already fit, to keep this cheap), or 'blocked'
+  const slotPlans = useMemo(() => {
     if (guests.length === 0 || !guests.every((_g, i) => (svcsByGuest[i] ?? []).length > 0)) return []
-    return allSlotsFor(appts, groups, blocks)
+    return allSlotsFor(appts, groups, blocks).map(({ start, available }) => {
+      if (available) return { start, status: 'open' as const, moves: undefined as Appointment[] | undefined }
+      const moves = findMakeRoomPlan(groups, start)
+      return { start, status: moves ? ('movable' as const) : ('blocked' as const), moves: moves ?? undefined }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appts, blocks, groups, guests, svcsByGuest])
 
   const shiftDay = (delta: number) => {
@@ -804,7 +820,7 @@ export function BookingPanel({ appts, blocks, clients, onAddClient, prefillTime,
             <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               {isParty || parallelGuest.some(Boolean) ? 'Start together' : 'Available times'}
             </div>
-            {allSlots.length === 0 && (
+            {slotPlans.length === 0 && (
               <div className="text-[11px] text-muted-foreground">
                 {allSvcs.length === 0 || !guests.every((_g, i) => (svcsByGuest[i] ?? []).length > 0)
                   ? isParty ? 'Pick services for each guest' : 'Select services to view openings'
@@ -812,21 +828,31 @@ export function BookingPanel({ appts, blocks, clients, onAddClient, prefillTime,
               </div>
             )}
             <div className="space-y-1">
-              {allSlots.map(({ start: s, available }) => (
+              {slotPlans.map(({ start: s, status, moves }) => (
                 <button
                   key={s}
-                  disabled={!available}
-                  onClick={() => available && setTime(s)}
-                  title={available ? undefined : 'No qualified tech free at this time'}
+                  disabled={status === 'blocked'}
+                  onClick={() => {
+                    if (status === 'open') setTime(s)
+                    else if (status === 'movable' && moves) onRequestMakeRoom(moves, s, () => setTime(s))
+                  }}
+                  title={
+                    status === 'blocked' ? 'No qualified tech free at this time'
+                    : status === 'movable' ? `Fits by moving ${moves!.length} other booking${moves!.length > 1 ? 's' : ''} — click to review`
+                    : undefined
+                  }
                   className={`flex w-full items-center gap-1.5 rounded-md border px-2 py-1.5 text-[12px] ${
                     time === s
                       ? 'border-sky-500 bg-sky-500/15 font-bold text-foreground'
-                      : available
+                      : status === 'open'
                         ? 'border-border font-bold text-foreground hover:border-sky-400 hover:bg-sky-500/5'
-                        : 'cursor-not-allowed border-transparent font-normal text-muted-foreground/35'
+                        : status === 'movable'
+                          ? 'border-amber-400/60 bg-amber-400/10 font-bold text-amber-700 hover:bg-amber-400/20'
+                          : 'cursor-not-allowed border-transparent font-normal text-muted-foreground/35'
                   }`}
                 >
-                  <Clock className="h-3 w-3" /> {fmtTime(s)}
+                  {status === 'movable' ? <ArrowLeftRight className="h-3 w-3 shrink-0" /> : <Clock className="h-3 w-3 shrink-0" />}
+                  {fmtTime(s)}
                 </button>
               ))}
             </div>

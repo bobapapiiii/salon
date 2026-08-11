@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, Link2, Mail, MessageSquare, Phone, RefreshCw, ScrollText, X,
+  ArrowLeftRight, Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, Link2, Mail, MessageSquare, Phone, RefreshCw, ScrollText, X,
 } from 'lucide-react'
 import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, fmtTime } from '@/lib/booking-types'
@@ -31,6 +31,11 @@ interface Props {
   /** appointments for any day (today or otherwise), used to preview openings before jumping there */
   dayAppts: (key: string) => Appointment[]
   dayBlocks: (key: string) => TimeBlock[]
+  /** a slot that doesn't currently fit — search whether relocating some other
+   *  (non-requested) booking would open it up; null when there's no way */
+  findMakeRoomPlan: (groups: { svcIds: string[]; parallel: boolean }[], startMin: number, ignoreIds?: Set<string>) => Appointment[] | null
+  /** confirm and apply a make-room plan found above, then run `thenSelect` */
+  onRequestMakeRoom: (moves: Appointment[], startMin: number, thenSelect: () => void) => void
   onSave: (updated: Appointment[], removedIds: string[], moveToDayKey?: string) => void
   onAction: (a: DetailAction) => void
   onCopyService?: (appt: Appointment) => void
@@ -76,7 +81,10 @@ const REQUEST_HEART_COLOR: Record<string, string | undefined> = {
   any: undefined,
 }
 
-export function AppointmentDetail({ appt, group, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks, onSave, onAction, onCopyService, onViewProfile, onClose }: Props) {
+export function AppointmentDetail({
+  appt, group, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks,
+  findMakeRoomPlan, onRequestMakeRoom, onSave, onAction, onCopyService, onViewProfile, onClose,
+}: Props) {
   const increment = useSettingsStore().booking.increment
   const TIME_OPTIONS = Array.from({ length: (CLOSE_MIN - OPEN_MIN) / increment }, (_, i) => i * increment)
   const { roles, techs: allTechs } = useStaffStore()
@@ -103,10 +111,18 @@ export function AppointmentDetail({ appt, group, clients, error, originDateKey, 
   const isParallelGroup = activeServices.length > 1 && activeServices.every((d) => d.startMin === activeServices[0].startMin)
   const groupStart = activeServices[0]?.startMin
   const selfIds = new Set(group.map((g) => g.id))
-  const allSlots = useMemo(() => {
+  // each slot is 'open' (fits as-is), 'movable' (fits if a non-requested
+  // booking blocking it gets relocated), or 'blocked' — findMakeRoomPlan
+  // only runs for slots that don't already fit, and ignores this
+  // appointment's own services so it's never proposed as its own fix
+  const slotPlans = useMemo(() => {
     if (svcIds.length === 0) return []
     const others = dayAppts(dateKey).filter((a) => !selfIds.has(a.id))
-    return allSlotsFor(others, [{ svcIds, parallel: isParallelGroup }], dayBlocks(dateKey))
+    return allSlotsFor(others, [{ svcIds, parallel: isParallelGroup }], dayBlocks(dateKey)).map(({ start, available }) => {
+      if (available) return { start, status: 'open' as const, moves: undefined as Appointment[] | undefined }
+      const moves = findMakeRoomPlan([{ svcIds, parallel: isParallelGroup }], start, selfIds)
+      return { start, status: moves ? ('movable' as const) : ('blocked' as const), moves: moves ?? undefined }
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateKey, JSON.stringify(svcIds), isParallelGroup])
 
@@ -333,27 +349,38 @@ export function AppointmentDetail({ appt, group, clients, error, originDateKey, 
         <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
           Available times{spanOf(svcIds, isParallelGroup) > 0 && ` (${spanOf(svcIds, isParallelGroup)}m)`}
         </label>
-        {allSlots.length === 0 && (
+        {slotPlans.length === 0 && (
           <div className="text-[11px] text-ink-faint">No slots this day</div>
         )}
         <div className="space-y-1">
-          {allSlots.map(({ start: s, available }) => {
+          {slotPlans.map(({ start: s, status, moves }) => {
             const selected = dateKey === originDateKey && s === groupStart
             return (
               <button
                 key={s}
-                disabled={!available}
-                onClick={() => available && applySlot(s)}
-                title={available ? undefined : 'No qualified tech free at this time'}
+                disabled={status === 'blocked'}
+                onClick={() => {
+                  if (selected) return
+                  if (status === 'open') applySlot(s)
+                  else if (status === 'movable' && moves) onRequestMakeRoom(moves, s, () => applySlot(s))
+                }}
+                title={
+                  status === 'blocked' ? 'No qualified tech free at this time'
+                  : status === 'movable' ? `Fits by moving ${moves!.length} other booking${moves!.length > 1 ? 's' : ''} — click to review`
+                  : undefined
+                }
                 className={`flex w-full items-center gap-1.5 rounded-[8px] border px-2 py-1.5 text-[12px] ${
                   selected
                     ? 'border-clay bg-clay-tint font-bold text-clay'
-                    : available
+                    : status === 'open'
                       ? 'border-line font-bold text-ink hover:bg-cream'
-                      : 'cursor-not-allowed border-transparent font-normal text-ink-faint/35'
+                      : status === 'movable'
+                        ? 'border-amber-400/60 bg-amber-400/10 font-bold text-amber-700 hover:bg-amber-400/20'
+                        : 'cursor-not-allowed border-transparent font-normal text-ink-faint/35'
                 }`}
               >
-                <Clock className="h-3 w-3 shrink-0" /> {fmtTime(s)}
+                {status === 'movable' ? <ArrowLeftRight className="h-3 w-3 shrink-0" /> : <Clock className="h-3 w-3 shrink-0" />}
+                {fmtTime(s)}
               </button>
             )
           })}

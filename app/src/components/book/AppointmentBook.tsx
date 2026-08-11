@@ -13,7 +13,7 @@ import { svcById } from '@/lib/services-store'
 import { Toolbar } from './Toolbar'
 import { ApptContextMenu, ConfirmCancelDialog, type MenuAction } from './ApptMenus'
 import { ConfirmDialog } from './ConfirmDialog'
-import { BookingPanel, type BookedService } from './BookingPanel'
+import { BookingPanel, layoutItems, type BookedService } from './BookingPanel'
 import { AppointmentDetail, type DetailAction } from './AppointmentDetail'
 import { ClientProfile, type ClientNote } from './ClientProfile'
 import { RequestsRail } from './RequestsRail'
@@ -337,6 +337,7 @@ export function AppointmentBook() {
   const [pendingOverlap, setPendingOverlap] = useState<{ techId: string; timeLabel: string; apply: () => void } | null>(null)
   const [pendingTechRequest, setPendingTechRequest] = useState<{ fromName: string; toName: string; clientName: string; apply: () => void } | null>(null)
   const [pendingGenderMismatch, setPendingGenderMismatch] = useState<{ pref: 'female' | 'male'; toName: string; clientName: string; apply: () => void } | null>(null)
+  const [pendingMakeRoom, setPendingMakeRoom] = useState<{ moves: Appointment[]; startMin: number; apply: () => void } | null>(null)
   const blocksRef = useRef<TimeBlock[]>([])
   blocksRef.current = blocksByDay[dateKey] ?? []
   // blocks drag like appointments, but self-contained (no conflict rules)
@@ -1088,6 +1089,68 @@ export function AppointmentBook() {
 
     const result = freeSlotFor(techId, from, to, new Map(), new Set())
     return result ? [...result.values()] : null
+  }
+
+  // when a time a client wants doesn't fit anyone, search for a way to make
+  // it fit anyway: for each service in the new booking, try every qualified
+  // tech in least-booked order, and for a busy one ask makeRoom() whether
+  // whoever's sitting there could be bumped to somewhere else that's free.
+  // Returns the combined relocation plan (nothing to apply if a tech was
+  // already free), or null if there's truly no way to fit this booking —
+  // used by both the front-desk booking panel and the edit panel's day
+  // rail, and reusable as-is once online booking gets a "smart find" step
+  const findMakeRoomPlan = (
+    groups: { svcIds: string[]; parallel: boolean }[], startMin: number, ignoreIds?: Set<string>,
+  ): Appointment[] | null => {
+    if (!autoRelocateNonRequested) return null
+    const items = groups.flatMap((g) => layoutItems(g.svcIds, g.parallel))
+    if (items.length === 0) return null
+    const skip = ignoreIds ?? new Set<string>()
+    const sorted = [...items].sort((a, b) =>
+      boardTechs(getStaff().techs).filter((t) => t.skills.includes(a.serviceId)).length -
+      boardTechs(getStaff().techs).filter((t) => t.skills.includes(b.serviceId)).length)
+    const usedTechAt: { techId: string; from: number; to: number }[] = []
+    const allMoves = new Map<string, Appointment>()
+    for (const item of sorted) {
+      const from = startMin + item.offset
+      const to = from + svcById[item.serviceId].durationMin
+      const candidates = boardTechs(getStaff().techs)
+        .filter((t) =>
+          t.skills.includes(item.serviceId) && withinShift(t.id, from, to) &&
+          !usedTechAt.some((u) => u.techId === t.id && overlaps(from, to, u.from, u.to)) &&
+          !blocksRef.current.some((b) => b.techId === t.id && overlaps(from, to, b.startMin, b.startMin + b.durationMin)))
+        .sort((a, b) => (apptCountByTech.get(a.id) ?? 0) - (apptCountByTech.get(b.id) ?? 0))
+      let placed = false
+      for (const t of candidates) {
+        const plan = makeRoom(t.id, from, to, new Set([...skip, ...allMoves.keys()]))
+        if (!plan) continue
+        for (const m of plan) allMoves.set(m.id, m)
+        usedTechAt.push({ techId: t.id, from, to })
+        placed = true
+        break
+      }
+      if (!placed) return null
+    }
+    // nothing actually needs to move (every item found an already-free tech)
+    // — the normal picker would already show this slot as open, so treat it
+    // as "no plan" rather than an empty, meaningless confirmation
+    return allMoves.size > 0 ? [...allMoves.values()] : null
+  }
+
+  // a "movable" slot in the booking/edit panel's rail was clicked — confirm
+  // the relocation, then hand control back to the panel (via `thenSelect`)
+  // so it can select that time for the appointment being booked/moved
+  const onRequestMakeRoom = (moves: Appointment[], startMin: number, thenSelect: () => void) => {
+    setPendingMakeRoom({
+      moves,
+      startMin,
+      apply: () => {
+        const byId = new Map(moves.map((m) => [m.id, m]))
+        commit(appts.map((a) => byId.get(a.id) ?? a))
+        thenSelect()
+        showFlash(`✓ Moved ${moves.length} booking${moves.length > 1 ? 's' : ''} to open ${fmtTime(startMin)}`)
+      },
+    })
   }
 
   // move every NON-requested appointment off a tech to the least-booked
@@ -3344,6 +3407,20 @@ export function AppointmentBook() {
         />
       )}
 
+      {/* the requested time is full, but a non-requested booking blocking it
+          can be relocated elsewhere to open it up — confirm before moving */}
+      {pendingMakeRoom && (
+        <ConfirmDialog
+          title={`Move ${pendingMakeRoom.moves.length} booking${pendingMakeRoom.moves.length > 1 ? 's' : ''} to open ${fmtTime(pendingMakeRoom.startMin)}?`}
+          body={pendingMakeRoom.moves
+            .map((m) => `${m.clientName}, ${svcById[m.serviceId].short} at ${fmtTime(m.startMin)} → ${techOf(m.techId).name}`)
+            .join('; ')}
+          confirmLabel="Move & select this time"
+          onConfirm={pendingMakeRoom.apply}
+          onClose={() => setPendingMakeRoom(null)}
+        />
+      )}
+
       {/* delete-block confirmation */}
       {blockDeleteId && (
         <ConfirmDialog
@@ -3424,6 +3501,8 @@ export function AppointmentBook() {
           prefillTechId={bookingPrefill?.techId ?? null}
           dateKey={dateKey}
           onPreviewDay={(k) => goDay(new Date(k + 'T12:00:00'))}
+          findMakeRoomPlan={(groups, s) => findMakeRoomPlan(groups, s)}
+          onRequestMakeRoom={onRequestMakeRoom}
           onBook={onBookFromPanel}
           onClose={() => setBookingOpen(false)}
         />
@@ -3441,6 +3520,8 @@ export function AppointmentBook() {
           onPreviewDay={(k) => goDay(new Date(k + 'T12:00:00'))}
           dayAppts={dayApptsFor}
           dayBlocks={dayBlocksFor}
+          findMakeRoomPlan={(groups, s, ignoreIds) => findMakeRoomPlan(groups, s, ignoreIds)}
+          onRequestMakeRoom={onRequestMakeRoom}
           onSave={saveDetail}
           onAction={onDetailAction}
           onCopyService={copyServiceToClipboard}
