@@ -41,6 +41,9 @@ interface Props {
   onCopyService?: (appt: Appointment) => void
   onViewProfile: () => void
   onClose: () => void
+  /** true when this client still has something unpaid — "completed" alone doesn't
+   *  mean paid, so this stays true past completion until checkout actually runs */
+  canCheckout: boolean
 }
 
 /** small local date helpers, duplicated from AppointmentBook to avoid a circular import */
@@ -84,6 +87,7 @@ const REQUEST_HEART_COLOR: Record<string, string | undefined> = {
 export function AppointmentDetail({
   appt, group, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks,
   findMakeRoomPlan, onRequestMakeRoom, onSave, onAction, onCopyService, onViewProfile, onClose,
+  canCheckout,
 }: Props) {
   const increment = useSettingsStore().booking.increment
   const TIME_OPTIONS = Array.from({ length: (CLOSE_MIN - OPEN_MIN) / increment }, (_, i) => i * increment)
@@ -437,7 +441,7 @@ export function AppointmentDetail({
             <CalendarX className="h-3 w-3" /> Cancel
           </button>
         </div>
-        {(appt.status === 'confirmed' || appt.status === 'checked_in' || appt.status === 'in_service') && (
+        {canCheckout && (
           <button
             onClick={() => onAction('checkout')}
             className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"

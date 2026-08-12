@@ -3691,6 +3691,10 @@ export function AppointmentBook() {
           onCopyService={copyServiceToClipboard}
           onViewProfile={() => openProfile(detailAppt.clientName)}
           onClose={() => setDetailId(null)}
+          // "completed" only means the service is done, not that they paid — checkout
+          // must stay open until a payment actually exists (mirrors payable(), used
+          // everywhere else checkout eligibility is decided)
+          canCheckout={detailGroup.some((a) => payable(a))}
         />
       )}
 
