@@ -356,17 +356,27 @@ export function AppointmentDetail({
           </div>
         </div>
 
-        {/* payment (Phase 3) */}
+        {/* payment — Send payment link / Take payment are placeholders for a future
+            online-payment feature; Check out is the real, working way to collect
+            payment today, so it lives here too rather than off in the footer */}
         <div>
           <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Payment</label>
           <div className="grid grid-cols-2 gap-1.5">
-            <button disabled className={`${actionBtn} opacity-50`} title="Coming in Phase 3">
+            <button disabled className={`${actionBtn} opacity-50`} title="Not available yet">
               Send payment link
             </button>
-            <button disabled className={`${actionBtn} opacity-50`} title="Coming in Phase 3">
+            <button disabled className={`${actionBtn} opacity-50`} title="Not available yet">
               Take payment
             </button>
           </div>
+          {canCheckout && (
+            <button
+              onClick={() => onAction('checkout')}
+              className="mt-1.5 flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2.5 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"
+            >
+              <CreditCard className="h-4 w-4" /> Check out {appt.clientName.split(' ')[0]}
+            </button>
+          )}
         </div>
 
         {error && <p className="text-[12px] font-medium text-rust">{error}</p>}
@@ -456,28 +466,16 @@ export function AppointmentDetail({
         />
       )}
 
-      {/* footer actions — just the two things every visit here ends with;
-          everything else moved up into the Actions section above */}
-      <div className="space-y-2 border-t border-line p-3">
-        {canCheckout && (
-          <button
-            onClick={() => onAction('checkout')}
-            className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2.5 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"
-          >
-            <CreditCard className="h-4 w-4" /> Check out {appt.clientName.split(' ')[0]}
-          </button>
-        )}
+      {/* footer — just Save; Check out now lives in the Payment section above,
+          next to the other ways to collect payment */}
+      <div className="border-t border-line p-3">
         <button
           onClick={() => onSave(
             draft.map((d) => ({ ...d, status: d.id === appt.id ? status : d.status, notes: d.id === appt.id ? notes || undefined : d.notes })),
             removed,
             dateKey !== originDateKey ? dateKey : undefined,
           )}
-          className={
-            canCheckout
-              ? 'flex w-full items-center justify-center gap-2 rounded-[10px] border border-clay/40 bg-clay-tint py-2.5 text-sm font-semibold text-clay transition-colors hover:bg-clay/15'
-              : 'flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2.5 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep'
-          }
+          className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2.5 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"
         >
           <Clock className="h-4 w-4" /> {dateKey !== originDateKey ? `Save & move to ${dayLabelOf(dateKey)}` : 'Save changes'}
         </button>
