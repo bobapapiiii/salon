@@ -356,28 +356,20 @@ export function AppointmentDetail({
           </div>
         </div>
 
-        {/* payment — Send payment link / Take payment are placeholders for a future
-            online-payment feature; Check out is the real, working way to collect
-            payment today, so it lives here too rather than off in the footer */}
-        <div>
-          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Payment</label>
-          <div className="grid grid-cols-2 gap-1.5">
-            <button disabled className={`${actionBtn} opacity-50`} title="Not available yet">
-              Send payment link
-            </button>
-            <button disabled className={`${actionBtn} opacity-50`} title="Not available yet">
-              Take payment
-            </button>
-          </div>
-          {canCheckout && (
+        {/* payment — Check out is the only working payment action today, so it's
+            the whole section now (the old Send payment link / Take payment
+            placeholders were disabled stubs for a feature that was never built) */}
+        {canCheckout && (
+          <div>
+            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Payment</label>
             <button
               onClick={() => onAction('checkout')}
-              className="mt-1.5 flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2.5 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"
+              className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2.5 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"
             >
               <CreditCard className="h-4 w-4" /> Check out {appt.clientName.split(' ')[0]}
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         {error && <p className="text-[12px] font-medium text-rust">{error}</p>}
       </div>
