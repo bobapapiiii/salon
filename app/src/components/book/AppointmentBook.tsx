@@ -3688,7 +3688,6 @@ export function AppointmentBook() {
           onRequestMakeRoom={onRequestMakeRoom}
           onSave={saveDetail}
           onAction={onDetailAction}
-          onCopyService={copyServiceToClipboard}
           onViewProfile={() => openProfile(detailAppt.clientName)}
           onClose={() => setDetailId(null)}
           // "completed" only means the service is done, not that they paid — checkout

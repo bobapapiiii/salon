@@ -43,7 +43,6 @@ interface Props {
   onRequestMakeRoom: (moves: Appointment[], startMin: number, thenSelect: () => void) => void
   onSave: (updated: Appointment[], removedIds: string[], moveToDayKey?: string) => void
   onAction: (a: DetailAction) => void
-  onCopyService?: (appt: Appointment) => void
   onViewProfile: () => void
   onClose: () => void
   /** true when this client still has something unpaid — "completed" alone doesn't
@@ -91,7 +90,7 @@ const REQUEST_HEART_COLOR: Record<string, string | undefined> = {
 
 export function AppointmentDetail({
   appt, group, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks,
-  findMakeRoomPlan, onRequestMakeRoom, onSave, onAction, onCopyService, onViewProfile, onClose,
+  findMakeRoomPlan, onRequestMakeRoom, onSave, onAction, onViewProfile, onClose,
   canCheckout,
 }: Props) {
   const increment = useSettingsStore().booking.increment
@@ -241,15 +240,6 @@ export function AppointmentDetail({
                       {SERVICES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                     <span className="tnum shrink-0 text-sm font-bold text-ink">${svcById[d.serviceId].price}</span>
-                    {onCopyService && (
-                      <button
-                        onClick={() => onCopyService(d)}
-                        title={`Copy ${svcById[d.serviceId].short} to the clipboard`}
-                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-surface hover:text-ink"
-                      >
-                        <ClipboardCopy className="h-3.5 w-3.5" />
-                      </button>
-                    )}
                     {draft.length - removed.length > 1 && (
                       <button onClick={() => setRemoved((r) => [...r, d.id])} className="shrink-0 text-ink-faint hover:text-rust">
                         <X className="h-3.5 w-3.5" />
