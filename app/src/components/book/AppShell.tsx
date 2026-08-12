@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  ArrowRightLeft, Bell, CalendarDays, CalendarPlus, CalendarX, Check, CheckCircle2, Clock, ListPlus,
+  ArrowRightLeft, Bell, CalendarDays, CalendarPlus, CalendarX, Check, CheckCircle2, ClipboardList, Clock, ListPlus,
   PhoneOff, Receipt, Search, Settings, Sparkles, UserX, Users, XCircle,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -18,16 +18,18 @@ import { KeyRound } from 'lucide-react'
    Left nav rail (76px, expands to 224px on hover) + 64px top context bar. */
 
 interface RailProps {
-  active: 'calendar' | 'techschedule' | 'services' | 'clients'
+  active: 'calendar' | 'techschedule' | 'jobcard' | 'services' | 'clients'
   onNavigate: (page: RailProps['active'] | 'settings') => void
 }
 
-const NAV_ITEMS = [
+/** `short` overrides the collapsed-rail micro label when the first 5 characters read badly */
+const NAV_ITEMS: readonly { id: RailProps['active']; label: string; icon: LucideIcon; short?: string }[] = [
   { id: 'calendar', label: 'Calendar', icon: CalendarDays },
   { id: 'techschedule', label: 'Schedule', icon: Clock },
+  { id: 'jobcard', label: 'Job Card', icon: ClipboardList, short: 'Cards' },
   { id: 'services', label: 'Services', icon: Sparkles },
   { id: 'clients', label: 'Clients', icon: Users },
-] as const
+]
 
 export function NavRail({ active, onNavigate }: RailProps) {
   const user = useSessionUser()
@@ -61,7 +63,7 @@ export function NavRail({ active, onNavigate }: RailProps) {
 
       {/* primary nav */}
       <div className="flex flex-1 flex-col gap-1 px-3 py-4">
-        {NAV_ITEMS.map(({ id, label, icon: Icon }) => (
+        {NAV_ITEMS.map(({ id, label, icon: Icon, short }) => (
           <button
             key={id}
             type="button"
@@ -75,7 +77,7 @@ export function NavRail({ active, onNavigate }: RailProps) {
               {label}
             </span>
             <span className="pointer-events-none absolute inset-x-0 top-[30px] text-center text-micro font-bold uppercase text-ink-faint transition-opacity duration-150 group-hover/rail:opacity-0">
-              {label.slice(0, 5)}
+              {short ?? label.slice(0, 5)}
             </span>
           </button>
         ))}

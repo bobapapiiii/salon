@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  AlertTriangle, Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, Link2, Mail, MessageSquare, Phone, RefreshCw, ScrollText, X,
+  AlertTriangle, Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, Link2, Mail, MessageSquare, Phone, Printer, RefreshCw, ScrollText, X,
 } from 'lucide-react'
 import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, fmtTime } from '@/lib/booking-types'
@@ -13,7 +13,7 @@ import { DatePickerPopover } from './LegendPopover'
 
 const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
 
-export type DetailAction = 'rebook' | 'cancel' | 'copy' | 'sendtext' | 'checkout' | 'log'
+export type DetailAction = 'rebook' | 'cancel' | 'copy' | 'sendtext' | 'checkout' | 'log' | 'jobcard'
 
 interface Props {
   appt: Appointment
@@ -426,6 +426,9 @@ export function AppointmentDetail({
           </button>
           <button onClick={() => onAction('sendtext')} title="Text the client" className="flex flex-1 items-center justify-center gap-1 rounded-[8px] border border-line py-1.5 text-[11px] font-semibold text-ink-faint transition-colors hover:bg-cream hover:text-ink">
             <MessageSquare className="h-3 w-3" /> Text
+          </button>
+          <button onClick={() => onAction('jobcard')} title="Print job card" className="flex items-center justify-center gap-1 rounded-[8px] border border-line px-2.5 py-1.5 text-[11px] font-semibold text-ink-faint transition-colors hover:bg-cream hover:text-ink">
+            <Printer className="h-3 w-3" />
           </button>
           <button onClick={() => onAction('log')} title="Show appointment log" className="flex items-center justify-center gap-1 rounded-[8px] border border-line px-2.5 py-1.5 text-[11px] font-semibold text-ink-faint transition-colors hover:bg-cream hover:text-ink">
             <ScrollText className="h-3 w-3" />

@@ -21,6 +21,8 @@ import { RequestsRail } from './RequestsRail'
 import { DatePickerPopover, LegendPopover } from './LegendPopover'
 import { ContextBar, NavRail } from './AppShell'
 import { SettingsPage, type SectionId } from './SettingsPage'
+import { JobCardPage } from './JobCardPage'
+import { buildJobCard, printJobCards } from '@/lib/job-card'
 import { useLocation, useNavigate } from 'react-router'
 import { useSettingsStore, setSettings } from '@/lib/settings-store'
 import { catById } from '@/lib/categories-store'
@@ -427,6 +429,7 @@ export function AppointmentBook() {
   // which read the same data independently) are unaffected
   const showNoShows = useSettingsStore().booking.showNoShows
   const salonGeneral = useSettingsStore().general
+  const salonJobCardWidth = useSettingsStore().jobCard.width
   // salon operating window for the viewed day (minutes from OPEN_MIN) + closures
   const salonDow = new Date(dateKey + 'T12:00:00').getDay()
   const salonDayHours = salonGeneral.weekHours?.[salonDow]
@@ -438,6 +441,9 @@ export function AppointmentBook() {
   const [bookingOpen, setBookingOpen] = useState(false)
   const [bookingPrefill, setBookingPrefill] = useState<{ techId: string; startMin: number } | null>(null)
   const [finderOpen, setFinderOpen] = useState(false)
+  // job cards open on whatever day the calendar is showing, then browse on their own
+  const [jobCardOpen, setJobCardOpen] = useState(false)
+  const [jobCardDate, setJobCardDate] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [darkMode, setDarkMode] = usePersistentState(upref('ui-dark'), false)
@@ -2174,6 +2180,24 @@ export function AppointmentBook() {
         // same synchronous handler
         openCheckout(a, detailParty)
         break
+      case 'jobcard': {
+        // one card for THIS client's services; detailBoard resolves the party
+        // size and host when the booking is part of a group
+        const card = buildJobCard(detailGroup, {
+          svc: (id) => svcById[id],
+          techs,
+          clients,
+          dateLabel: new Date(originKey + 'T12:00:00').toLocaleDateString('en-US', {
+            weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+          }),
+          dayAppts: detailBoard,
+        })
+        const ok = printJobCards([card], salonJobCardWidth, salonGeneral.name)
+        showFlash(ok
+          ? `Printing job card for ${a.clientName}`
+          : 'Your browser blocked the print window — allow pop-ups for this site')
+        break
+      }
       case 'copy':
         detailGroup.forEach((g) => copyServiceToClipboard(g, true))
         showFlash(detailGroup.length > 1
@@ -2765,8 +2789,9 @@ export function AppointmentBook() {
 
   const hours = Array.from({ length: DAY_SLOTS / 4 + 3 }, (_, i) => (i - 1) * 60)
 
-  const onNavNavigate = (page: 'calendar' | 'techschedule' | 'services' | 'clients' | 'settings') => {
+  const onNavNavigate = (page: 'calendar' | 'techschedule' | 'jobcard' | 'services' | 'clients' | 'settings') => {
     if (page === 'techschedule') { setScheduleOpen(true); return }
+    if (page === 'jobcard') { setJobCardDate(dateKey); setJobCardOpen(true); return }
     if (page === 'settings') { navigate('/settings/general'); return }
     if (page !== 'calendar') showFlash(`${page[0].toUpperCase() + page.slice(1)} page, coming soon`)
   }
@@ -2774,7 +2799,7 @@ export function AppointmentBook() {
   return (
     <div className={`h-full overflow-hidden ${darkMode ? 'dark' : ''} bg-background text-foreground`}>
     <div className="flex h-full">
-      <NavRail active="calendar" onNavigate={onNavNavigate} />
+      <NavRail active={jobCardOpen ? 'jobcard' : 'calendar'} onNavigate={onNavNavigate} />
       <div className="flex min-w-0 flex-1 flex-col">
       <ContextBar
         title="Schedule"
@@ -3726,6 +3751,17 @@ export function AppointmentBook() {
         onSection={(id) => navigate(`/settings/${id}`)}
         onClose={() => navigate('/')}
         focusTechId={(location.state as { techId?: string } | null)?.techId ?? null}
+      />
+
+      {/* job cards, printable tickets for the day, bucketed by booking interval */}
+      <JobCardPage
+        open={jobCardOpen}
+        dateKey={jobCardDate ?? dateKey}
+        onDate={setJobCardDate}
+        dayAppts={dayApptsFor}
+        clients={clients}
+        apptDates={new Set([...Object.keys(apptDays), dateKey])}
+        onClose={() => setJobCardOpen(false)}
       />
 
       {/* team schedule, per-day tech status & hours */}

@@ -1405,6 +1405,29 @@ function CheckoutSection() {
       <SectionHead title="Checkout fields" blurb="Extra notation your team fills in at checkout" />
       {fieldList("serviceFields", "Per-service fields", "Shown on every service line at checkout, saved on the appointment. Color is the default, add things like Design, Shape, or Length.")}
       {fieldList("generalFields", "General invoice fields", "Shown once per ticket next to the note, saved with the sale.")}
+
+      <div className={`${card} mt-3`}>
+        <p className="text-[12px] font-bold text-slate-800">Job card paper width</p>
+        <p className="mb-3 mt-0.5 text-[10.5px] text-slate-400">
+          Roll width on your receipt printer (Epson TM-T30III or similar). Job cards are laid out to fit it.
+        </p>
+        <div className="flex gap-2">
+          {([80, 58] as const).map((w) => (
+            <button
+              key={w}
+              onClick={() => setSettings((x) => ({ ...x, jobCard: { ...x.jobCard, width: w } }))}
+              className={`h-9 rounded-lg border px-3.5 text-[12.5px] font-bold transition ${
+                s.jobCard.width === w
+                  ? "border-[#5B54D6] bg-[#5B54D6]/10 text-[#5B54D6]"
+                  : "border-[#E3DDE3] bg-white text-slate-500 hover:border-[#5B54D6]"
+              }`}
+            >
+              {w}mm{w === 80 ? " (standard)" : " (narrow)"}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {confirmRemove && (
         <ConfirmDialog
           title={`Remove "${confirmRemove.label}"?`}

@@ -59,6 +59,11 @@ export interface SalonSettings {
   notifications: { confirmSms: boolean; reminderSms: boolean; reminderHrs: number };
   /** extra notation fields at checkout: per-service (e.g. polish color) and per-ticket */
   checkout: { serviceFields: CheckoutField[]; generalFields: CheckoutField[] };
+  /** printed job cards (the paper ticket that rides with the client) */
+  jobCard: {
+    /** receipt roll width in mm — 80 is the TM-T30III default, 58 is the narrow roll */
+    width: 58 | 80;
+  };
 }
 
 export const ALL_METHODS = ["Cash", "Card", "Venmo", "Zelle"];
@@ -86,6 +91,7 @@ const defaults: SalonSettings = {
   },
   notifications: { confirmSms: true, reminderSms: true, reminderHrs: 24 },
   checkout: { serviceFields: [{ id: "f-color", label: "Color" }], generalFields: [] },
+  jobCard: { width: 80 },
 };
 
 const KEY = sdata("settings-v1");
@@ -103,6 +109,7 @@ function load(): SalonSettings {
       loyalty: { ...defaults.loyalty, ...p.loyalty },
       notifications: { ...defaults.notifications, ...p.notifications },
       checkout: { ...defaults.checkout, ...p.checkout },
+      jobCard: { ...defaults.jobCard, ...p.jobCard },
     };
   } catch {
     return defaults;
