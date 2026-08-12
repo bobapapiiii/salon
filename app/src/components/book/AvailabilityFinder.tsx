@@ -321,7 +321,7 @@ export function AvailabilityFinder({
   )
 
   return (
-    <div className="fixed inset-y-0 right-0 z-[85] flex w-[720px] max-w-[95vw] flex-col border-l border-line bg-popover shadow-2xl">
+    <div className="fixed inset-y-0 right-0 z-[85] flex w-[634px] max-w-[95vw] flex-col border-l border-line bg-popover shadow-2xl">
       {/* header */}
       <div className="border-b border-line bg-cream px-4 py-3.5">
         <div className="flex items-start gap-3">

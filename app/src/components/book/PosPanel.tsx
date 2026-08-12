@@ -98,7 +98,7 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   }
 
   return (
-    <div className="fixed inset-y-0 right-0 z-[94] flex w-[460px] max-w-[95vw] flex-col border-l border-line bg-popover shadow-2xl">
+    <div className="fixed inset-y-0 right-0 z-[94] flex w-[634px] max-w-[95vw] flex-col border-l border-line bg-popover shadow-2xl">
       {/* header */}
       <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
         <div>
