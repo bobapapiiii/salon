@@ -13,6 +13,11 @@ import { DatePickerPopover } from './LegendPopover'
 
 const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
 
+/** shared style for the Actions/Payment grid buttons, so every tile in
+ *  those sections reads as one consistent family regardless of label length */
+const actionBtn =
+  'flex items-center justify-center gap-1.5 rounded-[8px] border border-line py-2 text-[12px] font-semibold text-ink-soft transition-colors hover:bg-cream hover:text-ink'
+
 export type DetailAction = 'rebook' | 'cancel' | 'copy' | 'sendtext' | 'checkout' | 'log' | 'jobcard'
 
 interface Props {
@@ -321,14 +326,47 @@ export function AppointmentDetail({
           />
         </div>
 
+        {/* actions — everything that isn't Save or Check out lives here, out of the
+            footer's way, as a plain labeled grid like every other section above it */}
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Actions</label>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button onClick={() => onAction('rebook')} title="Rebook same time next week" className={actionBtn}>
+              <RefreshCw className="h-3.5 w-3.5" /> Rebook
+            </button>
+            <button onClick={() => onAction('copy')} title="Copy each service to the clipboard as its own entry" className={actionBtn}>
+              <ClipboardCopy className="h-3.5 w-3.5" /> Copy to clipboard
+            </button>
+            <button onClick={() => onAction('sendtext')} title="Text the client" className={actionBtn}>
+              <MessageSquare className="h-3.5 w-3.5" /> Text client
+            </button>
+            <button onClick={() => onAction('jobcard')} title="Print job card" className={actionBtn}>
+              <Printer className="h-3.5 w-3.5" /> Print job card
+            </button>
+            <button onClick={() => onAction('log')} title="Show appointment log" className={actionBtn}>
+              <ScrollText className="h-3.5 w-3.5" /> View log
+            </button>
+            <button
+              onClick={() => onAction('cancel')}
+              title="Cancel this appointment"
+              className="flex items-center justify-center gap-1.5 rounded-[8px] border border-rust/40 py-2 text-[12px] font-semibold text-rust transition-colors hover:bg-rust-tint"
+            >
+              <CalendarX className="h-3.5 w-3.5" /> Cancel appointment
+            </button>
+          </div>
+        </div>
+
         {/* payment (Phase 3) */}
-        <div className="flex gap-2">
-          <button disabled className="flex-1 rounded-[8px] border border-line py-2 text-xs text-ink-faint opacity-50" title="Coming in Phase 3">
-            Send payment link
-          </button>
-          <button disabled className="flex-1 rounded-[8px] border border-line py-2 text-xs text-ink-faint opacity-50" title="Coming in Phase 3">
-            Take payment (Phase 3)
-          </button>
+        <div>
+          <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Payment</label>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button disabled className={`${actionBtn} opacity-50`} title="Coming in Phase 3">
+              Send payment link
+            </button>
+            <button disabled className={`${actionBtn} opacity-50`} title="Coming in Phase 3">
+              Take payment
+            </button>
+          </div>
         </div>
 
         {error && <p className="text-[12px] font-medium text-rust">{error}</p>}
@@ -418,33 +456,13 @@ export function AppointmentDetail({
         />
       )}
 
-      {/* footer actions */}
+      {/* footer actions — just the two things every visit here ends with;
+          everything else moved up into the Actions section above */}
       <div className="space-y-2 border-t border-line p-3">
-        {/* secondary actions, small row on top */}
-        <div className="flex gap-1.5">
-          <button onClick={() => onAction('rebook')} title="Rebook same time next week" className="flex flex-1 items-center justify-center gap-1 rounded-[8px] border border-line py-1.5 text-[11px] font-semibold text-ink-faint transition-colors hover:bg-cream hover:text-ink">
-            <RefreshCw className="h-3 w-3" /> Rebook
-          </button>
-          <button onClick={() => onAction('copy')} title="Copy each service to the clipboard as its own entry" className="flex flex-1 items-center justify-center gap-1 rounded-[8px] border border-line py-1.5 text-[11px] font-semibold text-ink-faint transition-colors hover:bg-cream hover:text-ink">
-            <ClipboardCopy className="h-3 w-3" /> Clipboard
-          </button>
-          <button onClick={() => onAction('sendtext')} title="Text the client" className="flex flex-1 items-center justify-center gap-1 rounded-[8px] border border-line py-1.5 text-[11px] font-semibold text-ink-faint transition-colors hover:bg-cream hover:text-ink">
-            <MessageSquare className="h-3 w-3" /> Text
-          </button>
-          <button onClick={() => onAction('jobcard')} title="Print job card" className="flex items-center justify-center gap-1 rounded-[8px] border border-line px-2.5 py-1.5 text-[11px] font-semibold text-ink-faint transition-colors hover:bg-cream hover:text-ink">
-            <Printer className="h-3 w-3" />
-          </button>
-          <button onClick={() => onAction('log')} title="Show appointment log" className="flex items-center justify-center gap-1 rounded-[8px] border border-line px-2.5 py-1.5 text-[11px] font-semibold text-ink-faint transition-colors hover:bg-cream hover:text-ink">
-            <ScrollText className="h-3 w-3" />
-          </button>
-          <button onClick={() => onAction('cancel')} title="Cancel this appointment" className="flex items-center justify-center gap-1 rounded-[8px] border border-rust/40 px-2.5 py-1.5 text-[11px] font-semibold text-rust transition-colors hover:bg-rust-tint">
-            <CalendarX className="h-3 w-3" /> Cancel
-          </button>
-        </div>
         {canCheckout && (
           <button
             onClick={() => onAction('checkout')}
-            className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"
+            className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2.5 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"
           >
             <CreditCard className="h-4 w-4" /> Check out {appt.clientName.split(' ')[0]}
           </button>
@@ -455,7 +473,11 @@ export function AppointmentDetail({
             removed,
             dateKey !== originDateKey ? dateKey : undefined,
           )}
-          className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"
+          className={
+            canCheckout
+              ? 'flex w-full items-center justify-center gap-2 rounded-[10px] border border-clay/40 bg-clay-tint py-2.5 text-sm font-semibold text-clay transition-colors hover:bg-clay/15'
+              : 'flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2.5 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep'
+          }
         >
           <Clock className="h-4 w-4" /> {dateKey !== originDateKey ? `Save & move to ${dayLabelOf(dateKey)}` : 'Save changes'}
         </button>
