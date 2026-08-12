@@ -1,6 +1,6 @@
 import { useRef, useState, type ReactNode } from 'react'
 import {
-  CalendarDays, CalendarSearch, ChevronDown, ChevronLeft, ChevronRight, Eye, ListFilter, PanelRight, Plus, Search, Store,
+  CalendarDays, CalendarSearch, ChevronDown, ChevronLeft, ChevronRight, Eye, EyeOff, ListFilter, PanelRight, Plus, Search, Store,
 } from 'lucide-react'
 import { useCategoriesStore } from '@/lib/categories-store'
 
@@ -21,6 +21,9 @@ interface Props {
   colorMode: ColorMode
   onColorMode: (m: ColorMode) => void
   onPickLegend: (anchor: DOMRect) => void
+  /** Settings → Online booking "Show no-shows on the calendar" — quick-toggled here too */
+  showNoShows: boolean
+  onToggleShowNoShows: () => void
   teamChips: Chip[]
   hiddenTeams: Set<string>
   onToggleTeamChip: (id: string) => void
@@ -185,6 +188,14 @@ export function Toolbar(p: Props) {
 
         <IconBtn title="Legend" onClick={(e) => p.onPickLegend((e.currentTarget as HTMLElement).getBoundingClientRect())}>
           <ListFilter className="h-4 w-4" />
+        </IconBtn>
+
+        <IconBtn
+          title={p.showNoShows ? 'Hide no-shows' : 'Show no-shows'}
+          active={!p.showNoShows}
+          onClick={p.onToggleShowNoShows}
+        >
+          {p.showNoShows ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
         </IconBtn>
 
         <span className="h-6 w-px bg-line" />

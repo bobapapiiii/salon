@@ -22,7 +22,7 @@ import { DatePickerPopover, LegendPopover } from './LegendPopover'
 import { ContextBar, NavRail } from './AppShell'
 import { SettingsPage, type SectionId } from './SettingsPage'
 import { useLocation, useNavigate } from 'react-router'
-import { useSettingsStore } from '@/lib/settings-store'
+import { useSettingsStore, setSettings } from '@/lib/settings-store'
 import { catById } from '@/lib/categories-store'
 import { CheckoutDialog, type PaymentResult } from './CheckoutDialog'
 import { InvoiceDialog } from './InvoiceDialog'
@@ -2799,6 +2799,8 @@ export function AppointmentBook() {
         onDensity={onDensity}
         colorMode={colorMode} onColorMode={setColorMode}
         onPickLegend={setLegendAnchor}
+        showNoShows={showNoShows}
+        onToggleShowNoShows={() => setSettings((s) => ({ ...s, booking: { ...s.booking, showNoShows: !s.booking.showNoShows } }))}
         teamChips={teamChips}
         hiddenTeams={hiddenTeams}
         onToggleTeamChip={(id) => setHiddenTeams((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })}
