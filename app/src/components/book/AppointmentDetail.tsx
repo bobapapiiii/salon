@@ -358,15 +358,14 @@ export function AppointmentDetail({
 
         {/* payment — Check out is the only working payment action today, so it's
             the whole section now (the old Send payment link / Take payment
-            placeholders were disabled stubs for a feature that was never built) */}
+            placeholders were disabled stubs for a feature that was never built).
+            Styled like the Actions buttons, not the bold Save CTA below — Save is
+            the one button on this panel that should read as "the" action to take */}
         {canCheckout && (
           <div>
             <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Payment</label>
-            <button
-              onClick={() => onAction('checkout')}
-              className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2.5 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"
-            >
-              <CreditCard className="h-4 w-4" /> Check out {appt.clientName.split(' ')[0]}
+            <button onClick={() => onAction('checkout')} className={`w-full ${actionBtn}`}>
+              <CreditCard className="h-3.5 w-3.5" /> Check out {appt.clientName.split(' ')[0]}
             </button>
           </div>
         )}
