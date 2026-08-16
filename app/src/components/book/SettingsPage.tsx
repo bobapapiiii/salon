@@ -1034,6 +1034,8 @@ function ServicesSection() {
   const [addonsFor, setAddonsFor] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  const [dragCatId, setDragCatId] = useState<string | null>(null);
+  const [overCatId, setOverCatId] = useState<string | null>(null);
 
   const usedIds = useMemo(
     () => new Set(Object.values(apptDays).flat().map((a) => a.serviceId)),
@@ -1063,24 +1065,49 @@ function ServicesSection() {
 
   const patchAddons = (svcId: string, addons: ServiceAddon[]) => patch(svcId, { addons } as Partial<Service>);
 
-  /** drag a service to a new spot within its own category or subcategory —
-   *  dropping it onto another row inserts it right before that row;
-   *  `beforeId: null` drops it at the end of the group instead. Cross-group
-   *  drags are ignored, moving a service to a different category is still
-   *  the job of the category dropdown on its row. */
-  const reorderService = (draggedId: string, beforeId: string | null, categoryId: string) =>
+  /** drag a service to a new spot -- dropping it onto another row inserts it
+   *  right before that row (and moves it into that row's category if it's
+   *  not already there); `beforeId: null` drops it at the end of
+   *  `targetCategoryId`'s group instead. This is how both plain reordering
+   *  and dragging a service into a subcategory are handled, they're the
+   *  same operation, one just also changes categoryId. */
+  const moveServiceTo = (draggedId: string, targetCategoryId: string, beforeId: string | null) =>
     setServices((list) => {
       const dragged = list.find((s) => s.id === draggedId);
-      if (!dragged || dragged.categoryId !== categoryId) return list;
+      if (!dragged) return list;
       const rest = list.filter((s) => s.id !== draggedId);
+      const moved = dragged.categoryId === targetCategoryId ? dragged : { ...dragged, categoryId: targetCategoryId };
       let insertAt: number;
       if (beforeId) {
         insertAt = rest.findIndex((s) => s.id === beforeId);
-        if (insertAt === -1) return list;
+        if (insertAt === -1) insertAt = rest.length;
       } else {
-        const groupItems = rest.filter((s) => s.categoryId === categoryId);
+        const groupItems = rest.filter((s) => s.categoryId === targetCategoryId);
         const last = groupItems[groupItems.length - 1];
         insertAt = last ? rest.findIndex((s) => s.id === last.id) + 1 : rest.length;
+      }
+      const next = [...rest];
+      next.splice(insertAt, 0, moved);
+      return next;
+    });
+
+  /** drag a subcategory to reorder it among its own siblings (same parent
+   *  category); dropping it onto another subcategory inserts it right
+   *  before that one, `beforeId: null` drops it at the end. Re-parenting a
+   *  subcategory to a different top-level category isn't supported here. */
+  const moveCategoryTo = (draggedId: string, parentId: string, beforeId: string | null) =>
+    setCategories((list) => {
+      const dragged = list.find((c) => c.id === draggedId);
+      if (!dragged || dragged.parentId !== parentId) return list;
+      const rest = list.filter((c) => c.id !== draggedId);
+      let insertAt: number;
+      if (beforeId) {
+        insertAt = rest.findIndex((c) => c.id === beforeId);
+        if (insertAt === -1) return list;
+      } else {
+        const siblings = rest.filter((c) => c.parentId === parentId);
+        const last = siblings[siblings.length - 1];
+        insertAt = last ? rest.findIndex((c) => c.id === last.id) + 1 : rest.length;
       }
       const next = [...rest];
       next.splice(insertAt, 0, dragged);
@@ -1114,7 +1141,8 @@ function ServicesSection() {
         onDragLeave={() => setOverId((o) => (o === sv.id ? null : o))}
         onDrop={(e) => {
           e.preventDefault();
-          if (dragId && dragId !== sv.id) reorderService(dragId, sv.id, sv.categoryId);
+          e.stopPropagation();
+          if (dragId && dragId !== sv.id) moveServiceTo(dragId, sv.categoryId, sv.id);
           setDragId(null);
           setOverId(null);
         }}
@@ -1239,26 +1267,33 @@ function ServicesSection() {
     );
   };
 
-  /** thin strip below a group's last row — dropping here sends the dragged
-   *  service to the end of that category/subcategory instead of before a
-   *  specific row */
-  const renderTrailingDrop = (categoryId: string) => (
+  /** strip below a group's last row (or the whole group, if it's empty) —
+   *  dropping a dragged service here sends it to the end of that
+   *  category/subcategory, moving it in if it wasn't already there */
+  const renderTrailingDrop = (categoryId: string, empty: boolean) => (
     <div
       onDragOver={(e) => {
         if (!dragId) return;
         e.preventDefault();
+        e.stopPropagation();
       }}
       onDrop={(e) => {
         e.preventDefault();
-        if (dragId) reorderService(dragId, null, categoryId);
+        e.stopPropagation();
+        if (dragId) moveServiceTo(dragId, categoryId, null);
         setDragId(null);
         setOverId(null);
       }}
-      className="h-2"
-    />
+      className={empty
+        ? "flex h-9 items-center justify-center rounded-lg border border-dashed border-[#E3DDE3] text-[10.5px] text-slate-300"
+        : "h-2"}
+    >
+      {empty && "Drop a service here"}
+    </div>
   );
 
   const topCats = cats.filter((c) => !c.parentId);
+  const draggedCat = dragCatId ? cats.find((c) => c.id === dragCatId) : undefined;
 
   return (
     <div>
@@ -1316,14 +1351,56 @@ function ServicesSection() {
               </div>
               <div className="space-y-1.5">
                 {svcs.map((sv) => renderServiceRow(sv))}
-                {renderTrailingDrop(cat.id)}
+                {renderTrailingDrop(cat.id, svcs.length === 0)}
               </div>
 
               {subCats.map((sub) => {
                 const subSvcs = services.filter((s) => s.categoryId === sub.id);
+                const catDropBefore = dragCatId && dragCatId !== sub.id && overCatId === sub.id;
                 return (
-                  <div key={sub.id} className="mt-3 ml-3 border-l-2 border-[#EDE7EE] pl-3">
+                  <div
+                    key={sub.id}
+                    onDragOver={(e) => {
+                      // a subcategory drag reorders siblings; a service drag
+                      // dropped anywhere in here (header, padding, empty
+                      // space) still moves the service into this subcategory
+                      if (dragCatId && dragCatId !== sub.id && draggedCat?.parentId === cat.id) {
+                        e.preventDefault();
+                        if (overCatId !== sub.id) setOverCatId(sub.id);
+                      } else if (dragId) {
+                        e.preventDefault();
+                      }
+                    }}
+                    onDragLeave={() => setOverCatId((o) => (o === sub.id ? null : o))}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (dragCatId && dragCatId !== sub.id && draggedCat?.parentId === cat.id) moveCategoryTo(dragCatId, cat.id, sub.id);
+                      else if (dragId) moveServiceTo(dragId, sub.id, null);
+                      setDragCatId(null);
+                      setOverCatId(null);
+                      setDragId(null);
+                      setOverId(null);
+                    }}
+                    className={`mt-3 ml-3 border-l-2 pl-3 transition-colors ${
+                      catDropBefore ? "border-[#5B54D6]" : "border-[#EDE7EE]"
+                    } ${dragCatId === sub.id ? "opacity-40" : ""}`}
+                  >
                     <div className="mb-2 flex items-center gap-2">
+                      <span
+                        draggable
+                        onDragStart={(e) => {
+                          setDragCatId(sub.id);
+                          e.dataTransfer.effectAllowed = "move";
+                        }}
+                        onDragEnd={() => {
+                          setDragCatId(null);
+                          setOverCatId(null);
+                        }}
+                        title="Drag to reorder"
+                        className="shrink-0 cursor-grab text-slate-300 transition hover:text-slate-500 active:cursor-grabbing"
+                      >
+                        <GripVertical className="h-3.5 w-3.5" />
+                      </span>
                       <label
                         title="Subcategory color, updates the calendar rail and legend instantly"
                         className="relative h-5 w-5 shrink-0 cursor-pointer overflow-hidden rounded-md border border-[#EDE7EE]"
@@ -1361,11 +1438,23 @@ function ServicesSection() {
                     </div>
                     <div className="space-y-1.5">
                       {subSvcs.map((sv) => renderServiceRow(sv))}
-                      {renderTrailingDrop(sub.id)}
+                      {renderTrailingDrop(sub.id, subSvcs.length === 0)}
                     </div>
                   </div>
                 );
               })}
+              {subCats.length > 0 && (
+                <div
+                  onDragOver={(e) => { if (dragCatId && draggedCat?.parentId === cat.id) e.preventDefault(); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (dragCatId && draggedCat?.parentId === cat.id) moveCategoryTo(dragCatId, cat.id, null);
+                    setDragCatId(null);
+                    setOverCatId(null);
+                  }}
+                  className="h-2"
+                />
+              )}
 
               <button
                 onClick={() => addCategory("New subcategory", cat.id)}
