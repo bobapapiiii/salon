@@ -105,6 +105,8 @@ export interface ServiceCategory {
   fill: string
   line: string
   text: string
+  /** set when this is a subcategory nested under another category */
+  parentId?: string
 }
 
 /** an add-on a service can offer, adds time and money */

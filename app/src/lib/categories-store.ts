@@ -41,7 +41,7 @@ export function getCategories(): ServiceCategory[] {
   return state;
 }
 
-export function addCategory(name: string): ServiceCategory {
+export function addCategory(name: string, parentId?: string): ServiceCategory {
   const i = state.length;
   const hue = EXTRA_HUES[i % EXTRA_HUES.length];
   const cat: ServiceCategory = {
@@ -51,6 +51,7 @@ export function addCategory(name: string): ServiceCategory {
     fill: `hsl(${hue} / 0.16)`,
     line: `hsl(${hue})`,
     text: `hsl(${hue} / 0.7)`,
+    ...(parentId ? { parentId } : {}),
   };
   setCategories((c) => [...c, cat]);
   return cat;

@@ -4,7 +4,7 @@
 // everything else writes instantly to the salon's settings store.
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart3, Bell, Briefcase, Check, CreditCard, Download, FileText, Globe, KeyRound, Plus, Sparkles, Star, Store, Trash2, Users, X,
+  BarChart3, Bell, Briefcase, Check, ChevronDown, ChevronUp, CreditCard, Download, FileText, Globe, KeyRound, Plus, Sparkles, Star, Store, Trash2, Users, X,
 } from "lucide-react";
 import type { Tech } from "../../lib/booking-types";
 import { roleColor, setStaff, uid, useStaffStore, type JobRole } from "../../lib/staff-store";
@@ -993,6 +993,38 @@ function TechsSection({ techs, roles, selTech, onSelectTech, onAddTech, onPatchT
 // ─── Services ────────────────────────────────────────────────────────────────
 const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180];
 
+/** number input that stays exactly what you typed while focused instead of
+ *  snapping to 0 (and re-formatting) on every keystroke — it only clamps
+ *  and commits on blur / Enter, so clearing a field and typing a fresh
+ *  value never leaves a stray leading digit behind */
+function NumberField({ value, onCommit, min = 0, step, className }: {
+  value: number;
+  onCommit: (n: number) => void;
+  min?: number;
+  step?: number;
+  className?: string;
+}) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => { setText(String(value)); }, [value]);
+  const commit = () => {
+    const n = Math.max(min, Number(text) || 0);
+    setText(String(n));
+    if (n !== value) onCommit(n);
+  };
+  return (
+    <input
+      type="number"
+      min={min}
+      step={step}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+      className={className}
+    />
+  );
+}
+
 function ServicesSection() {
   const services = useServicesStore();
   const cats = useCategoriesStore();
@@ -1029,6 +1061,164 @@ function ServicesSection() {
 
   const patchAddons = (svcId: string, addons: ServiceAddon[]) => patch(svcId, { addons } as Partial<Service>);
 
+  /** swap a service with its neighbor within its own category or
+   *  subcategory only — every other group's order stays untouched */
+  const moveService = (id: string, dir: -1 | 1) =>
+    setServices((list) => {
+      const sv = list.find((s) => s.id === id);
+      if (!sv) return list;
+      const sameCat = list.filter((s) => s.categoryId === sv.categoryId);
+      const pos = sameCat.findIndex((s) => s.id === id);
+      const swapPos = pos + dir;
+      if (swapPos < 0 || swapPos >= sameCat.length) return list;
+      const other = sameCat[swapPos];
+      const ia = list.findIndex((s) => s.id === sv.id);
+      const ib = list.findIndex((s) => s.id === other.id);
+      const next = [...list];
+      [next[ia], next[ib]] = [next[ib], next[ia]];
+      return next;
+    });
+
+  // flat list for the "move to category" picker, subcategories indented
+  // under their parent so the hierarchy still reads at a glance
+  const catOptions = useMemo(() => {
+    const top = cats.filter((c) => !c.parentId);
+    return top.flatMap((t) => [
+      { id: t.id, label: t.name },
+      ...cats.filter((c) => c.parentId === t.id).map((s) => ({ id: s.id, label: `— ${s.name}` })),
+    ]);
+  }, [cats]);
+
+  const renderServiceRow = (sv: Service, svcs: Service[]) => {
+    const active = (sv as Service & { active?: boolean }).active !== false;
+    const inUse = usedIds.has(sv.id);
+    const addons = sv.addons ?? [];
+    const addonsOpen = addonsFor === sv.id;
+    const idx = svcs.findIndex((s) => s.id === sv.id);
+    return (
+      <div key={sv.id}>
+        <div className={`flex items-center gap-2 rounded-lg border border-[#EDE7EE] px-2.5 py-1.5 ${active ? "bg-white" : "bg-slate-50 opacity-60"}`}>
+          <div className="flex shrink-0 flex-col">
+            <button
+              onClick={() => moveService(sv.id, -1)}
+              disabled={idx === 0}
+              title="Move up"
+              className="text-slate-300 transition hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <ChevronUp className="h-3 w-3" />
+            </button>
+            <button
+              onClick={() => moveService(sv.id, 1)}
+              disabled={idx === svcs.length - 1}
+              title="Move down"
+              className="text-slate-300 transition hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <ChevronDown className="h-3 w-3" />
+            </button>
+          </div>
+          <input
+            value={sv.name}
+            onChange={(e) => patch(sv.id, { name: e.target.value })}
+            className="min-w-0 flex-[2] rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[12.5px] font-semibold text-slate-800 outline-none transition focus:border-[#5B54D6] focus:bg-white"
+          />
+          <input
+            value={sv.short}
+            onChange={(e) => patch(sv.id, { short: e.target.value })}
+            title="Short label for tight calendar cells"
+            className="min-w-0 w-20 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[11.5px] text-slate-500 outline-none transition focus:border-[#5B54D6] focus:bg-white"
+          />
+          <select
+            value={sv.categoryId}
+            onChange={(e) => patch(sv.id, { categoryId: e.target.value })}
+            title="Move to a different category"
+            className="w-[132px] shrink-0 rounded-md border border-[#E3DDE3] bg-white px-1.5 py-1 text-[11.5px] outline-none focus:border-[#5B54D6]"
+          >
+            {catOptions.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+          <select
+            value={sv.durationMin}
+            onChange={(e) => patch(sv.id, { durationMin: Number(e.target.value) })}
+            className="w-[86px] rounded-md border border-[#E3DDE3] bg-white px-1.5 py-1 text-[11.5px] outline-none focus:border-[#5B54D6]"
+          >
+            {DURATIONS.map((d) => <option key={d} value={d}>{d} min</option>)}
+          </select>
+          <span className="flex items-center text-[12px] font-semibold text-slate-600">
+            $<NumberField
+              value={sv.price}
+              onCommit={(n) => patch(sv.id, { price: n })}
+              className="tnum w-14 rounded-md border border-[#E3DDE3] bg-white px-1 py-1 text-right outline-none focus:border-[#5B54D6]"
+            />
+          </span>
+          <button
+            onClick={() => setAddonsFor(addonsOpen ? null : sv.id)}
+            title="Add-ons, extra time & money offered with this service"
+            className={`shrink-0 rounded-md px-1.5 py-1 text-[10.5px] font-bold transition ${
+              addonsOpen || addons.length > 0 ? "bg-[#5B54D6]/[0.08] text-[#5B54D6]" : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            {addons.length > 0 ? `${addons.length} add-on${addons.length > 1 ? "s" : ""}` : "+ add-on"}
+          </button>
+          <span title={active ? "Active, bookable" : "Inactive, hidden from menus"}>
+            <Toggle on={active} onClick={() => patch(sv.id, { active: !active } as Partial<Service>)} />
+          </span>
+          <button
+            onClick={() => !inUse && setDeleteId(sv.id)}
+            disabled={inUse}
+            title={inUse ? "Used by appointments, deactivate instead" : "Delete service"}
+            className="shrink-0 text-slate-300 transition hover:text-rose-500 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        {addonsOpen && (
+          <div className="ml-6 mt-1 space-y-1 rounded-lg border border-[#EDE7EE] bg-[#FAF8FA] p-2">
+            {addons.length === 0 && <p className="px-1 py-1 text-[11px] text-slate-400">No add-ons yet, they add time and price on top of {sv.name}.</p>}
+            {addons.map((a) => (
+              <div key={a.id} className="flex items-center gap-1.5">
+                <input
+                  value={a.name}
+                  onChange={(e) => patchAddons(sv.id, addons.map((x) => (x.id === a.id ? { ...x, name: e.target.value } : x)))}
+                  placeholder="Add-on name"
+                  className="min-w-0 flex-1 rounded-md border border-[#E3DDE3] bg-white px-1.5 py-1 text-[11.5px] outline-none focus:border-[#5B54D6]"
+                />
+                <span className="flex items-center gap-0.5 text-[10.5px] font-semibold text-slate-500">
+                  +<NumberField
+                    value={a.mins}
+                    step={5}
+                    onCommit={(n) => patchAddons(sv.id, addons.map((x) => (x.id === a.id ? { ...x, mins: n } : x)))}
+                    className="tnum w-12 rounded-md border border-[#E3DDE3] bg-white px-1 py-1 text-right outline-none focus:border-[#5B54D6]"
+                  />m
+                </span>
+                <span className="flex items-center gap-0.5 text-[10.5px] font-semibold text-slate-500">
+                  +$<NumberField
+                    value={a.price}
+                    onCommit={(n) => patchAddons(sv.id, addons.map((x) => (x.id === a.id ? { ...x, price: n } : x)))}
+                    className="tnum w-12 rounded-md border border-[#E3DDE3] bg-white px-1 py-1 text-right outline-none focus:border-[#5B54D6]"
+                  />
+                </span>
+                <button
+                  onClick={() => patchAddons(sv.id, addons.filter((x) => x.id !== a.id))}
+                  className="shrink-0 text-slate-300 transition hover:text-rose-500"
+                  title="Remove add-on"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+            <button
+              onClick={() => patchAddons(sv.id, [...addons, { id: `ao-${Math.random().toString(36).slice(2, 8)}`, name: "", mins: 15, price: 10 }])}
+              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold text-[#5B54D6] transition hover:bg-[#5B54D6]/[0.07]"
+            >
+              <Plus className="h-3 w-3" /> Add add-on
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const topCats = cats.filter((c) => !c.parentId);
+
   return (
     <div>
       <SectionHead title="Services" blurb="Your menu, prices and durations update everywhere instantly, including the legend and checkout" />
@@ -1041,8 +1231,10 @@ function ServicesSection() {
         </button>
       </div>
       <div className="space-y-4">
-        {cats.map((cat) => {
+        {topCats.map((cat) => {
           const svcs = services.filter((s) => s.categoryId === cat.id);
+          const subCats = cats.filter((c) => c.parentId === cat.id);
+          const canDeleteCat = svcs.length === 0 && subCats.length === 0;
           return (
             <div key={cat.id} className={card}>
               <div className="mb-2.5 flex items-center gap-2">
@@ -1067,9 +1259,9 @@ function ServicesSection() {
                 />
                 <span className="text-[10.5px] text-slate-400">{svcs.length} services</span>
                 <button
-                  onClick={() => svcs.length === 0 && setDeleteCatId(cat.id)}
-                  disabled={svcs.length > 0}
-                  title={svcs.length > 0 ? "Move or delete its services first" : "Delete category"}
+                  onClick={() => canDeleteCat && setDeleteCatId(cat.id)}
+                  disabled={!canDeleteCat}
+                  title={canDeleteCat ? "Delete category" : "Move or delete its services and subcategories first"}
                   className="shrink-0 text-slate-300 transition hover:text-rose-500 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -1082,114 +1274,62 @@ function ServicesSection() {
                 </button>
               </div>
               <div className="space-y-1.5">
-                {svcs.map((sv) => {
-                  const active = (sv as Service & { active?: boolean }).active !== false;
-                  const inUse = usedIds.has(sv.id);
-                  const addons = sv.addons ?? [];
-                  const addonsOpen = addonsFor === sv.id;
-                  return (
-                    <div key={sv.id}>
-                    <div className={`flex items-center gap-2 rounded-lg border border-[#EDE7EE] px-2.5 py-1.5 ${active ? "bg-white" : "bg-slate-50 opacity-60"}`}>
-                      <input
-                        value={sv.name}
-                        onChange={(e) => patch(sv.id, { name: e.target.value })}
-                        className="min-w-0 flex-[2] rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[12.5px] font-semibold text-slate-800 outline-none transition focus:border-[#5B54D6] focus:bg-white"
-                      />
-                      <input
-                        value={sv.short}
-                        onChange={(e) => patch(sv.id, { short: e.target.value })}
-                        title="Short label for tight calendar cells"
-                        className="min-w-0 w-20 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[11.5px] text-slate-500 outline-none transition focus:border-[#5B54D6] focus:bg-white"
-                      />
-                      <select
-                        value={sv.categoryId}
-                        onChange={(e) => patch(sv.id, { categoryId: e.target.value })}
-                        title="Move to a different category"
-                        className="w-[132px] shrink-0 rounded-md border border-[#E3DDE3] bg-white px-1.5 py-1 text-[11.5px] outline-none focus:border-[#5B54D6]"
+                {svcs.map((sv) => renderServiceRow(sv, svcs))}
+              </div>
+
+              {subCats.map((sub) => {
+                const subSvcs = services.filter((s) => s.categoryId === sub.id);
+                return (
+                  <div key={sub.id} className="mt-3 ml-3 border-l-2 border-[#EDE7EE] pl-3">
+                    <div className="mb-2 flex items-center gap-2">
+                      <label
+                        title="Subcategory color, updates the calendar rail and legend instantly"
+                        className="relative h-5 w-5 shrink-0 cursor-pointer overflow-hidden rounded-md border border-[#EDE7EE]"
+                        style={{ background: sub.line }}
                       >
-                        {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
-                      <select
-                        value={sv.durationMin}
-                        onChange={(e) => patch(sv.id, { durationMin: Number(e.target.value) })}
-                        className="w-[86px] rounded-md border border-[#E3DDE3] bg-white px-1.5 py-1 text-[11.5px] outline-none focus:border-[#5B54D6]"
-                      >
-                        {DURATIONS.map((d) => <option key={d} value={d}>{d} min</option>)}
-                      </select>
-                      <span className="flex items-center text-[12px] font-semibold text-slate-600">
-                        $<input
-                          type="number" min={0} value={sv.price}
-                          onChange={(e) => patch(sv.id, { price: Math.max(0, Number(e.target.value) || 0) })}
-                          className="tnum w-14 rounded-md border border-[#E3DDE3] bg-white px-1 py-1 text-right outline-none focus:border-[#5B54D6]"
+                        <input
+                          type="color"
+                          value={sub.line.startsWith('#') ? sub.line : '#5B54D6'}
+                          onChange={(e) => setCategories((list) =>
+                            list.map((c) => (c.id === sub.id ? { ...c, line: e.target.value, fill: `${e.target.value}26`, text: e.target.value } : c)),
+                          )}
+                          className="absolute inset-0 cursor-pointer opacity-0"
                         />
-                      </span>
+                      </label>
+                      <input
+                        value={sub.name}
+                        onChange={(e) => renameCategory(sub.id, e.target.value)}
+                        className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-[12px] font-bold text-slate-700 outline-none transition focus:border-[#5B54D6] focus:bg-white"
+                      />
+                      <span className="text-[10.5px] text-slate-400">{subSvcs.length} services</span>
                       <button
-                        onClick={() => setAddonsFor(addonsOpen ? null : sv.id)}
-                        title="Add-ons, extra time & money offered with this service"
-                        className={`shrink-0 rounded-md px-1.5 py-1 text-[10.5px] font-bold transition ${
-                          addonsOpen || addons.length > 0 ? "bg-[#5B54D6]/[0.08] text-[#5B54D6]" : "text-slate-400 hover:text-slate-600"
-                        }`}
-                      >
-                        {addons.length > 0 ? `${addons.length} add-on${addons.length > 1 ? "s" : ""}` : "+ add-on"}
-                      </button>
-                      <span title={active ? "Active, bookable" : "Inactive, hidden from menus"}>
-                        <Toggle on={active} onClick={() => patch(sv.id, { active: !active } as Partial<Service>)} />
-                      </span>
-                      <button
-                        onClick={() => !inUse && setDeleteId(sv.id)}
-                        disabled={inUse}
-                        title={inUse ? "Used by appointments, deactivate instead" : "Delete service"}
+                        onClick={() => subSvcs.length === 0 && setDeleteCatId(sub.id)}
+                        disabled={subSvcs.length > 0}
+                        title={subSvcs.length > 0 ? "Move or delete its services first" : "Delete subcategory"}
                         className="shrink-0 text-slate-300 transition hover:text-rose-500 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
+                      <button
+                        onClick={() => addService(sub.id)}
+                        className="ml-auto flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] font-semibold text-[#5B54D6] transition hover:bg-[#5B54D6]/[0.07]"
+                      >
+                        <Plus className="h-3 w-3" /> Add service
+                      </button>
                     </div>
-                    {addonsOpen && (
-                      <div className="ml-6 mt-1 space-y-1 rounded-lg border border-[#EDE7EE] bg-[#FAF8FA] p-2">
-                        {addons.length === 0 && <p className="px-1 py-1 text-[11px] text-slate-400">No add-ons yet, they add time and price on top of {sv.name}.</p>}
-                        {addons.map((a) => (
-                          <div key={a.id} className="flex items-center gap-1.5">
-                            <input
-                              value={a.name}
-                              onChange={(e) => patchAddons(sv.id, addons.map((x) => (x.id === a.id ? { ...x, name: e.target.value } : x)))}
-                              placeholder="Add-on name"
-                              className="min-w-0 flex-1 rounded-md border border-[#E3DDE3] bg-white px-1.5 py-1 text-[11.5px] outline-none focus:border-[#5B54D6]"
-                            />
-                            <span className="flex items-center gap-0.5 text-[10.5px] font-semibold text-slate-500">
-                              +<input
-                                type="number" min={0} step={5} value={a.mins}
-                                onChange={(e) => patchAddons(sv.id, addons.map((x) => (x.id === a.id ? { ...x, mins: Math.max(0, Number(e.target.value) || 0) } : x)))}
-                                className="tnum w-12 rounded-md border border-[#E3DDE3] bg-white px-1 py-1 text-right outline-none focus:border-[#5B54D6]"
-                              />m
-                            </span>
-                            <span className="flex items-center gap-0.5 text-[10.5px] font-semibold text-slate-500">
-                              +$<input
-                                type="number" min={0} value={a.price}
-                                onChange={(e) => patchAddons(sv.id, addons.map((x) => (x.id === a.id ? { ...x, price: Math.max(0, Number(e.target.value) || 0) } : x)))}
-                                className="tnum w-12 rounded-md border border-[#E3DDE3] bg-white px-1 py-1 text-right outline-none focus:border-[#5B54D6]"
-                              />
-                            </span>
-                            <button
-                              onClick={() => patchAddons(sv.id, addons.filter((x) => x.id !== a.id))}
-                              className="shrink-0 text-slate-300 transition hover:text-rose-500"
-                              title="Remove add-on"
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ))}
-                        <button
-                          onClick={() => patchAddons(sv.id, [...addons, { id: `ao-${Math.random().toString(36).slice(2, 8)}`, name: "", mins: 15, price: 10 }])}
-                          className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold text-[#5B54D6] transition hover:bg-[#5B54D6]/[0.07]"
-                        >
-                          <Plus className="h-3 w-3" /> Add add-on
-                        </button>
-                      </div>
-                    )}
+                    <div className="space-y-1.5">
+                      {subSvcs.map((sv) => renderServiceRow(sv, subSvcs))}
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })}
+
+              <button
+                onClick={() => addCategory("New subcategory", cat.id)}
+                className="mt-3 flex items-center gap-1 text-[11.5px] font-semibold text-[#5B54D6]/80 transition hover:text-[#5B54D6]"
+              >
+                <Plus className="h-3 w-3" /> Add subcategory
+              </button>
             </div>
           );
         })}
@@ -1198,7 +1338,7 @@ function ServicesSection() {
       {deleteCatId && (
         <ConfirmDialog
           title={`Delete "${catById[deleteCatId]?.name ?? "category"}"?`}
-          body="Only empty categories can be deleted. This can't be undone."
+          body="Only empty categories (and subcategories) can be deleted. This can't be undone."
           confirmLabel="Delete category"
           onConfirm={() => removeCategory(deleteCatId)}
           onClose={() => setDeleteCatId(null)}
