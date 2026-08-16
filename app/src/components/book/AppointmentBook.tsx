@@ -3726,6 +3726,7 @@ export function AppointmentBook() {
                 invoice: `INV-${p.id.replace(/\D/g, '').slice(-6)}`,
                 date: new Date(p.dateKey + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }),
                 services: items.length > 0 ? items.map((a) => svcById[a.serviceId]?.name ?? a.serviceId) : ['POS sale'],
+                serviceIds: items.length > 0 ? items.map((a) => a.serviceId) : [],
                 price: p.total,
                 techName: items[0] ? techOf(items[0].techId).name : 'Front desk',
               }

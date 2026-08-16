@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  CreditCard, Crown, Heart, Mail, MapPin, Pencil, Phone, Plus, Printer, Star, Trash2, X,
+  CreditCard, Crown, Heart, History, Mail, MapPin, Pencil, Phone, Plus, Printer, Star, Trash2, X,
 } from 'lucide-react'
 import type { Appointment, ClientRecord, ClientTechPreference } from '@/lib/booking-types'
 import { fmtTime } from '@/lib/booking-types'
@@ -8,6 +8,7 @@ import { SERVICES } from '@/lib/mock-data'
 import { getStaff, uid, useStaffStore } from '@/lib/staff-store'
 import { useSettingsStore } from '@/lib/settings-store'
 import { svcById } from '@/lib/services-store'
+import { catById } from '@/lib/categories-store'
 import { ConfirmDialog } from './ConfirmDialog'
 
 const techById = (id: string) => getStaff().techs.find((t) => t.id === id)
@@ -63,6 +64,10 @@ function rng(seed: number) {
 interface PastVisit {
   invoice: string; date: string; services: string[]; status: 'CLOSED' | 'NO SHOW' | 'OPEN'
   price: number; techName: string
+  /** ids paired 1:1 with `services`, lets the UI show each service's own
+   *  category color; left off (or shorter than `services`) on older shapes,
+   *  callers fall back to a plain label for those entries */
+  serviceIds?: string[]
   /** real checkout, opens the invoice */
   paymentId?: string
 }
@@ -73,6 +78,8 @@ export interface RealVisit {
   invoice: string
   date: string
   services: string[]
+  /** ids paired 1:1 with `services` */
+  serviceIds?: string[]
   price: number
   techName: string
 }
@@ -89,6 +96,7 @@ function mockHistory(c: ClientRecord): PastVisit[] {
       invoice: `INV${50000 + Math.floor(r() * 4000)}`,
       date: `${1 + Math.floor(r() * 6)}/${1 + Math.floor(r() * 28)}/2026`,
       services: svcs.map((s) => s.name),
+      serviceIds: svcs.map((s) => s.id),
       status: roll > 0.92 ? 'NO SHOW' : roll > 0.85 ? 'OPEN' : 'CLOSED',
       price: svcs.reduce((s, x) => s + x.price, 0),
       techName: getStaff().techs[Math.floor(r() * getStaff().techs.length)]?.name ?? 'Unknown',
@@ -121,13 +129,18 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
     [guestVisits, activeGuest],
   )
   const [noteText, setNoteText] = useState('')
+  const [showVisits, setShowVisits] = useState(false)
   const history = useMemo(() => {
     const real: PastVisit[] = realVisits.map((v) => ({
-      invoice: v.invoice, date: v.date, services: v.services,
+      invoice: v.invoice, date: v.date, services: v.services, serviceIds: v.serviceIds,
       status: 'CLOSED', price: v.price, techName: v.techName, paymentId: v.paymentId,
     }))
     return [...real, ...mockHistory(client)]
   }, [client, realVisits])
+  const last5Visits = useMemo(
+    () => [...history].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5),
+    [history],
+  )
   const settings = useSettingsStore()
   const balance = pointsBalance
   const upcoming = appts.filter((a) => a.clientName === client.name)
@@ -291,6 +304,15 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
 
           {tab === 'profile' && (
             <div className="max-w-3xl space-y-5">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Guest details</p>
+                <button
+                  onClick={() => setShowVisits(true)}
+                  className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-sky-400 hover:text-sky-600"
+                >
+                  <History className="h-3.5 w-3.5" /> Last 5 visits
+                </button>
+              </div>
               <div className="grid grid-cols-3 gap-4">
                 <div><label className={label}>First name *</label><input className={field} value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} /></div>
                 <div><label className={label}>Phone *</label><input className={field} value={draft.phone} onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))} /></div>
@@ -641,6 +663,67 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
           onConfirm={() => onDeleteNote(pendingNoteId)}
           onClose={() => setPendingNoteId(null)}
         />
+      )}
+
+      {/* last 5 visits, each service tagged with its category color */}
+      {showVisits && (
+        <div className="fixed inset-0 z-[98] flex items-center justify-center bg-black/45 p-4" onClick={() => setShowVisits(false)}>
+          <div
+            className="flex max-h-[80vh] w-[36rem] max-w-[94vw] flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-border px-5 py-3">
+              <div>
+                <div className="text-sm font-bold">Last 5 visits</div>
+                <div className="text-[11px] text-muted-foreground">{client.name}</div>
+              </div>
+              <button onClick={() => setShowVisits(false)} className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              {last5Visits.length === 0 ? (
+                <div className="py-10 text-center text-sm text-muted-foreground">No visits yet</div>
+              ) : (
+                <div className="space-y-3">
+                  {last5Visits.map((h, i) => {
+                    const hasIds = h.serviceIds && h.serviceIds.length > 0
+                    return (
+                      <div key={`${h.invoice}-${i}`} className="rounded-lg border border-border p-3">
+                        <div className="mb-2 flex items-center justify-between">
+                          <span className="text-sm font-semibold">{h.date}</span>
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_STYLE[h.status]}`}>{h.status}</span>
+                        </div>
+                        <div className="mb-2 flex flex-wrap gap-1.5">
+                          {hasIds
+                            ? h.serviceIds!.map((id, si) => {
+                              const svc = svcById[id]
+                              const color = svc ? catById[svc.categoryId]?.line : undefined
+                              return (
+                                <span key={`${id}-${si}`} className="flex items-center gap-1.5 rounded-full border border-border bg-secondary/40 px-2 py-1 text-[11px] font-medium">
+                                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color ?? '#94a3b8' }} />
+                                  {svc?.name ?? id}
+                                </span>
+                              )
+                            })
+                            : h.services.map((name, si) => (
+                              <span key={`${name}-${si}`} className="rounded-full border border-border bg-secondary/40 px-2 py-1 text-[11px] font-medium text-muted-foreground">
+                                {name}
+                              </span>
+                            ))}
+                        </div>
+                        <div className="flex items-center justify-between text-[12px] text-muted-foreground">
+                          <span>Technician: <span className="font-medium text-foreground">{h.techName}</span></span>
+                          <span className="text-sm font-bold text-foreground">${h.price.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
