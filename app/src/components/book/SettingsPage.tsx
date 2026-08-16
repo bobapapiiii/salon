@@ -4,7 +4,7 @@
 // everything else writes instantly to the salon's settings store.
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart3, Bell, Briefcase, Check, ChevronDown, ChevronUp, CreditCard, Download, FileText, Globe, KeyRound, Plus, Sparkles, Star, Store, Trash2, Users, X,
+  BarChart3, Bell, Briefcase, Check, CreditCard, Download, FileText, Globe, GripVertical, KeyRound, Plus, Sparkles, Star, Store, Trash2, Users, X,
 } from "lucide-react";
 import type { Tech } from "../../lib/booking-types";
 import { roleColor, setStaff, uid, useStaffStore, type JobRole } from "../../lib/staff-store";
@@ -1032,6 +1032,8 @@ function ServicesSection() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteCatId, setDeleteCatId] = useState<string | null>(null);
   const [addonsFor, setAddonsFor] = useState<string | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
 
   const usedIds = useMemo(
     () => new Set(Object.values(apptDays).flat().map((a) => a.serviceId)),
@@ -1061,21 +1063,27 @@ function ServicesSection() {
 
   const patchAddons = (svcId: string, addons: ServiceAddon[]) => patch(svcId, { addons } as Partial<Service>);
 
-  /** swap a service with its neighbor within its own category or
-   *  subcategory only — every other group's order stays untouched */
-  const moveService = (id: string, dir: -1 | 1) =>
+  /** drag a service to a new spot within its own category or subcategory —
+   *  dropping it onto another row inserts it right before that row;
+   *  `beforeId: null` drops it at the end of the group instead. Cross-group
+   *  drags are ignored, moving a service to a different category is still
+   *  the job of the category dropdown on its row. */
+  const reorderService = (draggedId: string, beforeId: string | null, categoryId: string) =>
     setServices((list) => {
-      const sv = list.find((s) => s.id === id);
-      if (!sv) return list;
-      const sameCat = list.filter((s) => s.categoryId === sv.categoryId);
-      const pos = sameCat.findIndex((s) => s.id === id);
-      const swapPos = pos + dir;
-      if (swapPos < 0 || swapPos >= sameCat.length) return list;
-      const other = sameCat[swapPos];
-      const ia = list.findIndex((s) => s.id === sv.id);
-      const ib = list.findIndex((s) => s.id === other.id);
-      const next = [...list];
-      [next[ia], next[ib]] = [next[ib], next[ia]];
+      const dragged = list.find((s) => s.id === draggedId);
+      if (!dragged || dragged.categoryId !== categoryId) return list;
+      const rest = list.filter((s) => s.id !== draggedId);
+      let insertAt: number;
+      if (beforeId) {
+        insertAt = rest.findIndex((s) => s.id === beforeId);
+        if (insertAt === -1) return list;
+      } else {
+        const groupItems = rest.filter((s) => s.categoryId === categoryId);
+        const last = groupItems[groupItems.length - 1];
+        insertAt = last ? rest.findIndex((s) => s.id === last.id) + 1 : rest.length;
+      }
+      const next = [...rest];
+      next.splice(insertAt, 0, dragged);
       return next;
     });
 
@@ -1089,33 +1097,47 @@ function ServicesSection() {
     ]);
   }, [cats]);
 
-  const renderServiceRow = (sv: Service, svcs: Service[]) => {
+  const renderServiceRow = (sv: Service) => {
     const active = (sv as Service & { active?: boolean }).active !== false;
     const inUse = usedIds.has(sv.id);
     const addons = sv.addons ?? [];
     const addonsOpen = addonsFor === sv.id;
-    const idx = svcs.findIndex((s) => s.id === sv.id);
+    const dropBefore = dragId && dragId !== sv.id && overId === sv.id;
     return (
-      <div key={sv.id}>
-        <div className={`flex items-center gap-2 rounded-lg border border-[#EDE7EE] px-2.5 py-1.5 ${active ? "bg-white" : "bg-slate-50 opacity-60"}`}>
-          <div className="flex shrink-0 flex-col">
-            <button
-              onClick={() => moveService(sv.id, -1)}
-              disabled={idx === 0}
-              title="Move up"
-              className="text-slate-300 transition hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              <ChevronUp className="h-3 w-3" />
-            </button>
-            <button
-              onClick={() => moveService(sv.id, 1)}
-              disabled={idx === svcs.length - 1}
-              title="Move down"
-              className="text-slate-300 transition hover:text-slate-600 disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              <ChevronDown className="h-3 w-3" />
-            </button>
-          </div>
+      <div
+        key={sv.id}
+        onDragOver={(e) => {
+          if (!dragId || dragId === sv.id) return;
+          e.preventDefault();
+          if (overId !== sv.id) setOverId(sv.id);
+        }}
+        onDragLeave={() => setOverId((o) => (o === sv.id ? null : o))}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (dragId && dragId !== sv.id) reorderService(dragId, sv.id, sv.categoryId);
+          setDragId(null);
+          setOverId(null);
+        }}
+        className={dropBefore ? "border-t-2 border-[#5B54D6] pt-1.5 -mt-1.5" : ""}
+      >
+        <div
+          className={`flex items-center gap-2 rounded-lg border border-[#EDE7EE] px-2.5 py-1.5 transition-opacity ${active ? "bg-white" : "bg-slate-50 opacity-60"} ${dragId === sv.id ? "opacity-40" : ""}`}
+        >
+          <span
+            draggable
+            onDragStart={(e) => {
+              setDragId(sv.id);
+              e.dataTransfer.effectAllowed = "move";
+            }}
+            onDragEnd={() => {
+              setDragId(null);
+              setOverId(null);
+            }}
+            title="Drag to reorder"
+            className="shrink-0 cursor-grab text-slate-300 transition hover:text-slate-500 active:cursor-grabbing"
+          >
+            <GripVertical className="h-3.5 w-3.5" />
+          </span>
           <input
             value={sv.name}
             onChange={(e) => patch(sv.id, { name: e.target.value })}
@@ -1217,6 +1239,25 @@ function ServicesSection() {
     );
   };
 
+  /** thin strip below a group's last row — dropping here sends the dragged
+   *  service to the end of that category/subcategory instead of before a
+   *  specific row */
+  const renderTrailingDrop = (categoryId: string) => (
+    <div
+      onDragOver={(e) => {
+        if (!dragId) return;
+        e.preventDefault();
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        if (dragId) reorderService(dragId, null, categoryId);
+        setDragId(null);
+        setOverId(null);
+      }}
+      className="h-2"
+    />
+  );
+
   const topCats = cats.filter((c) => !c.parentId);
 
   return (
@@ -1274,7 +1315,8 @@ function ServicesSection() {
                 </button>
               </div>
               <div className="space-y-1.5">
-                {svcs.map((sv) => renderServiceRow(sv, svcs))}
+                {svcs.map((sv) => renderServiceRow(sv))}
+                {renderTrailingDrop(cat.id)}
               </div>
 
               {subCats.map((sub) => {
@@ -1318,7 +1360,8 @@ function ServicesSection() {
                       </button>
                     </div>
                     <div className="space-y-1.5">
-                      {subSvcs.map((sv) => renderServiceRow(sv, subSvcs))}
+                      {subSvcs.map((sv) => renderServiceRow(sv))}
+                      {renderTrailingDrop(sub.id)}
                     </div>
                   </div>
                 );
