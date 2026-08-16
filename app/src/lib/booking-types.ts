@@ -179,12 +179,22 @@ export interface Appointment {
 
 export const logEntry = (text: string) => ({ at: Date.now(), text })
 
+/** a client's standing preference: this tech does these services for them.
+ *  A client can have several — one tech for nails, another for pedicures, etc.
+ *  Surfaced when booking for them (and, once it exists, on online booking). */
+export interface ClientTechPreference {
+  id: string
+  techId: string
+  serviceIds: string[]
+}
+
 export interface ClientRecord {
   id: string
   name: string
   phone: string
   visits: number
-  usualTechId?: string
+  /** standing tech + service preferences, set by staff on the client's profile */
+  preferredTechs?: ClientTechPreference[]
   /** name-only guests this client has brought, no profile of their own */
   guests?: { id: string; name: string }[]
 }

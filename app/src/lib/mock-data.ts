@@ -1,6 +1,7 @@
 import type {
   Appointment,
   ClientRecord,
+  ClientTechPreference,
   Service,
   ServiceCategory,
   Team,
@@ -98,12 +99,34 @@ export const TECHS: Tech[] = (() => {
 })()
 
 // ── clients (searchable in quick-book) ──────────────────────────────────────
+/** a plausible standing preference or two — a real tech, and services that
+ *  tech actually offers, so the demo data holds up when it's surfaced later */
+function seedPreferredTechs(i: number): ClientTechPreference[] | undefined {
+  const count = rand() > 0.85 ? 2 : rand() > 0.35 ? 1 : 0
+  if (count === 0) return undefined
+  const used = new Set<string>()
+  const out: ClientTechPreference[] = []
+  for (let p = 0; p < count; p++) {
+    let tech = pick(TECHS)
+    for (let guard = 0; used.has(tech.id) && guard < 10; guard++) tech = pick(TECHS)
+    used.add(tech.id)
+    const pool = [...tech.skills]
+    const serviceIds: string[] = []
+    const take = int(1, Math.min(3, pool.length))
+    for (let k = 0; k < take && pool.length > 0; k++) {
+      serviceIds.push(pool.splice(Math.floor(rand() * pool.length), 1)[0])
+    }
+    out.push({ id: `pref-${i}-${p}`, techId: tech.id, serviceIds })
+  }
+  return out
+}
+
 export const CLIENTS: ClientRecord[] = FIRST.slice(0, 46).map((f, i) => ({
   id: `c${i + 1}`,
   name: `${f} ${pick(LAST_INIT)}.`,
   phone: `(555) ${String(100 + i)}-${String(1000 + i * 37).slice(0, 4)}`,
   visits: int(1, 38),
-  usualTechId: rand() > 0.4 ? pick(TECHS).id : undefined,
+  preferredTechs: seedPreferredTechs(i),
 }))
 
 // ── appointments ────────────────────────────────────────────────────────────

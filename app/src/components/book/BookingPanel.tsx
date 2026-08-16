@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import {
-  AlertTriangle, ArrowLeft, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Link2, Mail, Phone, Plus, Search, UserPlus, Users, X, Zap,
+  AlertTriangle, ArrowLeft, Calendar, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Heart, Link2, Mail, Phone, Plus, Search, UserPlus, Users, X, Zap,
 } from 'lucide-react'
 import { useSettingsStore } from '@/lib/settings-store'
 import type { Appointment, ClientRecord, ServiceAddon, TimeBlock } from '@/lib/booking-types'
@@ -564,6 +564,69 @@ export function BookingPanel({
     )
   }
 
+  // add every not-yet-picked service from a client's standing preference, and
+  // pre-fill the requested tech for each — same effect as choosing them by hand
+  const addPreference = (gi: number, pref: { techId: string; serviceIds: string[] }) => {
+    const already = new Set(svcsByGuest[gi] ?? [])
+    const toAdd = pref.serviceIds.filter((id) => !already.has(id) && svcById[id])
+    if (toAdd.length === 0) return
+    setSvcsByGuest((arr) => {
+      const n = [...arr]
+      n[gi] = [...(n[gi] ?? []), ...toAdd]
+      return n
+    })
+    setTechByService((m) => {
+      const n = { ...m }
+      toAdd.forEach((id) => { n[`${gi}:${id}`] = pref.techId })
+      return n
+    })
+    setTypeByService((m) => {
+      const n = { ...m }
+      toAdd.forEach((id) => { n[`${gi}:${id}`] = 'requested' })
+      return n
+    })
+  }
+
+  // this guest's standing tech + service preferences, set on their client profile —
+  // lets the front desk one-click what this client always gets, instead of hunting
+  // for it in their history
+  const preferenceBanner = (gi: number) => {
+    const g = guests[gi]
+    if (!g || g.isGuest || !g.clientId) return null
+    const client = clients.find((c) => c.id === g.clientId)
+    const prefs = (client?.preferredTechs ?? []).filter((p) => p.serviceIds.length > 0)
+    if (prefs.length === 0) return null
+    const already = new Set(svcsByGuest[gi] ?? [])
+    return (
+      <div className="mb-3 space-y-1.5 rounded-xl border border-clay/30 bg-clay-tint/20 p-2.5">
+        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-clay">
+          <Heart className="h-3 w-3 shrink-0" style={{ fill: 'currentColor' }} /> {g.name.split(' ')[0]}&rsquo;s usual
+        </div>
+        {prefs.map((p) => {
+          const tech = techs.find((t) => t.id === p.techId)
+          if (!tech) return null
+          const allAdded = p.serviceIds.every((id) => already.has(id))
+          return (
+            <div key={p.id} className="flex items-center gap-2 rounded-lg bg-surface px-2 py-1.5 text-[12px]">
+              <span className="min-w-0 flex-1 truncate text-ink-soft">
+                <b className="font-semibold text-ink">{tech.name}</b>
+                {' — '}
+                {p.serviceIds.map((id) => svcById[id]?.short ?? id).join(', ')}
+              </span>
+              <button
+                onClick={() => addPreference(gi, p)}
+                disabled={allAdded}
+                className="shrink-0 rounded-full border border-clay/40 px-2 py-0.5 text-[10.5px] font-semibold text-clay transition-colors hover:bg-clay-tint disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                {allAdded ? 'Added' : 'Add'}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
   const parallelBanner = (gi: number) => {
     const svcs = svcsByGuest[gi] ?? []
     if (svcs.length < 2) return null
@@ -589,7 +652,7 @@ export function BookingPanel({
   }
 
   return (
-    <div className="fixed inset-y-0 right-0 z-[85] flex w-[634px] max-w-[95vw] flex-col border-l border-line bg-popover shadow-2xl">
+    <div className="fixed inset-y-0 right-0 z-[85] flex w-[596px] max-w-[95vw] flex-col border-l border-line bg-popover shadow-2xl">
       {/* header */}
       <div className="border-b border-line bg-cream px-4 py-3.5">
         <div className="flex items-start gap-3">
@@ -774,6 +837,7 @@ export function BookingPanel({
 
               {tab === 'services' && (
                 <>
+                  {preferenceBanner(activeGuest)}
                   {parallelBanner(activeGuest)}
                   <div className="space-y-1">
                     <div className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">

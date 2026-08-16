@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
 import {
-  CreditCard, Crown, Mail, MapPin, Pencil, Phone, Plus, Printer, Star, Trash2, X,
+  CreditCard, Crown, Heart, Mail, MapPin, Pencil, Phone, Plus, Printer, Star, Trash2, X,
 } from 'lucide-react'
-import type { Appointment, ClientRecord } from '@/lib/booking-types'
+import type { Appointment, ClientRecord, ClientTechPreference } from '@/lib/booking-types'
 import { fmtTime } from '@/lib/booking-types'
 import { SERVICES } from '@/lib/mock-data'
-import { getStaff, useStaffStore } from '@/lib/staff-store'
+import { getStaff, uid, useStaffStore } from '@/lib/staff-store'
 import { useSettingsStore } from '@/lib/settings-store'
 import { svcById } from '@/lib/services-store'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -132,6 +132,7 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
   const balance = pointsBalance
   const upcoming = appts.filter((a) => a.clientName === client.name)
   const [draft, setDraft] = useState({ name: client.name, phone: client.phone, tags: 'Regular Guest' })
+  const [prefDraft, setPrefDraft] = useState<ClientTechPreference[]>(client.preferredTechs ?? [])
   const [saved, setSaved] = useState(false)
 
   const initials = client.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
@@ -139,8 +140,22 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
     'w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring'
   const label = 'mb-1 block text-[11px] font-medium text-muted-foreground'
 
+  const addPref = () => setPrefDraft((p) => [...p, { id: uid('pref'), techId: '', serviceIds: [] }])
+  const removePref = (id: string) => setPrefDraft((p) => p.filter((x) => x.id !== id))
+  const setPrefTech = (id: string, techId: string) =>
+    setPrefDraft((p) => p.map((x) => (x.id === id ? { ...x, techId, serviceIds: [] } : x)))
+  const togglePrefService = (id: string, serviceId: string) =>
+    setPrefDraft((p) => p.map((x) => (x.id === id
+      ? { ...x, serviceIds: x.serviceIds.includes(serviceId) ? x.serviceIds.filter((s) => s !== serviceId) : [...x.serviceIds, serviceId] }
+      : x)))
+
   const saveProfile = () => {
-    onSaveProfile({ name: draft.name.trim() || client.name, phone: draft.phone.trim() || client.phone })
+    onSaveProfile({
+      name: draft.name.trim() || client.name,
+      phone: draft.phone.trim() || client.phone,
+      // drop any entry where a tech was never picked
+      preferredTechs: prefDraft.filter((p) => p.techId && p.serviceIds.length > 0),
+    })
     setSaved(true)
     window.setTimeout(() => setSaved(false), 2000)
   }
@@ -204,8 +219,12 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
                   <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Personal info</div>
                   <div className="space-y-1.5 text-sm">
                     <div className="flex justify-between"><span className="text-muted-foreground">Phone</span><span>{client.phone}</span></div>
-                    <div className="flex justify-between"><span className="text-muted-foreground">Preferred tech</span>
-                      <span>{client.usualTechId ? techById(client.usualTechId)?.name ?? 'Unknown' : 'Any'}</span></div>
+                    <div className="flex justify-between gap-3"><span className="shrink-0 text-muted-foreground">Preferences</span>
+                      <span className="truncate text-right">
+                        {(client.preferredTechs?.length ?? 0) === 0
+                          ? 'None set'
+                          : client.preferredTechs!.map((p) => techById(p.techId)?.name ?? 'Unknown').join(', ')}
+                      </span></div>
                     <div className="flex justify-between"><span className="text-muted-foreground">Preferred center</span><span>Gloss Nail Bar</span></div>
                     <div className="flex justify-between"><span className="text-muted-foreground">Member since</span><span>Mar 2024</span></div>
                   </div>
@@ -287,12 +306,60 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
                     <select className={field}><option>Day</option>{Array.from({ length: 31 }, (_, i) => <option key={i}>{i + 1}</option>)}</select>
                   </div>
                 </div>
-                <div>
-                  <label className={label}>Preferred technician</label>
-                  <select className={field} defaultValue={client.usualTechId ?? ''}>
-                    <option value="">Any</option>
-                    {techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
+              </div>
+
+              <div className="rounded-lg border border-border p-4">
+                <div className="mb-2 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <Heart className="h-3.5 w-3.5" /> Preferred technicians &amp; services
+                  </div>
+                  <button onClick={addPref} className="flex items-center gap-1 text-xs font-semibold text-sky-600 hover:underline">
+                    <Plus className="h-3.5 w-3.5" /> Add preference
+                  </button>
+                </div>
+                {prefDraft.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    No preferences set. Add the techs {client.name.split(' ')[0]} likes and which services they do for them — this
+                    shows up automatically when booking their next appointment.
+                  </p>
+                )}
+                <div className="space-y-3">
+                  {prefDraft.map((p) => {
+                    const tech = techs.find((t) => t.id === p.techId)
+                    const offered = tech ? SERVICES.filter((s) => tech.skills.includes(s.id)) : []
+                    return (
+                      <div key={p.id} className="rounded-md border border-border/70 p-3">
+                        <div className="flex items-center gap-2">
+                          <select className={field} value={p.techId} onChange={(e) => setPrefTech(p.id, e.target.value)}>
+                            <option value="">Choose a technician…</option>
+                            {techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                          </select>
+                          <button onClick={() => removePref(p.id)} className="shrink-0 text-muted-foreground hover:text-red-500" title="Remove preference">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                        {tech && (
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {offered.map((s) => {
+                              const selected = p.serviceIds.includes(s.id)
+                              return (
+                                <button
+                                  key={s.id}
+                                  type="button"
+                                  onClick={() => togglePrefService(p.id, s.id)}
+                                  className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                                    selected ? 'border-sky-500 bg-sky-500/10 text-sky-600' : 'border-border text-muted-foreground hover:border-sky-300'
+                                  }`}
+                                >
+                                  {s.name}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
 
