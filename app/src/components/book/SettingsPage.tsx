@@ -1146,16 +1146,24 @@ function ServicesSection() {
           setDragId(null);
           setOverId(null);
         }}
-        className={dropBefore ? "border-t-2 border-[#5B54D6] pt-1.5 -mt-1.5" : ""}
       >
         <div
-          className={`flex items-center gap-2 rounded-lg border border-[#EDE7EE] px-2.5 py-1.5 transition-opacity ${active ? "bg-white" : "bg-slate-50 opacity-60"} ${dragId === sv.id ? "opacity-40" : ""}`}
+          className={`svc-row flex items-center gap-2 rounded-lg border border-[#EDE7EE] px-2.5 py-1.5 transition-[opacity,box-shadow] duration-150 ${active ? "bg-white" : "bg-slate-50 opacity-60"} ${dragId === sv.id ? "opacity-40" : ""} ${dropBefore ? "shadow-[0_-2px_0_0_#5B54D6]" : ""}`}
         >
           <span
             draggable
             onDragStart={(e) => {
               setDragId(sv.id);
               e.dataTransfer.effectAllowed = "move";
+              e.dataTransfer.setData("text/plain", sv.id);
+              // drag the actual row as the ghost image instead of the tiny
+              // grip icon, and anchor it under the cursor where it was
+              // grabbed so it doesn't jump when the drag starts
+              const row = (e.currentTarget as HTMLElement).closest(".svc-row") as HTMLElement | null;
+              if (row) {
+                const r = row.getBoundingClientRect();
+                e.dataTransfer.setDragImage(row, e.clientX - r.left, e.clientY - r.top);
+              }
             }}
             onDragEnd={() => {
               setDragId(null);
@@ -1385,12 +1393,18 @@ function ServicesSection() {
                       catDropBefore ? "border-[#5B54D6]" : "border-[#EDE7EE]"
                     } ${dragCatId === sub.id ? "opacity-40" : ""}`}
                   >
-                    <div className="mb-2 flex items-center gap-2">
+                    <div className="subcat-header mb-2 flex items-center gap-2">
                       <span
                         draggable
                         onDragStart={(e) => {
                           setDragCatId(sub.id);
                           e.dataTransfer.effectAllowed = "move";
+                          e.dataTransfer.setData("text/plain", sub.id);
+                          const header = (e.currentTarget as HTMLElement).closest(".subcat-header") as HTMLElement | null;
+                          if (header) {
+                            const r = header.getBoundingClientRect();
+                            e.dataTransfer.setDragImage(header, e.clientX - r.left, e.clientY - r.top);
+                          }
                         }}
                         onDragEnd={() => {
                           setDragCatId(null);
