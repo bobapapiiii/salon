@@ -1102,6 +1102,14 @@ function ServicesSection() {
                         className="min-w-0 w-20 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[11.5px] text-slate-500 outline-none transition focus:border-[#5B54D6] focus:bg-white"
                       />
                       <select
+                        value={sv.categoryId}
+                        onChange={(e) => patch(sv.id, { categoryId: e.target.value })}
+                        title="Move to a different category"
+                        className="w-[132px] shrink-0 rounded-md border border-[#E3DDE3] bg-white px-1.5 py-1 text-[11.5px] outline-none focus:border-[#5B54D6]"
+                      >
+                        {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                      <select
                         value={sv.durationMin}
                         onChange={(e) => patch(sv.id, { durationMin: Number(e.target.value) })}
                         className="w-[86px] rounded-md border border-[#E3DDE3] bg-white px-1.5 py-1 text-[11.5px] outline-none focus:border-[#5B54D6]"
