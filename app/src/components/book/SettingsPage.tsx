@@ -14,7 +14,7 @@ const todayKey = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 import { activeServices, setServices, svcById, useServicesStore } from "../../lib/services-store";
-import { addCategory, catById, removeCategory, setCategories, useCategoriesStore } from "../../lib/categories-store";
+import { addCategory, catById, setCategories, useCategoriesStore } from "../../lib/categories-store";
 import type { ServiceAddon } from "../../lib/booking-types";
 import { ALL_METHODS, setSettings, useSettingsStore, type Redemption } from "../../lib/settings-store";
 import { sdata, usePersistentState } from "../../lib/persist";
@@ -1036,6 +1036,7 @@ function ServicesSection() {
   const [overId, setOverId] = useState<string | null>(null);
   const [dragCatId, setDragCatId] = useState<string | null>(null);
   const [overCatId, setOverCatId] = useState<string | null>(null);
+  const [archOpen, setArchOpen] = useState(false);
 
   const usedIds = useMemo(
     () => new Set(Object.values(apptDays).flat().map((a) => a.serviceId)),
@@ -1062,6 +1063,37 @@ function ServicesSection() {
 
   const renameCategory = (id: string, name: string) =>
     setCategories((list) => list.map((c) => (c.id === id ? { ...c, name } : c)));
+
+  /** archive a category (and, for a top-level one, its subcategories) along
+   *  with every service inside it. Nothing is removed from storage -- every
+   *  appointment that already references it, past or already booked, keeps
+   *  resolving its name/color/price exactly as before. It just disappears
+   *  from booking menus and this list until it's restored. */
+  const archiveCategory = (id: string) => {
+    const ids = [id, ...cats.filter((c) => c.parentId === id).map((c) => c.id)];
+    setCategories((list) => list.map((c) => (ids.includes(c.id) ? { ...c, archived: true } : c)));
+    setServices((list) => list.map((s) => (ids.includes(s.categoryId) ? { ...s, active: false } : s)));
+  };
+
+  /** bring a category back -- for a top-level one, its subcategories too,
+   *  and their services. Restoring a lone subcategory also un-archives its
+   *  parent (just the category record, not the parent's own services) so
+   *  it has a card to sit in again. */
+  const restoreCategory = (id: string) => {
+    const target = cats.find((c) => c.id === id);
+    const ids = [id, ...cats.filter((c) => c.parentId === id).map((c) => c.id)];
+    setCategories((list) => list.map((c) => (ids.includes(c.id) || c.id === target?.parentId ? { ...c, archived: false } : c)));
+    setServices((list) => list.map((s) => (ids.includes(s.categoryId) ? { ...s, active: true } : s)));
+  };
+
+  /** actually remove a category (and, for a top-level one, its
+   *  subcategories) and every service inside it. Only ever offered once
+   *  it's empty or already archived with nothing still in use. */
+  const permanentlyDeleteCategory = (id: string) => {
+    const ids = [id, ...cats.filter((c) => c.parentId === id).map((c) => c.id)];
+    setServices((list) => list.filter((s) => !ids.includes(s.categoryId)));
+    setCategories((list) => list.filter((c) => !ids.includes(c.id)));
+  };
 
   const patchAddons = (svcId: string, addons: ServiceAddon[]) => patch(svcId, { addons } as Partial<Service>);
 
@@ -1117,10 +1149,10 @@ function ServicesSection() {
   // flat list for the "move to category" picker, subcategories indented
   // under their parent so the hierarchy still reads at a glance
   const catOptions = useMemo(() => {
-    const top = cats.filter((c) => !c.parentId);
+    const top = cats.filter((c) => !c.parentId && !c.archived);
     return top.flatMap((t) => [
       { id: t.id, label: t.name },
-      ...cats.filter((c) => c.parentId === t.id).map((s) => ({ id: s.id, label: `— ${s.name}` })),
+      ...cats.filter((c) => c.parentId === t.id && !c.archived).map((s) => ({ id: s.id, label: `— ${s.name}` })),
     ]);
   }, [cats]);
 
@@ -1300,7 +1332,7 @@ function ServicesSection() {
     </div>
   );
 
-  const topCats = cats.filter((c) => !c.parentId);
+  const topCats = cats.filter((c) => !c.parentId && !c.archived);
   const draggedCat = dragCatId ? cats.find((c) => c.id === dragCatId) : undefined;
 
   return (
@@ -1317,8 +1349,7 @@ function ServicesSection() {
       <div className="space-y-4">
         {topCats.map((cat) => {
           const svcs = services.filter((s) => s.categoryId === cat.id);
-          const subCats = cats.filter((c) => c.parentId === cat.id);
-          const canDeleteCat = svcs.length === 0 && subCats.length === 0;
+          const subCats = cats.filter((c) => c.parentId === cat.id && !c.archived);
           return (
             <div key={cat.id} className={card}>
               <div className="mb-2.5 flex items-center gap-2">
@@ -1343,10 +1374,9 @@ function ServicesSection() {
                 />
                 <span className="text-[10.5px] text-slate-400">{svcs.length} services</span>
                 <button
-                  onClick={() => canDeleteCat && setDeleteCatId(cat.id)}
-                  disabled={!canDeleteCat}
-                  title={canDeleteCat ? "Delete category" : "Move or delete its services and subcategories first"}
-                  className="shrink-0 text-slate-300 transition hover:text-rose-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => setDeleteCatId(cat.id)}
+                  title="Delete or archive category"
+                  className="shrink-0 text-slate-300 transition hover:text-rose-500"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -1436,10 +1466,9 @@ function ServicesSection() {
                       />
                       <span className="text-[10.5px] text-slate-400">{subSvcs.length} services</span>
                       <button
-                        onClick={() => subSvcs.length === 0 && setDeleteCatId(sub.id)}
-                        disabled={subSvcs.length > 0}
-                        title={subSvcs.length > 0 ? "Move or delete its services first" : "Delete subcategory"}
-                        className="shrink-0 text-slate-300 transition hover:text-rose-500 disabled:cursor-not-allowed disabled:opacity-40"
+                        onClick={() => setDeleteCatId(sub.id)}
+                        title="Delete or archive subcategory"
+                        className="shrink-0 text-slate-300 transition hover:text-rose-500"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -1481,15 +1510,75 @@ function ServicesSection() {
         })}
       </div>
 
-      {deleteCatId && (
-        <ConfirmDialog
-          title={`Delete "${catById[deleteCatId]?.name ?? "category"}"?`}
-          body="Only empty categories (and subcategories) can be deleted. This can't be undone."
-          confirmLabel="Delete category"
-          onConfirm={() => removeCategory(deleteCatId)}
-          onClose={() => setDeleteCatId(null)}
-        />
-      )}
+      {(() => {
+        const archivedCats = cats.filter((c) => c.archived);
+        if (archivedCats.length === 0) return null;
+        return (
+          <div className="mt-4 border-t border-[#EDE7EE] pt-3">
+            <button
+              onClick={() => setArchOpen((o) => !o)}
+              className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-bold text-slate-400 transition hover:bg-[#F4F0F5] hover:text-slate-600"
+            >
+              <span className={`transition-transform ${archOpen ? "rotate-180" : ""}`}>▾</span>
+              Archived categories ({archivedCats.length})
+            </button>
+            {archOpen && (
+              <div className="mt-1.5 space-y-1.5">
+                {archivedCats.map((c) => {
+                  const ids = [c.id, ...cats.filter((x) => x.parentId === c.id).map((x) => x.id)];
+                  const count = services.filter((s) => ids.includes(s.categoryId)).length;
+                  const stillUsed = services.some((s) => ids.includes(s.categoryId) && usedIds.has(s.id));
+                  const parentName = c.parentId ? catById[c.parentId]?.name : undefined;
+                  return (
+                    <div key={c.id} className="flex items-center gap-2 rounded-lg border border-[#EDE7EE] bg-slate-50 px-2.5 py-2 opacity-80">
+                      <span className="h-4 w-4 shrink-0 rounded-md border border-[#EDE7EE]" style={{ background: c.line }} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[12px] font-semibold text-slate-500">{c.name}</span>
+                        <span className="block truncate text-[9.5px] text-slate-400">
+                          {parentName ? `subcategory of ${parentName} · ` : ""}{count} service{count === 1 ? "" : "s"}
+                        </span>
+                      </span>
+                      <button
+                        onClick={() => restoreCategory(c.id)}
+                        title="Restore to the active menu"
+                        className="shrink-0 rounded-md border border-emerald-600/30 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700 transition hover:bg-emerald-100"
+                      >
+                        Restore
+                      </button>
+                      <button
+                        onClick={() => !stillUsed && permanentlyDeleteCategory(c.id)}
+                        disabled={stillUsed}
+                        title={stillUsed ? "Still used by an appointment, can't permanently delete" : "Delete permanently"}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-rose-50 hover:text-rose-500 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {deleteCatId && (() => {
+        const target = catById[deleteCatId];
+        const ids = [deleteCatId, ...cats.filter((c) => c.parentId === deleteCatId).map((c) => c.id)];
+        const count = services.filter((s) => ids.includes(s.categoryId)).length;
+        const willArchive = count > 0;
+        return (
+          <ConfirmDialog
+            title={willArchive ? `Archive "${target?.name ?? "category"}"?` : `Delete "${target?.name ?? "category"}"?`}
+            body={willArchive
+              ? `This has ${count} service${count === 1 ? "" : "s"} in it. Archiving hides it from booking and from this list, but every appointment that already uses one of its services -- past or upcoming -- keeps showing it exactly as before. Restore it any time from Archived categories below.`
+              : "This can't be undone."}
+            confirmLabel={willArchive ? "Archive category" : "Delete category"}
+            onConfirm={() => (willArchive ? archiveCategory(deleteCatId) : permanentlyDeleteCategory(deleteCatId))}
+            onClose={() => setDeleteCatId(null)}
+          />
+        );
+      })()}
 
       {deleteId && (
         <ConfirmDialog

@@ -107,6 +107,10 @@ export interface ServiceCategory {
   text: string
   /** set when this is a subcategory nested under another category */
   parentId?: string
+  /** archived (soft-deleted): hidden from booking and from the services
+   *  list, but never removed, so any appointment that already references
+   *  it -- past or upcoming -- still resolves its name, color, etc. */
+  archived?: boolean
 }
 
 /** an add-on a service can offer, adds time and money */
