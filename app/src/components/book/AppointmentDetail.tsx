@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  AlertTriangle, Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, Link2, Mail, MessageSquare, Phone, Printer, RefreshCw, ScrollText, X,
+  AlertTriangle, Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, History, Link2, Mail, MessageSquare, Phone, Printer, RefreshCw, ScrollText, X,
 } from 'lucide-react'
 import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, fmtTime } from '@/lib/booking-types'
@@ -44,6 +44,8 @@ interface Props {
   onSave: (updated: Appointment[], removedIds: string[], moveToDayKey?: string) => void
   onAction: (a: DetailAction) => void
   onViewProfile: () => void
+  /** pop up this client's last 5 visits (services, tech, price, category colors) */
+  onShowVisits: () => void
   onClose: () => void
   /** true when this client still has something unpaid — "completed" alone doesn't
    *  mean paid, so this stays true past completion until checkout actually runs */
@@ -90,7 +92,7 @@ const REQUEST_HEART_COLOR: Record<string, string | undefined> = {
 
 export function AppointmentDetail({
   appt, group, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks,
-  findMakeRoomPlan, onRequestMakeRoom, onSave, onAction, onViewProfile, onClose,
+  findMakeRoomPlan, onRequestMakeRoom, onSave, onAction, onViewProfile, onShowVisits, onClose,
   canCheckout,
 }: Props) {
   const increment = useSettingsStore().booking.increment
@@ -189,7 +191,12 @@ export function AppointmentDetail({
               <div className="flex items-center gap-1.5">Host: Front desk{group.length > 1 && (
                 <span className="flex items-center gap-0.5 text-clay"><Link2 className="h-3 w-3" /> group of {group.length}</span>
               )}</div>
-              <button onClick={onViewProfile} className="font-semibold text-clay hover:underline">View full profile →</button>
+              <div className="flex items-center gap-3">
+                <button onClick={onViewProfile} className="font-semibold text-clay hover:underline">View full profile →</button>
+                <button onClick={onShowVisits} className="flex items-center gap-1 font-semibold text-clay hover:underline">
+                  <History className="h-3 w-3" /> Last 5 visits
+                </button>
+              </div>
             </div>
           </div>
           <button onClick={onClose} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-faint transition-colors hover:bg-surface hover:text-ink">

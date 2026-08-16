@@ -16,7 +16,7 @@ import { ConfirmDialog } from './ConfirmDialog'
 import { BookingPanel, layoutItems, type BookedService, type SlotGroup } from './BookingPanel'
 import { AvailabilityFinder } from './AvailabilityFinder'
 import { AppointmentDetail, type DetailAction } from './AppointmentDetail'
-import { ClientProfile, type ClientNote } from './ClientProfile'
+import { ClientProfile, LastVisitsDialog, type ClientNote } from './ClientProfile'
 import { RequestsRail } from './RequestsRail'
 import { DatePickerPopover, LegendPopover } from './LegendPopover'
 import { ContextBar, NavRail } from './AppShell'
@@ -464,6 +464,7 @@ export function AppointmentBook() {
     })
   }, [hoverTip])
   const [profileName, setProfileName] = useState<string | null>(null)
+  const [visitsName, setVisitsName] = useState<string | null>(null)
   const [notesByClient, setNotesByClient] = usePersistentState<Record<string, ClientNote[]>>(sdata('notes-v1'), {})
   const [fitOpen, setFitOpen] = useState(false)
 
@@ -2309,6 +2310,33 @@ export function AppointmentBook() {
     setProfileName(name)
   }
 
+  // a client resolved by name for a modal that isn't necessarily the profile
+  // itself (e.g. the last-5-visits popup opened from the edit-appointment
+  // panel) — same "real client, or a throwaway guest record" fallback as
+  // profileClient above, kept in sync with it deliberately
+  const resolveClient = (name: string) =>
+    clients.find((c) => c.name === name) ?? { id: 'guest', name, phone: '(555) 000-0000', visits: 0 }
+
+  // this client's completed checkouts, shaped for ClientProfile/LastVisitsDialog
+  const buildRealVisits = (name: string) =>
+    payments
+      .filter((p) => p.clientName === name)
+      .map((p) => {
+        const dayAppts = p.dateKey === dateKey ? appts : apptDays[p.dateKey] ?? []
+        const items = (p.apptIds ?? []).map((id) => dayAppts.find((a) => a.id === id)).filter((a): a is Appointment => a != null)
+        return {
+          paymentId: p.id,
+          invoice: `INV-${p.id.replace(/\D/g, '').slice(-6)}`,
+          date: new Date(p.dateKey + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }),
+          services: items.length > 0 ? items.map((a) => svcById[a.serviceId]?.name ?? a.serviceId) : ['POS sale'],
+          serviceIds: items.length > 0 ? items.map((a) => a.serviceId) : [],
+          price: p.total,
+          techName: items[0] ? techOf(items[0].techId).name : 'Front desk',
+        }
+      })
+
+  const visitsClient = visitsName ? resolveClient(visitsName) : null
+
   // every visit by a name-only guest of this client, newest first
   const guestVisits = useMemo(() => {
     if (!profileClient) return []
@@ -3689,6 +3717,7 @@ export function AppointmentBook() {
           onSave={saveDetail}
           onAction={onDetailAction}
           onViewProfile={() => openProfile(detailAppt.clientName)}
+          onShowVisits={() => setVisitsName(detailAppt.clientName)}
           onClose={() => setDetailId(null)}
           // "completed" only means the service is done, not that they paid — checkout
           // must stay open until a payment actually exists (mirrors payable(), used
@@ -3716,21 +3745,7 @@ export function AppointmentBook() {
           client={profileClient}
           appts={appts}
           guestVisits={guestVisits}
-          realVisits={payments
-            .filter((p) => p.clientName === profileClient.name)
-            .map((p) => {
-              const dayAppts = p.dateKey === dateKey ? appts : apptDays[p.dateKey] ?? []
-              const items = (p.apptIds ?? []).map((id) => dayAppts.find((a) => a.id === id)).filter((a): a is Appointment => a != null)
-              return {
-                paymentId: p.id,
-                invoice: `INV-${p.id.replace(/\D/g, '').slice(-6)}`,
-                date: new Date(p.dateKey + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }),
-                services: items.length > 0 ? items.map((a) => svcById[a.serviceId]?.name ?? a.serviceId) : ['POS sale'],
-                serviceIds: items.length > 0 ? items.map((a) => a.serviceId) : [],
-                price: p.total,
-                techName: items[0] ? techOf(items[0].techId).name : 'Front desk',
-              }
-            })}
+          realVisits={buildRealVisits(profileClient.name)}
           onViewInvoice={(paymentId) => {
             const p = payments.find((x) => x.id === paymentId)
             if (!p) return
@@ -3745,6 +3760,16 @@ export function AppointmentBook() {
           onDeleteNote={deleteClientNote}
           onSaveProfile={saveClientProfile}
           onClose={() => setProfileName(null)}
+        />
+      )}
+
+      {/* last 5 visits, opened from the edit-appointment panel (the client
+          profile has its own copy of this same button, on its Profile tab) */}
+      {visitsClient && (
+        <LastVisitsDialog
+          client={visitsClient}
+          realVisits={buildRealVisits(visitsClient.name)}
+          onClose={() => setVisitsName(null)}
         />
       )}
 
