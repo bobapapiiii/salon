@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  AlertTriangle, Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, History, Link2, Mail, MessageSquare, Phone, Printer, RefreshCw, ScrollText, X,
+  AlertTriangle, Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, History, Link2, Mail, MessageSquare, Phone, Printer, Receipt, RefreshCw, ScrollText, X,
 } from 'lucide-react'
 import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, fmtTime } from '@/lib/booking-types'
@@ -18,7 +18,7 @@ const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
 const actionBtn =
   'flex items-center justify-center gap-1.5 rounded-[8px] border border-line py-2 text-[12px] font-semibold text-ink-soft transition-colors hover:bg-cream hover:text-ink'
 
-export type DetailAction = 'rebook' | 'cancel' | 'copy' | 'sendtext' | 'checkout' | 'log' | 'jobcard'
+export type DetailAction = 'rebook' | 'cancel' | 'copy' | 'sendtext' | 'checkout' | 'log' | 'jobcard' | 'invoice'
 
 interface Props {
   appt: Appointment
@@ -50,6 +50,9 @@ interface Props {
   /** true when this client still has something unpaid — "completed" alone doesn't
    *  mean paid, so this stays true past completion until checkout actually runs */
   canCheckout: boolean
+  /** true once a payment already covers this booking, so the receipt can be
+   *  pulled back up (view/print) without hunting for the right-click menu */
+  hasInvoice: boolean
 }
 
 /** small local date helpers, duplicated from AppointmentBook to avoid a circular import */
@@ -93,7 +96,7 @@ const REQUEST_HEART_COLOR: Record<string, string | undefined> = {
 export function AppointmentDetail({
   appt, group, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks,
   findMakeRoomPlan, onRequestMakeRoom, onSave, onAction, onViewProfile, onShowVisits, onClose,
-  canCheckout,
+  canCheckout, hasInvoice,
 }: Props) {
   const increment = useSettingsStore().booking.increment
   const TIME_OPTIONS = Array.from({ length: (CLOSE_MIN - OPEN_MIN) / increment }, (_, i) => i * increment)
@@ -353,17 +356,27 @@ export function AppointmentDetail({
           </div>
         </div>
 
-        {/* payment — Check out is the only working payment action today, so it's
-            the whole section now (the old Send payment link / Take payment
-            placeholders were disabled stubs for a feature that was never built).
-            Styled like the Actions buttons, not the bold Save CTA below — Save is
-            the one button on this panel that should read as "the" action to take */}
-        {canCheckout && (
+        {/* payment — Check out and View/print receipt are the working payment
+            actions today, so this is the whole section now (the old Send
+            payment link / Take payment placeholders were disabled stubs for a
+            feature that was never built). Styled like the Actions buttons, not
+            the bold Save CTA below — Save is the one button on this panel that
+            should read as "the" action to take */}
+        {(canCheckout || hasInvoice) && (
           <div>
             <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Payment</label>
-            <button onClick={() => onAction('checkout')} className={`w-full ${actionBtn}`}>
-              <CreditCard className="h-3.5 w-3.5" /> Check out {appt.clientName.split(' ')[0]}
-            </button>
+            <div className="flex gap-1.5">
+              {canCheckout && (
+                <button onClick={() => onAction('checkout')} className={`flex-1 ${actionBtn}`}>
+                  <CreditCard className="h-3.5 w-3.5" /> Check out {appt.clientName.split(' ')[0]}
+                </button>
+              )}
+              {hasInvoice && (
+                <button onClick={() => onAction('invoice')} className={`flex-1 ${actionBtn}`}>
+                  <Receipt className="h-3.5 w-3.5" /> View / print receipt
+                </button>
+              )}
+            </div>
           </div>
         )}
 

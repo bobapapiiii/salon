@@ -2181,6 +2181,15 @@ export function AppointmentBook() {
         // same synchronous handler
         openCheckout(a, detailParty)
         break
+      case 'invoice': {
+        const payment = payments.find((p) => detailGroup.some((g) => p.apptIds?.includes(g.id)))
+          ?? [...payments].reverse().find((p) => p.clientName === a.clientName && p.dateKey === originKey)
+        if (!payment) { showFlash('No payment recorded for this appointment'); break }
+        const payDayAppts = payment.dateKey === dateKey ? appts : apptDays[payment.dateKey] ?? []
+        const items = (payment.apptIds ?? []).map((id) => payDayAppts.find((x) => x.id === id)).filter((x): x is Appointment => x != null)
+        setInvoicePayment({ payment, items: items.length > 0 ? items : detailGroup })
+        break
+      }
       case 'jobcard': {
         // one card for THIS client's services; detailBoard resolves the party
         // size and host when the booking is part of a group
@@ -3743,6 +3752,7 @@ export function AppointmentBook() {
           // must stay open until a payment actually exists (mirrors payable(), used
           // everywhere else checkout eligibility is decided)
           canCheckout={detailGroup.some((a) => payable(a))}
+          hasInvoice={detailGroup.some((a) => payments.some((p) => p.apptIds?.includes(a.id)))}
         />
       )}
 
