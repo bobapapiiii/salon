@@ -2195,6 +2195,20 @@ export function AppointmentBook() {
     afterGenderCheck()
   }
 
+  // the payment covering the edit panel's current appointment/group, shaped
+  // for both View receipt and Reopen ticket -- shared so they always agree
+  // on which payment they're pointing at
+  const findDetailPayment = (originKey: string) => {
+    const a = detailAppt
+    if (!a) return null
+    const payment = payments.find((p) => detailGroup.some((g) => p.apptIds?.includes(g.id)))
+      ?? [...payments].reverse().find((p) => p.clientName === a.clientName && p.dateKey === originKey)
+    if (!payment) return null
+    const payDayAppts = payment.dateKey === dateKey ? appts : apptDays[payment.dateKey] ?? []
+    const items = (payment.apptIds ?? []).map((id) => payDayAppts.find((x) => x.id === id)).filter((x): x is Appointment => x != null)
+    return { payment, items: items.length > 0 ? items : detailGroup }
+  }
+
   const onDetailAction = (action: DetailAction) => {
     const a = detailAppt
     if (!a) return
@@ -2214,12 +2228,15 @@ export function AppointmentBook() {
         openCheckout(a, detailParty)
         break
       case 'invoice': {
-        const payment = payments.find((p) => detailGroup.some((g) => p.apptIds?.includes(g.id)))
-          ?? [...payments].reverse().find((p) => p.clientName === a.clientName && p.dateKey === originKey)
-        if (!payment) { showFlash('No payment recorded for this appointment'); break }
-        const payDayAppts = payment.dateKey === dateKey ? appts : apptDays[payment.dateKey] ?? []
-        const items = (payment.apptIds ?? []).map((id) => payDayAppts.find((x) => x.id === id)).filter((x): x is Appointment => x != null)
-        setInvoicePayment({ payment, items: items.length > 0 ? items : detailGroup })
+        const found = findDetailPayment(originKey)
+        if (!found) { showFlash('No payment recorded for this appointment'); break }
+        setInvoicePayment(found)
+        break
+      }
+      case 'reopen': {
+        const found = findDetailPayment(originKey)
+        if (!found) { showFlash('No payment recorded for this appointment'); break }
+        setReopenPrompt(found)
         break
       }
       case 'jobcard': {
@@ -3882,9 +3899,6 @@ export function AppointmentBook() {
           payment={invoicePayment.payment}
           items={invoicePayment.items}
           onClose={() => setInvoicePayment(null)}
-          // only a real checkout ticket has something to reopen into -- a bare
-          // POS sale (no linked appointments) has no ticket to rebuild
-          onReopen={invoicePayment.items.length > 0 ? () => setReopenPrompt(invoicePayment) : undefined}
         />
       )}
 

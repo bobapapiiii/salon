@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  AlertTriangle, Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, History, Link2, Mail, MessageSquare, Phone, Printer, Receipt, RefreshCw, ScrollText, X,
+  AlertTriangle, Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, History, Link2, Mail, MessageSquare, Phone, Printer, Receipt, RefreshCw, ScrollText, Undo2, X,
 } from 'lucide-react'
 import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, fmtTime } from '@/lib/booking-types'
@@ -18,7 +18,7 @@ const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
 const actionBtn =
   'flex items-center justify-center gap-1.5 rounded-[8px] border border-line py-2 text-[12px] font-semibold text-ink-soft transition-colors hover:bg-cream hover:text-ink'
 
-export type DetailAction = 'rebook' | 'cancel' | 'copy' | 'sendtext' | 'checkout' | 'log' | 'jobcard' | 'invoice'
+export type DetailAction = 'rebook' | 'cancel' | 'copy' | 'sendtext' | 'checkout' | 'log' | 'jobcard' | 'invoice' | 'reopen'
 
 interface Props {
   appt: Appointment
@@ -444,10 +444,11 @@ export function AppointmentDetail({
       )}
 
       {/* footer — pinned outside the scrolling panel above so Check out / View
-          receipt and Save are always in view, never pushed off by notes or a
-          long service list. Check out and View/print receipt are the working
-          payment actions today (the old Send payment link / Take payment
-          placeholders were disabled stubs for a feature that was never built) */}
+          receipt / Reopen ticket and Save are always in view, never pushed
+          off by notes or a long service list. Check out, View/print receipt,
+          and Reopen ticket are the working payment actions today (the old
+          Send payment link / Take payment placeholders were disabled stubs
+          for a feature that was never built) */}
       <div className="space-y-1.5 border-t border-line p-3">
         {(canCheckout || hasInvoice) && (
           <div className="flex gap-1.5">
@@ -459,6 +460,11 @@ export function AppointmentDetail({
             {hasInvoice && (
               <button onClick={() => onAction('invoice')} className={`flex-1 ${actionBtn}`}>
                 <Receipt className="h-3.5 w-3.5" /> View / print receipt
+              </button>
+            )}
+            {hasInvoice && (
+              <button onClick={() => onAction('reopen')} className={`flex-1 ${actionBtn}`} title="Made a mistake? Clear this payment and redo checkout">
+                <Undo2 className="h-3.5 w-3.5" /> Reopen Ticket
               </button>
             )}
           </div>

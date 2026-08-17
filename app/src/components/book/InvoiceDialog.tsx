@@ -1,7 +1,7 @@
 // ─── Invoice / printable receipt ─────────────────────────────────────────────
 // Right-click a checked-out appointment → View invoice. Shows the ticket with
 // salon branding and prints via the browser (only the receipt prints).
-import { Printer, Undo2, X } from "lucide-react";
+import { Printer, X } from "lucide-react";
 import type { Appointment } from "@/lib/booking-types";
 import { fmtTime } from "@/lib/booking-types";
 import { useSettingsStore } from "@/lib/settings-store";
@@ -23,15 +23,10 @@ export interface InvoicePayment {
   party?: number;
 }
 
-export function InvoiceDialog({ payment, items, onClose, onReopen }: {
+export function InvoiceDialog({ payment, items, onClose }: {
   payment: InvoicePayment;
   items: Appointment[];
   onClose: () => void;
-  /** found a mistake? clears this payment (and the loyalty points/visit credit
-   *  it gave) and drops the client straight back into an editable checkout
-   *  ticket so it can be fixed and re-run. Omitted for sales with nothing to
-   *  reopen into (e.g. a POS sale with no linked appointment). */
-  onReopen?: () => void;
 }) {
   const settings = useSettingsStore();
   const { techs } = useStaffStore();
@@ -126,18 +121,9 @@ export function InvoiceDialog({ payment, items, onClose, onReopen }: {
           >
             <Printer className="h-4 w-4" /> Print receipt
           </button>
-          {onReopen && (
-            <button
-              onClick={onReopen}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-line py-2.5 text-[13px] font-bold text-ink-soft transition-colors hover:bg-cream hover:text-ink"
-              title="Made a mistake? Clear this payment and redo checkout"
-            >
-              <Undo2 className="h-4 w-4" /> Reopen to fix
-            </button>
-          )}
           <button
             onClick={onClose}
-            className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-xl border border-line text-ink-soft transition-colors hover:bg-cream"
+            className="flex h-[42px] w-[42px] items-center justify-center rounded-xl border border-line text-ink-soft transition-colors hover:bg-cream"
             title="Close"
           >
             <X className="h-4 w-4" />
