@@ -30,6 +30,7 @@ import { useSettingsStore, setSettings } from '@/lib/settings-store'
 import { catById } from '@/lib/categories-store'
 import { CheckoutDialog, type PaymentResult } from './CheckoutDialog'
 import { InvoiceDialog } from './InvoiceDialog'
+import { RefundDialog, totalRefunded, type RefundRecord } from './RefundDialog'
 import { PosPanel } from './PosPanel'
 import { STATUS_META, TechSchedulePanel, type DaySchedule } from './TechSchedulePanel'
 import { BlockEditor, type BlockDraft } from './BlockEditor'
@@ -416,7 +417,7 @@ export function AppointmentBook() {
   const turnawayTitle = canLogTurnaway
     ? turnawaySummary ?? "Log a turnaway, a client we couldn't fit in"
     : `Turnaways can only be logged for today${turnawaySummary ? ` · ${turnawaySummary}` : ''}`
-  const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; /** when it was taken, to the minute — what buckets a sale into a register shift */ at?: number; clientName: string; /** every distinct client on this ticket (host + any party members/guests), so each of them sees this checkout in their own visit history, not just the host */ clientNames?: string[]; itemCount: number; subtotal: number; tip: number; total: number; method: string; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[] }[]>(sdata('payments-v1'), [])
+  const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; /** when it was taken, to the minute — what buckets a sale into a register shift */ at?: number; clientName: string; /** every distinct client on this ticket (host + any party members/guests), so each of them sees this checkout in their own visit history, not just the host */ clientNames?: string[]; itemCount: number; subtotal: number; tip: number; total: number; method: string; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[]; /** money given back on this ticket, from services or the tip, in full or in parts */ refunds?: RefundRecord[] }[]>(sdata('payments-v1'), [])
   // online waitlist (self-serve) + walk-in queue (front desk)
   const [waitlist, setWaitlist] = usePersistentState<QueueEntry[]>(sdata('waitlist-v1'), () => [
     { id: 'w1', name: 'Ava R.', serviceId: 'p-gel', phone: '(555) 220-1188', preferredTechId: getStaff().techs.find((t) => t.teamId === 'pedi')?.id, days: [1, 3, 5], fromMin: 360, toMin: 600, notes: 'Prefers after 2 PM', createdMin: DEMO_NOW_MIN - 25 },
@@ -1938,6 +1939,35 @@ export function AppointmentBook() {
     showFlash('Ticket reopened — fix it up, then check out again')
   }
 
+  // refunding a ticket: unlike reopening (which voids the payment and drops
+  // back into checkout to redo it), a refund keeps the original sale on the
+  // books and just records money going back -- the appointment stays
+  // completed, it isn't reopened for editing. Only a refund that zeroes out
+  // the whole ticket undoes the loyalty points and visit credit it earned;
+  // a partial refund (an overcharged service, a mistyped tip) leaves those alone
+  const [refundPrompt, setRefundPrompt] = useState<(typeof payments)[number] | null>(null)
+
+  const doRefund = (lines: { amount: number; type: 'service' | 'tip'; reason?: string }[]) => {
+    if (!refundPrompt) return
+    const records: RefundRecord[] = lines.map((l, i) => ({
+      id: `rf${Date.now()}-${i}`, at: Date.now(), amount: l.amount, type: l.type, reason: l.reason, by: sessionUser.name,
+    }))
+    setPayments((x) => x.map((p) => (p.id === refundPrompt.id ? { ...p, refunds: [...(p.refunds ?? []), ...records] } : p)))
+    const amount = lines.reduce((s, l) => s + l.amount, 0)
+    const already = totalRefunded(refundPrompt.refunds)
+    const fullyRefunded = Math.round((already + amount) * 100) / 100 >= Math.round(refundPrompt.total * 100) / 100 - 0.01
+    if (fullyRefunded) {
+      const partyNames = refundPrompt.clientNames ?? [refundPrompt.clientName]
+      setClients((cs) => cs.map((c) => (partyNames.includes(c.name) ? { ...c, visits: Math.max(0, c.visits - 1) } : c)))
+      const host = clients.find((c) => c.name === refundPrompt.clientName)
+      if (host) {
+        setPointsByClient((m) => ({ ...m, [host.id]: Math.max(0, (m[host.id] ?? 0) + (refundPrompt.redeemed?.points ?? 0) - refundPrompt.points) }))
+      }
+    }
+    setRefundPrompt(null)
+    showFlash(`✓ Refunded $${amount.toFixed(2)}${fullyRefunded ? ', ticket fully refunded' : ''}`)
+  }
+
   // opening the editor dismisses booking, POS, and checkout — panels are exclusive
   const openDetail = (id: string) => {
     setDetailError(null)
@@ -2287,6 +2317,15 @@ export function AppointmentBook() {
         const found = findDetailPayment(originKey)
         if (!found) { showFlash('No payment recorded for this appointment'); break }
         setReopenPrompt(found)
+        break
+      }
+      case 'refund': {
+        // no day restriction -- a refund is discovered after the fact just as
+        // often as it's caught same-day, unlike checkout/reopen which are
+        // about processing a payment right now
+        const found = findDetailPayment(originKey)
+        if (!found) { showFlash('No payment recorded for this appointment'); break }
+        setRefundPrompt(found.payment)
         break
       }
       case 'jobcard': {
@@ -3852,33 +3891,37 @@ export function AppointmentBook() {
       )}
 
       {/* appointment detail panel */}
-      {detailAppt && (
-        <AppointmentDetail
-          appt={detailAppt}
-          group={detailGroup}
-          partySize={detailPartySize}
-          clients={clients}
-          error={detailError}
-          originDateKey={detailOriginDay ?? dateKey}
-          dateKey={dateKey}
-          onPreviewDay={(k) => goDay(new Date(k + 'T12:00:00'))}
-          dayAppts={dayApptsFor}
-          dayBlocks={dayBlocksFor}
-          findMakeRoomPlan={(groups, s, ignoreIds) => findMakeRoomPlan(groups, s, ignoreIds)}
-          onRequestMakeRoom={onRequestMakeRoom}
-          onSave={saveDetail}
-          onAction={onDetailAction}
-          onRebook={doRebook}
-          onViewProfile={() => openProfile(detailAppt.clientName)}
-          onShowVisits={() => setVisitsName(detailAppt.clientName)}
-          onClose={() => setDetailId(null)}
-          // "completed" only means the service is done, not that they paid — checkout
-          // must stay open until a payment actually exists (mirrors payable(), used
-          // everywhere else checkout eligibility is decided)
-          canCheckout={detailGroup.some((a) => payable(a))}
-          hasInvoice={detailGroup.some((a) => payments.some((p) => p.apptIds?.includes(a.id)))}
-        />
-      )}
+      {detailAppt && (() => {
+        const detailPayment = findDetailPayment(detailOriginDay ?? dateKey)?.payment ?? null
+        return (
+          <AppointmentDetail
+            appt={detailAppt}
+            group={detailGroup}
+            partySize={detailPartySize}
+            clients={clients}
+            error={detailError}
+            originDateKey={detailOriginDay ?? dateKey}
+            dateKey={dateKey}
+            onPreviewDay={(k) => goDay(new Date(k + 'T12:00:00'))}
+            dayAppts={dayApptsFor}
+            dayBlocks={dayBlocksFor}
+            findMakeRoomPlan={(groups, s, ignoreIds) => findMakeRoomPlan(groups, s, ignoreIds)}
+            onRequestMakeRoom={onRequestMakeRoom}
+            onSave={saveDetail}
+            onAction={onDetailAction}
+            onRebook={doRebook}
+            onViewProfile={() => openProfile(detailAppt.clientName)}
+            onShowVisits={() => setVisitsName(detailAppt.clientName)}
+            onClose={() => setDetailId(null)}
+            // "completed" only means the service is done, not that they paid — checkout
+            // must stay open until a payment actually exists (mirrors payable(), used
+            // everywhere else checkout eligibility is decided)
+            canCheckout={detailGroup.some((a) => payable(a))}
+            hasInvoice={detailGroup.some((a) => payments.some((p) => p.apptIds?.includes(a.id)))}
+            canRefund={detailPayment != null && totalRefunded(detailPayment.refunds) < detailPayment.total - 0.005}
+          />
+        )
+      })()}
 
       {/* cancel confirmation */}
       {cancelAppt && (
@@ -4021,6 +4064,16 @@ export function AppointmentBook() {
           confirmLabel="Reopen ticket"
           onConfirm={doReopenTicket}
           onClose={() => setReopenPrompt(null)}
+        />
+      )}
+
+      {/* refund, full or partial, from services or the tip -- keeps the
+          original sale on the books unlike Reopen Ticket */}
+      {refundPrompt && (
+        <RefundDialog
+          payment={refundPrompt}
+          onRefund={doRefund}
+          onClose={() => setRefundPrompt(null)}
         />
       )}
 

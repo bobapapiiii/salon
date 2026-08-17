@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  AlertTriangle, Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, History, Link2, Mail, MessageSquare, Phone, Printer, Receipt, RefreshCw, ScrollText, Undo2, X,
+  AlertTriangle, Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, History, Link2, Mail, MessageSquare, Phone, Printer, Receipt, RefreshCw, RotateCcw, ScrollText, Undo2, X,
 } from 'lucide-react'
 import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, fmtTime } from '@/lib/booking-types'
@@ -18,7 +18,7 @@ const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
 const actionBtn =
   'flex items-center justify-center gap-1.5 rounded-[8px] border border-line py-2 text-[12px] font-semibold text-ink-soft transition-colors hover:bg-cream hover:text-ink'
 
-export type DetailAction = 'cancel' | 'copy' | 'sendtext' | 'checkout' | 'log' | 'jobcard' | 'invoice' | 'reopen'
+export type DetailAction = 'cancel' | 'copy' | 'sendtext' | 'checkout' | 'log' | 'jobcard' | 'invoice' | 'reopen' | 'refund'
 
 interface Props {
   appt: Appointment
@@ -61,6 +61,9 @@ interface Props {
   /** true once a payment already covers this booking, so the receipt can be
    *  pulled back up (view/print) without hunting for the right-click menu */
   hasInvoice: boolean
+  /** true while there's still money left to refund on that payment (false once
+   *  it's been refunded in full, or there's no payment to refund at all) */
+  canRefund: boolean
 }
 
 /** small local date helpers, duplicated from AppointmentBook to avoid a circular import */
@@ -104,7 +107,7 @@ const REQUEST_HEART_COLOR: Record<string, string | undefined> = {
 export function AppointmentDetail({
   appt, group, partySize, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks,
   findMakeRoomPlan, onRequestMakeRoom, onSave, onAction, onRebook, onViewProfile, onShowVisits, onClose,
-  canCheckout, hasInvoice,
+  canCheckout, hasInvoice, canRefund,
 }: Props) {
   const increment = useSettingsStore().booking.increment
   const TIME_OPTIONS = Array.from({ length: (CLOSE_MIN - OPEN_MIN) / increment }, (_, i) => i * increment)
@@ -506,19 +509,19 @@ export function AppointmentDetail({
         ) : (
           <>
             {(canCheckout || hasInvoice) && (
-              <div className="flex gap-1.5">
+              <div className="grid grid-cols-2 gap-1.5">
                 {canCheckout && (
                   <button
                     onClick={() => isOriginToday && onAction('checkout')}
                     disabled={!isOriginToday}
                     title={isOriginToday ? undefined : 'Checkout is only available for today\'s appointments'}
-                    className={`flex-1 ${actionBtn} disabled:cursor-not-allowed disabled:opacity-40`}
+                    className={`${actionBtn} ${!hasInvoice ? 'col-span-2' : ''} disabled:cursor-not-allowed disabled:opacity-40`}
                   >
                     <CreditCard className="h-3.5 w-3.5" /> Check out {appt.clientName.split(' ')[0]}
                   </button>
                 )}
                 {hasInvoice && (
-                  <button onClick={() => onAction('invoice')} className={`flex-1 ${actionBtn}`}>
+                  <button onClick={() => onAction('invoice')} className={actionBtn}>
                     <Receipt className="h-3.5 w-3.5" /> View / print receipt
                   </button>
                 )}
@@ -526,10 +529,19 @@ export function AppointmentDetail({
                   <button
                     onClick={() => isOriginToday && onAction('reopen')}
                     disabled={!isOriginToday}
-                    className={`flex-1 ${actionBtn} disabled:cursor-not-allowed disabled:opacity-40`}
+                    className={`${actionBtn} disabled:cursor-not-allowed disabled:opacity-40`}
                     title={isOriginToday ? 'Made a mistake? Clear this payment and redo checkout' : 'Only today\'s tickets can be reopened'}
                   >
                     <Undo2 className="h-3.5 w-3.5" /> Reopen Ticket
+                  </button>
+                )}
+                {hasInvoice && canRefund && (
+                  <button
+                    onClick={() => onAction('refund')}
+                    title="Refund the client, in full or partial, from services or the tip"
+                    className="flex items-center justify-center gap-1.5 rounded-[8px] border border-rust/40 py-2 text-[12px] font-semibold text-rust transition-colors hover:bg-rust-tint"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" /> Refund
                   </button>
                 )}
               </div>

@@ -7,6 +7,7 @@ import { fmtTime } from "@/lib/booking-types";
 import { useSettingsStore } from "@/lib/settings-store";
 import { useStaffStore } from "@/lib/staff-store";
 import { svcById } from "@/lib/services-store";
+import { totalRefunded, type RefundRecord } from "./RefundDialog";
 
 export interface InvoicePayment {
   id: string;
@@ -21,6 +22,7 @@ export interface InvoicePayment {
   redeemed?: { name: string; points: number; value: number };
   notes?: string;
   party?: number;
+  refunds?: RefundRecord[];
 }
 
 export function InvoiceDialog({ payment, items, onClose }: {
@@ -36,6 +38,9 @@ export function InvoiceDialog({ payment, items, onClose }: {
   const dateLabel = new Date(payment.dateKey + "T12:00:00").toLocaleDateString("en-US", {
     weekday: "short", month: "short", day: "numeric", year: "numeric",
   });
+  const refunded = totalRefunded(payment.refunds);
+  const refundStamp = (ms: number) =>
+    new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
   return (
     <div className="fixed inset-0 z-[97] flex items-center justify-center bg-slate-900/45 p-4">
@@ -110,6 +115,24 @@ export function InvoiceDialog({ payment, items, onClose }: {
           <div className="flex justify-between text-[11px] text-ink-faint"><span>Loyalty earned</span><span>+{payment.points.toLocaleString()} pts</span></div>
           {payment.notes && <p className="pt-1 text-[11px] italic text-ink-faint">{payment.notes}</p>}
         </div>
+
+        {(payment.refunds ?? []).length > 0 && (
+          <div className="mt-2 space-y-1 border-t border-dashed border-line px-6 pt-2.5 text-[12px]">
+            <p className="text-[10.5px] font-bold uppercase tracking-wide text-ink-faint">Refunds</p>
+            {payment.refunds!.map((r) => (
+              <div key={r.id} className="flex justify-between gap-3">
+                <span className="min-w-0 truncate text-ink-soft">
+                  {refundStamp(r.at)}, {r.type === "service" ? "services" : "tip"}
+                  {r.reason && <span className="text-ink-faint"> · {r.reason}</span>}
+                </span>
+                <span className="tnum shrink-0 font-semibold text-rust">−{money(r.amount)}</span>
+              </div>
+            ))}
+            <div className="flex justify-between border-t border-line pt-1.5 text-[13.5px] font-bold">
+              <span>Net paid</span><span className="tnum">{money(payment.total - refunded)}</span>
+            </div>
+          </div>
+        )}
 
         <p className="px-6 pb-3 pt-3 text-center text-[11px] text-ink-faint">Thank you for visiting {salon.name}!</p>
 
