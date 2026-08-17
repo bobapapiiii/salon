@@ -47,7 +47,7 @@ export function InvoiceDialog({ payment, items, onClose }: {
     new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const sourceLabel = (sourceId: string) => {
     const s = sources.find((x) => x.id === sourceId);
-    return s ? `${s.method}${s.last4 ? ` ····${s.last4}` : ""}` : "payment";
+    return s ? s.method : "payment";
   };
 
   return (
@@ -122,7 +122,7 @@ export function InvoiceDialog({ payment, items, onClose }: {
           {sources.map((s) => (
             <div key={s.id} className="flex justify-between text-[12px]">
               <span className="text-ink-faint">Paid with</span>
-              <span className="font-semibold">{s.method}{s.last4 ? ` ····${s.last4}` : ""} · {money(s.amount)}</span>
+              <span className="font-semibold">{s.method} · {money(s.amount)}</span>
             </div>
           ))}
           <div className="flex justify-between text-[11px] text-ink-faint"><span>Loyalty earned</span><span>+{payment.points.toLocaleString()} pts</span></div>

@@ -4,14 +4,12 @@
 // back" -- kept here so those modules read from one place instead of
 // importing pieces from each other.
 
-/** one tender against a ticket -- cash, or a card with its last 4 digits, for
- *  a specific amount. A ticket can be split across several of these, and each
+/** one tender against a ticket -- cash, card, or another method, for a
+ *  specific amount. A ticket can be split across several of these, and each
  *  one can later be refunded (in full or in part) on its own */
 export interface PaymentSource {
   id: string
   method: string
-  /** card only */
-  last4?: string
   amount: number
 }
 

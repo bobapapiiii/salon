@@ -4,7 +4,7 @@
 // edit (service, tech, time, price, added services) lands on the book instantly
 // and persists if the panel closes mid-edit. POS feeds it manual sale lines.
 import { useEffect, useMemo, useState } from "react";
-import { Banknote, Check, CreditCard, Plus, Receipt, Smartphone, X } from "lucide-react";
+import { Banknote, Check, CreditCard, Plus, Printer, Receipt, Smartphone, X } from "lucide-react";
 import type { Appointment } from "@/lib/booking-types";
 import { DAY_SLOTS, SLOT_MIN, fmtTime } from "@/lib/booking-types";
 import { SERVICES } from "@/lib/mock-data";
@@ -75,7 +75,6 @@ export interface CheckoutExtra {
 export interface CheckoutSourceDraft {
   id: string;
   method: string;
-  last4: string;
   amountText: string;
 }
 
@@ -83,8 +82,6 @@ export interface CheckoutDraftState {
   tipPct: number | null;
   tipCustom: string;
   method: string;
-  /** card only, single-source fast path */
-  last4?: string;
   /** the payment list, once it's been touched -- while unset, the panel shows
    *  one implicit row for the full total on the selected method, kept in
    *  sync automatically as the ticket total changes */
@@ -270,19 +267,19 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
   const sourceRows: CheckoutSourceDraft[] = D.sources && D.sources.length > 0
     ? D.sources
     : existing
-      ? lockedSources.map((s) => ({ id: s.id, method: s.method, last4: s.last4 ?? "", amountText: s.amount.toFixed(2) }))
-      : [{ id: "default", method: D.method, last4: D.last4 ?? "", amountText: total.toFixed(2) }];
+      ? lockedSources.map((s) => ({ id: s.id, method: s.method, amountText: s.amount.toFixed(2) }))
+      : [{ id: "default", method: D.method, amountText: total.toFixed(2) }];
   const updateSource = (id: string, patch: Partial<CheckoutSourceDraft>) => {
     if (lockedIds.has(id)) return;
     const rows = sourceRows.map((r) => (r.id === id ? { ...r, ...patch } : r));
-    setD({ sources: rows, method: rows[0].method, last4: rows[0].last4 });
+    setD({ sources: rows, method: rows[0].method });
   };
   const addSource = () => {
     const assigned = sourceRows.reduce((s, r) => s + (Number(r.amountText) || 0), 0);
     const remaining = Math.max(0, round2(total - assigned));
     const firstFree = sourceRows.find((r) => !lockedIds.has(r.id))?.method ?? sourceRows[0]?.method;
     const otherMethod = methods.find((m) => m !== firstFree) ?? methods[0];
-    setD({ sources: [...sourceRows, { id: `src${sourceRows.length}-${Date.now()}`, method: otherMethod, last4: "", amountText: remaining > 0 ? remaining.toFixed(2) : "" }] });
+    setD({ sources: [...sourceRows, { id: `src${sourceRows.length}-${Date.now()}`, method: otherMethod, amountText: remaining > 0 ? remaining.toFixed(2) : "" }] });
   };
   const removeSource = (id: string) => {
     if (lockedIds.has(id)) return;
@@ -303,7 +300,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
   const finalSources: PaymentSource[] = sourceRows
     .filter((r) => !lockedIds.has(r.id))
     .filter((r) => (Number(r.amountText) || 0) > 0)
-    .map((r) => ({ id: r.id, method: r.method, last4: r.method === "Card" && r.last4.trim() ? r.last4.trim() : undefined, amount: round2(Number(r.amountText) || 0) }));
+    .map((r) => ({ id: r.id, method: r.method, amount: round2(Number(r.amountText) || 0) }));
   const methodLabel = finalSources.length === 0 ? D.method : finalSources.length === 1 ? finalSources[0].method : "Split";
   const apptIds = lines.map((l) => l.id);
 
@@ -714,7 +711,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
               </div>
             )}
 
-            {/* payment sources -- cash, or a card with its last 4 digits, each
+            {/* payment sources -- cash, card, or another method, each
                 for its own amount; split across several to take mixed tender,
                 or bring the total assigned below the ticket total to leave a
                 balance due. Reopening a paid ticket shows its existing
@@ -739,30 +736,18 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                       </span>
                       {locked ? (
                         <span className="min-w-0 flex-1 text-[12px] font-semibold text-ink">
-                          {r.method}{r.last4 ? ` ····${r.last4}` : ""}
+                          {r.method}
                           <span className="ml-1.5 font-normal text-ink-faint">already collected{refundedFromRow > 0 ? ` · ${money(refundedFromRow)} refunded` : ""}</span>
                         </span>
                       ) : (
-                        <>
-                          <select
-                            value={r.method}
-                            onChange={(e) => updateSource(r.id, { method: e.target.value, last4: e.target.value === "Card" ? r.last4 : "" })}
-                            title="Payment method"
-                            className="h-8 w-[88px] shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-[11.5px] font-semibold outline-none focus:border-clay"
-                          >
-                            {methods.map((m) => <option key={m} value={m}>{m}</option>)}
-                          </select>
-                          {r.method === "Card" && (
-                            <input
-                              value={r.last4}
-                              onChange={(e) => updateSource(r.id, { last4: e.target.value.replace(/\D/g, "").slice(0, 4) })}
-                              placeholder="Last 4"
-                              title="Last 4 digits of the card"
-                              maxLength={4}
-                              className="tnum h-8 w-16 shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-center text-[11.5px] outline-none focus:border-clay"
-                            />
-                          )}
-                        </>
+                        <select
+                          value={r.method}
+                          onChange={(e) => updateSource(r.id, { method: e.target.value })}
+                          title="Payment method"
+                          className="h-8 min-w-0 flex-1 rounded-[7px] border border-input bg-background px-1.5 text-[11.5px] font-semibold outline-none focus:border-clay"
+                        >
+                          {methods.map((m) => <option key={m} value={m}>{m}</option>)}
+                        </select>
                       )}
                       <div className="relative min-w-0 flex-1 basis-24 grow-0">
                         <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[11px] font-bold text-ink-faint">$</span>
@@ -989,47 +974,67 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
           </div>
         </>
       ) : (
-        /* receipt */
+        /* receipt -- only .print-area actually prints, so the Print receipt /
+            Done buttons below it never show up on paper */
         <div className="flex flex-1 flex-col items-center justify-center p-6 text-center">
-          <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-olive-tint">
-            <Check className="h-7 w-7 text-olive" />
-          </span>
-          <h3 className="mt-3 text-[17px] font-bold">{balanceDue > 0.004 ? "Partial payment recorded" : "Payment complete"}</h3>
-          <p className="mt-1 text-[12.5px] text-ink-soft">{title} · {methodLabel}</p>
-          <div className="mx-auto mt-4 w-64 space-y-1 rounded-xl border border-dashed border-line p-3.5 text-left text-[12.5px]">
-            <div className="flex justify-between"><span className="text-ink-faint">Services</span><span className="tnum">{money(subtotal)}</span></div>
-            <div className="flex justify-between"><span className="text-ink-faint">Tip</span><span className="tnum">{money(tip)}</span></div>
-            {tip > 0 && tipShares.length > 1 && tipByTechResult.map((s) => (
-              <div key={s.techId} className="flex justify-between pl-3 text-[11px] text-ink-faint">
-                <span>{tipShares.find((x) => x.techId === s.techId)?.name}</span><span className="tnum">{money(s.amount)}</span>
-              </div>
-            ))}
-            {discount > 0 && redemption && (
-              <div className="flex justify-between text-violet-500"><span>Redeemed: {redemption.name}</span><span className="tnum">−{money(discount)}</span></div>
-            )}
-            <div className="flex justify-between border-t border-line pt-1 font-bold"><span>Total</span><span className="tnum">{money(total)}</span></div>
-            {finalSources.map((s) => (
-              <div key={s.id} className="flex justify-between pl-3 text-[11px] text-ink-faint">
-                <span>{s.method}{s.last4 ? ` ····${s.last4}` : ""}</span><span className="tnum">{money(s.amount)}</span>
-              </div>
-            ))}
-            {balanceDue > 0.004 && (
-              <div className="flex justify-between font-semibold text-rust"><span>Balance due</span><span className="tnum">{money(balanceDue)}</span></div>
-            )}
-            <div className="flex justify-between text-[11px] text-ink-faint"><span>Loyalty earned</span><span>+{points.toLocaleString()} pts</span></div>
-            {D.note.trim() && <div className="flex justify-between gap-3 text-[11px] text-ink-faint"><span className="shrink-0">Note</span><span className="text-right">{D.note.trim()}</span></div>}
-            {settings.checkout.generalFields.filter((f) => D.custom?.[f.id]?.trim()).map((f) => (
-              <div key={f.id} className="flex justify-between gap-3 text-[11px] text-ink-faint">
-                <span className="shrink-0">{f.label}</span><span className="text-right">{D.custom![f.id].trim()}</span>
-              </div>
-            ))}
+          <style>{`
+            @media print {
+              body * { visibility: hidden !important; }
+              .print-area, .print-area * { visibility: visible !important; }
+              .print-area { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; }
+            }
+          `}</style>
+          <div className="print-area">
+            <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-olive-tint">
+              <Check className="h-7 w-7 text-olive" />
+            </span>
+            <h3 className="mt-3 text-[17px] font-bold">{balanceDue > 0.004 ? "Partial payment recorded" : "Payment complete"}</h3>
+            <p className="mt-1 text-[12.5px] text-ink-soft">{title} · {methodLabel}</p>
+            <div className="mx-auto mt-4 w-64 space-y-1 rounded-xl border border-dashed border-line p-3.5 text-left text-[12.5px]">
+              <div className="flex justify-between"><span className="text-ink-faint">Services</span><span className="tnum">{money(subtotal)}</span></div>
+              <div className="flex justify-between"><span className="text-ink-faint">Tip</span><span className="tnum">{money(tip)}</span></div>
+              {tip > 0 && tipShares.length > 1 && tipByTechResult.map((s) => (
+                <div key={s.techId} className="flex justify-between pl-3 text-[11px] text-ink-faint">
+                  <span>{tipShares.find((x) => x.techId === s.techId)?.name}</span><span className="tnum">{money(s.amount)}</span>
+                </div>
+              ))}
+              {discount > 0 && redemption && (
+                <div className="flex justify-between text-violet-500"><span>Redeemed: {redemption.name}</span><span className="tnum">−{money(discount)}</span></div>
+              )}
+              <div className="flex justify-between border-t border-line pt-1 font-bold"><span>Total</span><span className="tnum">{money(total)}</span></div>
+              {finalSources.map((s) => (
+                <div key={s.id} className="flex justify-between pl-3 text-[11px] text-ink-faint">
+                  <span>{s.method}</span><span className="tnum">{money(s.amount)}</span>
+                </div>
+              ))}
+              {balanceDue > 0.004 && (
+                <div className="flex justify-between font-semibold text-rust"><span>Balance due</span><span className="tnum">{money(balanceDue)}</span></div>
+              )}
+              <div className="flex justify-between text-[11px] text-ink-faint"><span>Loyalty earned</span><span>+{points.toLocaleString()} pts</span></div>
+              {D.note.trim() && <div className="flex justify-between gap-3 text-[11px] text-ink-faint"><span className="shrink-0">Note</span><span className="text-right">{D.note.trim()}</span></div>}
+              {settings.checkout.generalFields.filter((f) => D.custom?.[f.id]?.trim()).map((f) => (
+                <div key={f.id} className="flex justify-between gap-3 text-[11px] text-ink-faint">
+                  <span className="shrink-0">{f.label}</span><span className="text-right">{D.custom![f.id].trim()}</span>
+                </div>
+              ))}
+            </div>
           </div>
-          <button
-            onClick={() => onComplete({ method: methodLabel, sources: finalSources, balanceDue, tip, subtotal, total, points, discount, redeemed: redemption ? { name: redemption.name, points: redemption.pointsCost, value: discount } : undefined, notes: D.note.trim() || undefined, customFields: Object.fromEntries(Object.entries(D.custom ?? {}).filter(([, v]) => v.trim())), tipByTech: tip > 0 ? tipByTechResult : undefined })}
-            className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-clay py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-clay-deep"
-          >
-            <Receipt className="h-4 w-4" /> Done, close ticket
-          </button>
+          <div className="mt-5 flex w-full gap-2">
+            <button
+              onClick={() => window.print()}
+              title="Print receipt"
+              className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-xl border border-line text-ink-soft transition-colors hover:bg-cream hover:text-ink"
+            >
+              <Printer className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => onComplete({ method: methodLabel, sources: finalSources, balanceDue, tip, subtotal, total, points, discount, redeemed: redemption ? { name: redemption.name, points: redemption.pointsCost, value: discount } : undefined, notes: D.note.trim() || undefined, customFields: Object.fromEntries(Object.entries(D.custom ?? {}).filter(([, v]) => v.trim())), tipByTech: tip > 0 ? tipByTechResult : undefined })}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-clay py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-clay-deep"
+            >
+              <Receipt className="h-4 w-4" />
+              {balanceDue > 0.004 ? `Continue checkout · ${money(balanceDue)} due` : "Done, close ticket"}
+            </button>
+          </div>
         </div>
       )}
     </div>

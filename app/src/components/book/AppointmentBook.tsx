@@ -328,7 +328,6 @@ export function AppointmentBook() {
     tipPct: number | null
     tipCustom: string
     method: string
-    last4?: string
     sources?: CheckoutSourceDraft[]
     note: string
     redeemId: string | null
@@ -1878,6 +1877,7 @@ export function AppointmentBook() {
     setBookingOpen(false) // right-side panels are exclusive, never stack
     setPosOpen(false)
     setFinderOpen(false)
+    setRefundPrompt(null)
     // a nudge, not a block — the sale still goes through, it just won't land in
     // any shift's cash count until a drawer is opened
     if (!anyRegisterOpen) showFlash('⚠ Register is closed — open it from Manage Register to track this cash')
@@ -1945,10 +1945,11 @@ export function AppointmentBook() {
         price: (a.priceOverride ?? svcById[a.serviceId]?.price ?? 0) + (a.addons ?? []).reduce((x, ad) => x + ad.price, 0),
       }))
       .filter((l) => l.techId !== '')
-    setPayments((x) => [...x, {
+    const newPayment = {
       id: `pay${Date.now()}`, at: Date.now(), dateKey, clientName: checkoutName!, clientNames: [...party], itemCount: ids.size,
       party: party.size > 1 ? party.size : undefined, lines: payLines, apptIds: [...ids], ...p,
-    }])
+    }
+    setPayments((x) => [...x, newPayment])
     // every account holder on the ticket gets a visit
     setClients((cs) => cs.map((c) => (party.has(c.name) ? { ...c, visits: c.visits + 1 } : c)))
     // loyalty: deduct redeemed points, then award what this ticket earned
@@ -1967,7 +1968,15 @@ export function AppointmentBook() {
       dateKey,
     })
     setCheckoutDraft(null) // ticket closed, draft can go
-    closeCheckout()
+    if (p.balanceDue > 0.004) {
+      // a partial payment isn't done yet -- land straight on this same
+      // ticket's checkout-style panel so the rest can be collected right
+      // away, instead of closing and making the salon dig back in through
+      // Reopen checkout to finish
+      openReopen({ payment: newPayment, items: checkoutItems })
+    } else {
+      closeCheckout()
+    }
   }
 
   // POS sale, no appointments touched, just the payment record
@@ -2002,6 +2011,15 @@ export function AppointmentBook() {
   const [reopenDraft, setReopenDraft] = useState<{ removedIds: string[]; addedIds: string[] }>({ removedIds: [], addedIds: [] })
 
   const openReopen = (found: { payment: (typeof payments)[number]; items: Appointment[] }) => {
+    // right-side panels are exclusive, never stack -- without this the edit
+    // panel underneath stayed mounted the whole time, so closing this one
+    // (which only sits on top of it) revealed it again instead of actually
+    // being closed
+    setDetailId(null)
+    setBookingOpen(false)
+    setPosOpen(false)
+    setFinderOpen(false)
+    closeCheckout()
     setReopenDraft({ removedIds: [], addedIds: [] })
     setRefundPrompt(found)
   }
@@ -2044,17 +2062,25 @@ export function AppointmentBook() {
       if (payment.dateKey === dateKey) commit(stamp(appts))
       else setApptDays((m) => ({ ...m, [payment.dateKey]: stamp(m[payment.dateKey] ?? []) }))
     }
-    setPayments((x) => x.map((pay) => {
-      if (pay.id !== payment.id) return pay
+    const patch = (pay: typeof payment) => {
       const next = { ...pay, subtotal: p.subtotal, tip: p.tip, total: p.total, balanceDue: p.balanceDue, apptIds: ids, tipByTech: p.tipByTech ?? pay.tipByTech }
       if (p.sources.length > 0) next.sources = [...paymentSources(pay), ...p.sources]
       return next
-    }))
+    }
+    setPayments((x) => x.map((pay) => (pay.id === payment.id ? patch(pay) : pay)))
     const charged = p.sources.reduce((s, x) => s + x.amount, 0)
-    closeReopen()
     showFlash(charged > 0.004
       ? `✓ Charged $${charged.toFixed(2)}${p.balanceDue > 0.004 ? `, $${p.balanceDue.toFixed(2)} still due` : ''}`
       : '✓ Ticket updated')
+    if (p.balanceDue > 0.004) {
+      // still owed -- stay right here so the rest can be collected next,
+      // instead of closing and making the salon dig back in through Reopen
+      // checkout. Keep the panel's own payment snapshot current too, so the
+      // source just charged shows up as locked/already-collected
+      setRefundPrompt((r) => (r ? { ...r, payment: patch(r.payment) } : r))
+    } else {
+      closeReopen()
+    }
   }
 
   // live correction sync while the reopen panel is open -- a service, tech,
@@ -2139,6 +2165,7 @@ export function AppointmentBook() {
     setPosOpen(false)
     setFinderOpen(false)
     closeCheckout()
+    setRefundPrompt(null)
   }
 
   // ── context menu actions ──────────────────────────────────────────────────
@@ -4257,7 +4284,7 @@ export function AppointmentBook() {
           onRemoveLine={removeCheckoutLine}
           onAddExtra={addCheckoutExtra}
           onRemoveExtra={removeCheckoutExtra}
-          draft={checkoutDraft ? { tipPct: checkoutDraft.tipPct, tipCustom: checkoutDraft.tipCustom, method: checkoutDraft.method, last4: checkoutDraft.last4, sources: checkoutDraft.sources, note: checkoutDraft.note, redeemId: checkoutDraft.redeemId, tipByTech: checkoutDraft.tipByTech } : undefined}
+          draft={checkoutDraft ? { tipPct: checkoutDraft.tipPct, tipCustom: checkoutDraft.tipCustom, method: checkoutDraft.method, sources: checkoutDraft.sources, note: checkoutDraft.note, redeemId: checkoutDraft.redeemId, tipByTech: checkoutDraft.tipByTech } : undefined}
           onDraft={(patch) => setCheckoutDraft((d) => d && { ...d, ...patch })}
         />
       )}
