@@ -3019,11 +3019,14 @@ export function AppointmentBook() {
     const textC = darkMode ? '#fff' : byStatus ? st!.text : cat.text
     const isRequested = a.status === 'requested'
     const isNoShow = a.status === 'no_show'
-    const isCompleted = a.status === 'completed'
-    // completed just means the service is done — it fades out only once the
-    // client has actually paid IN FULL and checked out, not the moment it's
-    // marked done, and not while a partial payment still leaves a balance
-    const isPaid = isCompleted && payments.some((p) =>
+    // dims once this specific appointment is covered by a payment that's
+    // settled in full -- deliberately NOT gated on this appointment's own
+    // `status` field. A ticket can legitimately cover several appointments
+    // (e.g. gel mani + gel pedi checked out together) whose own status
+    // never gets individually re-stamped by every later correction to that
+    // ticket; gating on status here let one sibling look unpaid on the
+    // calendar even though the payment covering it was fully settled
+    const isPaid = payments.some((p) =>
       p.apptIds?.includes(a.id) && balanceDue(p.total, paymentSources(p), p.refunds) <= 0.004,
     )
     const isInService = a.status === 'in_service'
