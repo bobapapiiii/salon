@@ -348,12 +348,10 @@ export function AppointmentDetail({
               onClick={() => {
                 setRebooking(true)
                 setRebookSlot(null)
-                // default the rail a week out as a starting point — freely
-                // changeable below via the arrows, the date picker, or by
-                // just picking a different day's opening
-                const d = new Date(dateKey + 'T12:00:00')
-                d.setDate(d.getDate() + 7)
-                onPreviewDay(dayKeyOf(d))
+                // start the rail back on the appointment's own day (in case it
+                // had been browsed elsewhere) — freely changeable below via
+                // the arrows, the date picker, or picking a different day
+                onPreviewDay(originDateKey)
               }}
               title="Book the same services and techs on a day/time you pick"
               className={actionBtn}
