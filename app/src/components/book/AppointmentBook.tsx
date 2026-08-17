@@ -30,7 +30,8 @@ import { useSettingsStore, setSettings } from '@/lib/settings-store'
 import { catById } from '@/lib/categories-store'
 import { CheckoutDialog, paymentSources, type CheckoutSourceDraft, type PaymentResult, type PaymentSource } from './CheckoutDialog'
 import { InvoiceDialog } from './InvoiceDialog'
-import { ReopenTicketDialog, balanceDue, totalRefunded, type RefundRecord, type ReopenCommit } from './RefundDialog'
+import { ReopenCheckoutDialog, balanceDue, totalRefunded, type RefundRecord } from './RefundDialog'
+import { round2 } from '@/lib/payments'
 import { PosPanel } from './PosPanel'
 import { STATUS_META, TechSchedulePanel, type DaySchedule } from './TechSchedulePanel'
 import { BlockEditor, type BlockDraft } from './BlockEditor'
@@ -1323,6 +1324,72 @@ export function AppointmentBook() {
     })
   }
 
+  // ── live reopen-ticket editing — same idea as the checkout helpers above,
+  // but the ticket being reopened may live on a day other than the one on
+  // screen right now, so every mutation branches on that instead of always
+  // hitting the live `appts` array
+  const reopenDayAppts = (payDateKey: string) => (payDateKey === dateKey ? appts : apptDays[payDateKey] ?? [])
+
+  const reopenPatchLine = (id: string, patch: Partial<Appointment>) => {
+    if (!refundPrompt) return
+    const pdKey = refundPrompt.payment.dateKey
+    const patched = (list: Appointment[]) => list.map((a) => (a.id === id ? { ...a, ...patch } : a))
+    if (pdKey === dateKey) commit(patched(appts))
+    else setApptDays((m) => ({ ...m, [pdKey]: patched(m[pdKey] ?? []) }))
+  }
+
+  const reopenRemoveLine = (id: string) =>
+    setReopenDraft((d) => ({ ...d, removedIds: [...new Set([...d.removedIds, id])] }))
+
+  const reopenAddExtra = (x: { serviceId: string; techId: string; person?: string }) => {
+    if (!refundPrompt) return
+    const payment = refundPrompt.payment
+    const svc = svcById[x.serviceId]
+    const hostClient = clients.find((c) => c.name === payment.clientName)
+    const person = x.person ?? payment.clientName
+    const personIsAccount = clients.some((c) => c.name === person)
+    const techId = x.techId || pickLeastBooked(x.serviceId, DEMO_NOW_MIN, svc.durationMin, [])?.id || techs[0]?.id || ''
+    const st = svcForTech(techId, x.serviceId)
+    const start = Math.min(
+      Math.max(0, ...reopenItems.map((a) => a.startMin + a.durationMin), 0),
+      DAY_MIN - st.durationMin,
+    )
+    const appt: Appointment = {
+      id: `a${Date.now()}-rx`, techId, clientName: person, serviceId: x.serviceId,
+      startMin: start, durationMin: st.durationMin, status: 'completed' as const,
+      completedMin: DEMO_NOW_MIN,
+      guestOf: personIsAccount ? undefined : hostClient?.id,
+      priceOverride: st.price !== svc.price ? st.price : undefined,
+      bookingSource: 'front_desk',
+    }
+    const pdKey = payment.dateKey
+    if (pdKey === dateKey) commit([...appts, appt])
+    else setApptDays((m) => ({ ...m, [pdKey]: [...(m[pdKey] ?? []), appt] }))
+    setReopenDraft((d) => ({ ...d, addedIds: [...d.addedIds, appt.id] }))
+    // name-only guests register under the host's profile
+    if (!personIsAccount && hostClient && person !== payment.clientName) {
+      setClients((cs) => cs.map((c) => {
+        if (c.id !== hostClient.id) return c
+        const have = new Set((c.guests ?? []).map((g) => g.name.toLowerCase()))
+        if (have.has(person.toLowerCase())) return c
+        return { ...c, guests: [...(c.guests ?? []), { id: `g${Date.now()}-${(c.guests ?? []).length}`, name: person }] }
+      }))
+    }
+    showFlash(`✓ ${svc.name} added to ${person}'s ticket`)
+  }
+
+  const reopenRemoveExtra = (id: string) => {
+    if (!refundPrompt) return
+    const pdKey = refundPrompt.payment.dateKey
+    if (pdKey === dateKey) commit(appts.filter((a) => a.id !== id))
+    else setApptDays((m) => ({ ...m, [pdKey]: (m[pdKey] ?? []).filter((a) => a.id !== id) }))
+    setReopenDraft((d) => ({
+      ...d,
+      addedIds: d.addedIds.filter((x) => x !== id),
+      removedIds: d.removedIds.filter((x) => x !== id),
+    }))
+  }
+
   // does this move double-book a tech? (only reachable when overlap is enabled)
   const overlapHitFor = (moving: MovingItem[], extraIgnoreIds?: Set<string>) => {
     const ids = new Set(moving.map((m) => m.id))
@@ -1911,52 +1978,93 @@ export function AppointmentBook() {
   // refund that gives back everything a source ever collected undoes the
   // loyalty points and visit credit the ticket earned; a partial one leaves those alone
   const [refundPrompt, setRefundPrompt] = useState<{ payment: (typeof payments)[number]; items: Appointment[] } | null>(null)
+  // tracks adds/removes made THIS reopen session, same idea as checkoutDraft —
+  // a removed line stays on the book, just off this particular ticket; an
+  // added line gets the "added" badge and the full-delete remove icon
+  const [reopenDraft, setReopenDraft] = useState<{ removedIds: string[]; addedIds: string[] }>({ removedIds: [], addedIds: [] })
 
-  const doReopenCommit = (c: ReopenCommit) => {
+  const openReopen = (found: { payment: (typeof payments)[number]; items: Appointment[] }) => {
+    setReopenDraft({ removedIds: [], addedIds: [] })
+    setRefundPrompt(found)
+  }
+  const closeReopen = () => {
+    setRefundPrompt(null)
+    setReopenDraft({ removedIds: [], addedIds: [] })
+  }
+
+  // the ticket's live item list — the original services (minus any removed
+  // this session) plus whatever's been added, resolved fresh against the
+  // book each render so price/service/tech/time edits show immediately
+  const reopenItems = useMemo(() => {
+    if (!refundPrompt) return []
+    const dayAppts = reopenDayAppts(refundPrompt.payment.dateKey)
+    const ids = [
+      ...(refundPrompt.payment.apptIds ?? []).filter((id) => !reopenDraft.removedIds.includes(id)),
+      ...reopenDraft.addedIds,
+    ]
+    return ids.map((id) => dayAppts.find((a) => a.id === id)).filter((a): a is Appointment => a != null)
+  }, [refundPrompt, reopenDraft, appts, apptDays, dateKey])
+
+  // reopening a paid ticket no longer voids the payment right away -- it opens
+  // a checkout-style panel on top of the still-recorded sale where services
+  // can be added/removed/re-priced and the difference settled right there:
+  // charging a remainder is a new payment source, same as any checkout; a
+  // correction that comes in under what's already been collected surfaces a
+  // compact refund panel instead. The original sale stays on the books until
+  // one of those is submitted. Only a refund that gives back everything a
+  // source ever collected undoes the loyalty points and visit credit the
+  // ticket earned; a partial one leaves those alone
+  const completeReopen = (p: PaymentResult) => {
     if (!refundPrompt) return
     const payment = refundPrompt.payment
-    const priceById = new Map(c.items.map((i) => [i.id, i.price]))
-    const applyPrice = (list: Appointment[]) => list.map((a) => (priceById.has(a.id) ? { ...a, priceOverride: priceById.get(a.id) } : a))
-    if (payment.dateKey === dateKey) commit(applyPrice(appts))
-    else setApptDays((m) => ({ ...m, [payment.dateKey]: applyPrice(m[payment.dateKey] ?? []) }))
-
-    const newSource: PaymentSource | null = c.kind === 'charge'
-      ? { id: `src${Date.now()}`, method: c.source.method, last4: c.source.last4, amount: c.source.amount }
-      : null
-    const refundRecord: RefundRecord | null = c.kind === 'refund'
-      ? { id: `rf${Date.now()}`, at: Date.now(), amount: c.amount, sourceId: c.sourceId, reason: c.reason, by: sessionUser.name }
-      : null
-
-    setPayments((x) => x.map((p) => {
-      if (p.id !== payment.id) return p
-      const next = { ...p, subtotal: c.subtotal, tip: c.tip, total: c.total }
-      if (newSource) next.sources = [...paymentSources(p), newSource]
-      if (refundRecord) next.refunds = [...(p.refunds ?? []), refundRecord]
+    const ids = p.apptIds ?? []
+    const idSet = new Set(ids)
+    const stamp = (list: Appointment[]) => list.map((a) => (idSet.has(a.id)
+      ? { ...a, status: 'completed' as const, log: [...(a.log ?? []), logEntry(`Ticket corrected, $${p.total.toFixed(2)}`)] }
+      : a))
+    if (ids.length > 0) {
+      if (payment.dateKey === dateKey) commit(stamp(appts))
+      else setApptDays((m) => ({ ...m, [payment.dateKey]: stamp(m[payment.dateKey] ?? []) }))
+    }
+    setPayments((x) => x.map((pay) => {
+      if (pay.id !== payment.id) return pay
+      const next = { ...pay, subtotal: p.subtotal, tip: p.tip, total: p.total, balanceDue: p.balanceDue, apptIds: ids, tipByTech: p.tipByTech ?? pay.tipByTech }
+      if (p.sources.length > 0) next.sources = [...paymentSources(pay), ...p.sources]
       return next
     }))
+    const charged = p.sources.reduce((s, x) => s + x.amount, 0)
+    closeReopen()
+    showFlash(charged > 0.004
+      ? `✓ Charged $${charged.toFixed(2)}${p.balanceDue > 0.004 ? `, $${p.balanceDue.toFixed(2)} still due` : ''}`
+      : '✓ Ticket updated')
+  }
 
-    if (refundRecord) {
-      // "fully refunded" means every dollar ever collected on this ticket
-      // has now been given back, regardless of any price correction
-      const grossCollected = paymentSources(payment).reduce((s, x) => s + x.amount, 0)
-      const refundedAfter = totalRefunded(payment.refunds) + refundRecord.amount
-      const fullyRefunded = Math.round(refundedAfter * 100) / 100 >= Math.round(grossCollected * 100) / 100 - 0.005
-      if (fullyRefunded) {
-        const partyNames = payment.clientNames ?? [payment.clientName]
-        setClients((cs) => cs.map((cl) => (partyNames.includes(cl.name) ? { ...cl, visits: Math.max(0, cl.visits - 1) } : cl)))
-        const host = clients.find((cl) => cl.name === payment.clientName)
-        if (host) {
-          setPointsByClient((m) => ({ ...m, [host.id]: Math.max(0, (m[host.id] ?? 0) + (payment.redeemed?.points ?? 0) - payment.points) }))
-        }
+  const reopenRefund = (sourceId: string, amount: number, reason: string | undefined, snapshot: { apptIds: string[]; subtotal: number; tip: number; total: number; points: number }) => {
+    if (!refundPrompt) return
+    const payment = refundPrompt.payment
+    const refundRecord: RefundRecord = { id: `rf${Date.now()}`, at: Date.now(), amount, sourceId, reason, by: sessionUser.name }
+    setPayments((x) => x.map((p) =>
+      p.id === payment.id
+        ? { ...p, subtotal: snapshot.subtotal, tip: snapshot.tip, total: snapshot.total, apptIds: snapshot.apptIds, refunds: [...(p.refunds ?? []), refundRecord] }
+        : p,
+    ))
+    // "fully refunded" means every dollar ever collected on this ticket has
+    // now been given back, regardless of any price correction along the way
+    const grossCollected = paymentSources(payment).reduce((s, x) => s + x.amount, 0)
+    const refundedAfter = totalRefunded(payment.refunds) + refundRecord.amount
+    const fullyRefunded = round2(refundedAfter) >= round2(grossCollected) - 0.005
+    if (fullyRefunded) {
+      const partyNames = payment.clientNames ?? [payment.clientName]
+      setClients((cs) => cs.map((cl) => (partyNames.includes(cl.name) ? { ...cl, visits: Math.max(0, cl.visits - 1) } : cl)))
+      const host = clients.find((cl) => cl.name === payment.clientName)
+      if (host) {
+        setPointsByClient((m) => ({ ...m, [host.id]: Math.max(0, (m[host.id] ?? 0) + (payment.redeemed?.points ?? 0) - payment.points) }))
       }
     }
-
-    setRefundPrompt(null)
-    showFlash(
-      c.kind === 'charge' ? `✓ Charged $${c.source.amount.toFixed(2)}`
-        : c.kind === 'refund' ? `✓ Refunded $${c.amount.toFixed(2)}`
-        : '✓ Ticket updated',
-    )
+    // keep the panel's `existing` payment/refunds in sync so refundNeeded
+    // recalculates against what's actually been given back, live
+    setRefundPrompt((r) => r && { ...r, payment: { ...r.payment, subtotal: snapshot.subtotal, tip: snapshot.tip, total: snapshot.total, apptIds: snapshot.apptIds, refunds: [...(r.payment.refunds ?? []), refundRecord] } })
+    showFlash(`✓ Refunded $${amount.toFixed(2)}`)
   }
 
   // opening the editor dismisses booking, POS, and checkout — panels are exclusive
@@ -2309,7 +2417,7 @@ export function AppointmentBook() {
         // here touches the payment until a refund is actually submitted
         const found = findDetailPayment(originKey)
         if (!found) { showFlash('No payment recorded for this appointment'); break }
-        setRefundPrompt(found)
+        openReopen(found)
         break
       }
       case 'jobcard': {
@@ -4045,12 +4153,18 @@ export function AppointmentBook() {
       {/* reopen ticket -- the payment stays on the books; this lets the
           service prices or tip be corrected, then settled right there by
           charging a remainder or refunding a payment source */}
-      {refundPrompt && (
-        <ReopenTicketDialog
+      {refundPrompt && reopenItems.length > 0 && (
+        <ReopenCheckoutDialog
           payment={refundPrompt.payment}
-          items={refundPrompt.items}
-          onCommit={doReopenCommit}
-          onClose={() => setRefundPrompt(null)}
+          items={reopenItems}
+          dateLabel={dayLabel(new Date(refundPrompt.payment.dateKey + 'T12:00:00'))}
+          onPatchLine={reopenPatchLine}
+          onRemoveLine={reopenRemoveLine}
+          onAddExtra={reopenAddExtra}
+          onRemoveExtra={reopenRemoveExtra}
+          onRefund={reopenRefund}
+          onComplete={completeReopen}
+          onClose={closeReopen}
         />
       )}
 

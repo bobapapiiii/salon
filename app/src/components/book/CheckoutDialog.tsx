@@ -12,6 +12,9 @@ import { getStaff } from "@/lib/staff-store";
 import { useSettingsStore } from "@/lib/settings-store";
 import { svcById } from "@/lib/services-store";
 import { catById } from "@/lib/categories-store";
+import { paymentSources, refundedBySource, round2, totalRefunded, type PaymentSource, type PaymentWithSources, type RefundRecord } from "@/lib/payments";
+
+export { paymentSources, type PaymentSource, type PaymentWithSources } from "@/lib/payments";
 
 export const METHOD_ICONS = { Cash: Banknote, Card: CreditCard, Venmo: Smartphone, Zelle: Smartphone } as const;
 
@@ -35,31 +38,6 @@ export interface PaymentLine {
   customFields?: Record<string, string>;
 }
 
-/** one tender against a ticket -- cash, or a card with its last 4 digits, for
- *  a specific amount. A ticket can be split across several of these, and each
- *  one can later be refunded (in full or in part) on its own */
-export interface PaymentSource {
-  id: string;
-  method: string;
-  /** card only */
-  last4?: string;
-  amount: number;
-}
-
-/** the slice of a payment record this file's helpers need */
-export interface PaymentWithSources {
-  total: number;
-  sources?: PaymentSource[];
-  method: string;
-}
-
-/** every payment has at least one source going forward; older records saved
- *  before split tender existed only have a single `method`/`total`, so they
- *  fall back to reading as one source covering the whole ticket */
-export function paymentSources(p: PaymentWithSources): PaymentSource[] {
-  return p.sources && p.sources.length > 0 ? p.sources : [{ id: `${p.method}-legacy`, method: p.method, amount: p.total }];
-}
-
 export interface PaymentResult {
   /** single method name, or "Split" once a ticket carries more than one source */
   method: string;
@@ -79,6 +57,9 @@ export interface PaymentResult {
   customFields?: Record<string, string>;
   /** how the tip splits across providers (always sums to tip) */
   tipByTech?: { techId: string; amount: number }[];
+  /** the appointment ids on this ticket at the moment payment completed --
+   *  only set when reopening an existing payment, where it can have changed */
+  apptIds?: string[];
 }
 
 /** a service added to the invoice at checkout time (kept for API compat) */
@@ -118,7 +99,7 @@ export interface CheckoutDraftState {
 
 const money = (v: number) => `$${v.toFixed(2)}`;
 
-export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, hostName, editable, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, loyaltyBalance, draft, onDraft }: {
+export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, hostName, editable, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, loyaltyBalance, draft, onDraft, existing }: {
   title: string;
   subtitle: string;
   lines: PaymentLine[];
@@ -142,12 +123,30 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
   /** controlled draft (persisted); POS uses the internal fallback */
   draft?: CheckoutDraftState;
   onDraft?: (patch: Partial<CheckoutDraftState>) => void;
+  /** reopening a paid ticket instead of a fresh checkout: its sources show as
+   *  already-collected (locked, can't be edited or removed) and count toward
+   *  the total; "Add payment source" still works for charging a remainder,
+   *  and a compact refund panel appears if the corrected total comes in
+   *  under what's already been collected */
+  existing?: {
+    payment: PaymentWithSources;
+    /** the tip already recorded, so the field starts at what was actually
+     *  charged instead of a fresh 18% guess */
+    tip: number;
+    refunds?: RefundRecord[];
+    onRefund: (sourceId: string, amount: number, reason: string | undefined, snapshot: { apptIds: string[]; subtotal: number; tip: number; total: number; points: number }) => void;
+  };
 }) {
   const settings = useSettingsStore();
   const TIME_OPTS = Array.from({ length: DAY_SLOTS * (SLOT_MIN / settings.booking.increment) }, (_, i) => i * settings.booking.increment);
   const [step, setStep] = useState<"pay" | "receipt">("pay");
-  // internal fallback when no controlled draft is provided (POS)
-  const [local, setLocal] = useState<CheckoutDraftState>({ tipPct: 18, tipCustom: "", method: "Cash", note: "", redeemId: null, custom: {} });
+  // internal fallback when no controlled draft is provided (POS, or reopen,
+  // which starts the tip at what was already charged, not a fresh 18% guess)
+  const [local, setLocal] = useState<CheckoutDraftState>(() =>
+    existing
+      ? { tipPct: null, tipCustom: existing.tip.toFixed(2), method: paymentSources(existing.payment)[0]?.method ?? "Cash", note: "", redeemId: null, custom: {} }
+      : { tipPct: 18, tipCustom: "", method: "Cash", note: "", redeemId: null, custom: {} },
+  );
   const D = draft ?? local;
   const setD = (patch: Partial<CheckoutDraftState>) => (onDraft ? onDraft(patch) : setLocal((x) => ({ ...x, ...patch })));
 
@@ -155,6 +154,9 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
   const [draftTech, setDraftTech] = useState("");
   const [draftPerson, setDraftPerson] = useState(hostName ?? "");
   const [addOpen, setAddOpen] = useState(false);
+  const [refundOpenId, setRefundOpenId] = useState<string | null>(null);
+  const [refundAmountText, setRefundAmountText] = useState("");
+  const [refundReason, setRefundReason] = useState("");
 
   const methods = settings.payments.methods.filter((m) => m in METHOD_ICONS);
   const tipPresets = settings.payments.tipPresets;
@@ -222,32 +224,71 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
   // points earn on the discounted service value, never on tips
   const points = Math.floor(Math.max(0, subtotal - discount) * settings.loyalty.pointsPerDollar);
 
+  // reopening a paid ticket: its existing sources show as locked rows (can't
+  // be edited or removed, they're already collected) and count toward the
+  // total; only newly-added rows are reported back as real charges
+  const lockedSources = existing ? paymentSources(existing.payment) : [];
+  const lockedIds = new Set(lockedSources.map((s) => s.id));
+
   // the payment list -- while untouched (no draft.sources yet) there's one
-  // implicit row for the full total, kept in sync as the ticket total moves;
-  // touching anything (amount, method, adding a row) locks in an explicit list
-  const sourceRows: CheckoutSourceDraft[] =
-    D.sources && D.sources.length > 0 ? D.sources : [{ id: "default", method: D.method, last4: D.last4 ?? "", amountText: total.toFixed(2) }];
+  // implicit row for the full total (or the existing locked sources, when
+  // reopening), kept in sync as the ticket total moves; touching anything
+  // (amount, method, adding a row) locks in an explicit list
+  const sourceRows: CheckoutSourceDraft[] = D.sources && D.sources.length > 0
+    ? D.sources
+    : existing
+      ? lockedSources.map((s) => ({ id: s.id, method: s.method, last4: s.last4 ?? "", amountText: s.amount.toFixed(2) }))
+      : [{ id: "default", method: D.method, last4: D.last4 ?? "", amountText: total.toFixed(2) }];
   const updateSource = (id: string, patch: Partial<CheckoutSourceDraft>) => {
+    if (lockedIds.has(id)) return;
     const rows = sourceRows.map((r) => (r.id === id ? { ...r, ...patch } : r));
     setD({ sources: rows, method: rows[0].method, last4: rows[0].last4 });
   };
   const addSource = () => {
     const assigned = sourceRows.reduce((s, r) => s + (Number(r.amountText) || 0), 0);
-    const remaining = Math.max(0, Math.round((total - assigned) * 100) / 100);
-    const otherMethod = methods.find((m) => m !== sourceRows[0]?.method) ?? methods[0];
+    const remaining = Math.max(0, round2(total - assigned));
+    const firstFree = sourceRows.find((r) => !lockedIds.has(r.id))?.method ?? sourceRows[0]?.method;
+    const otherMethod = methods.find((m) => m !== firstFree) ?? methods[0];
     setD({ sources: [...sourceRows, { id: `src${sourceRows.length}-${Date.now()}`, method: otherMethod, last4: "", amountText: remaining > 0 ? remaining.toFixed(2) : "" }] });
   };
   const removeSource = (id: string) => {
+    if (lockedIds.has(id)) return;
     const rows = sourceRows.filter((r) => r.id !== id);
     setD({ sources: rows.length > 0 ? rows : undefined });
   };
-  const collected = Math.round(sourceRows.reduce((s, r) => s + (Number(r.amountText) || 0), 0) * 100) / 100;
-  const overAssigned = collected > total + 0.005;
-  const balanceDue = Math.max(0, Math.round((total - collected) * 100) / 100);
+  // new money only -- locked rows already exist in the payment, so they're
+  // tracked net of any prior refunds instead of at face value
+  const lockedGross = lockedSources.reduce((s, x) => s + x.amount, 0);
+  const lockedNet = existing ? lockedGross - totalRefunded(existing.refunds) : lockedGross;
+  const newRowsSum = round2(sourceRows.filter((r) => !lockedIds.has(r.id)).reduce((s, r) => s + (Number(r.amountText) || 0), 0));
+  const collected = existing ? round2(lockedNet + newRowsSum) : round2(sourceRows.reduce((s, r) => s + (Number(r.amountText) || 0), 0));
+  const overAssigned = !existing && collected > total + 0.005;
+  const balanceDue = Math.max(0, round2(total - collected));
+  // the corrected total came in under what's already been collected --
+  // reopen only, a fresh checkout can't be "overpaid" before it's even charged
+  const refundNeeded = existing ? Math.max(0, round2(collected - total)) : 0;
   const finalSources: PaymentSource[] = sourceRows
+    .filter((r) => !lockedIds.has(r.id))
     .filter((r) => (Number(r.amountText) || 0) > 0)
-    .map((r) => ({ id: r.id, method: r.method, last4: r.method === "Card" && r.last4.trim() ? r.last4.trim() : undefined, amount: Math.round((Number(r.amountText) || 0) * 100) / 100 }));
+    .map((r) => ({ id: r.id, method: r.method, last4: r.method === "Card" && r.last4.trim() ? r.last4.trim() : undefined, amount: round2(Number(r.amountText) || 0) }));
   const methodLabel = finalSources.length === 0 ? D.method : finalSources.length === 1 ? finalSources[0].method : "Split";
+  const apptIds = lines.map((l) => l.id);
+
+  const submitExisting = () => {
+    onComplete({
+      method: methodLabel, sources: finalSources, balanceDue, tip, subtotal, total, points, discount,
+      redeemed: redemption ? { name: redemption.name, points: redemption.pointsCost, value: discount } : undefined,
+      notes: D.note.trim() || undefined,
+      customFields: Object.fromEntries(Object.entries(D.custom ?? {}).filter(([, v]) => v.trim())),
+      tipByTech: tip > 0 ? tipByTechResult : undefined,
+      apptIds,
+    });
+  };
+  const submitRefund = (sourceId: string, available: number) => {
+    const amount = round2(Number(refundAmountText) || 0);
+    if (!(amount > 0 && amount <= available + 0.005)) return;
+    existing?.onRefund(sourceId, amount, refundReason.trim() || undefined, { apptIds, subtotal, tip, total, points });
+  };
 
   // group the ticket per person for party checkouts (host first)
   const persons = [...new Set(allLines.map((l) => l.person).filter((x): x is string => x != null))];
@@ -617,44 +658,60 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
             {/* payment sources -- cash, or a card with its last 4 digits, each
                 for its own amount; split across several to take mixed tender,
                 or bring the total assigned below the ticket total to leave a
-                balance due */}
+                balance due. Reopening a paid ticket shows its existing
+                sources locked (already collected, not editable here) */}
             <p className="mb-1.5 mt-4 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Payment</p>
             <div className="space-y-1.5">
               {sourceRows.map((r) => {
                 const Icon = METHOD_ICONS[r.method as keyof typeof METHOD_ICONS];
+                const locked = lockedIds.has(r.id);
+                const refundedFromRow = locked ? refundedBySource(existing?.refunds, r.id) : 0;
                 return (
-                  <div key={r.id} className="flex items-center gap-1.5 rounded-[10px] border border-line bg-surface p-1.5">
+                  <div key={r.id} className={`flex items-center gap-1.5 rounded-[10px] border p-1.5 ${locked ? "border-line bg-cream/50" : "border-line bg-surface"}`}>
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] bg-clay-tint text-clay">
                       {Icon && <Icon className="h-4 w-4" />}
                     </span>
-                    <select
-                      value={r.method}
-                      onChange={(e) => updateSource(r.id, { method: e.target.value, last4: e.target.value === "Card" ? r.last4 : "" })}
-                      title="Payment method"
-                      className="h-8 w-[88px] shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-[11.5px] font-semibold outline-none focus:border-clay"
-                    >
-                      {methods.map((m) => <option key={m} value={m}>{m}</option>)}
-                    </select>
-                    {r.method === "Card" && (
-                      <input
-                        value={r.last4}
-                        onChange={(e) => updateSource(r.id, { last4: e.target.value.replace(/\D/g, "").slice(0, 4) })}
-                        placeholder="Last 4"
-                        title="Last 4 digits of the card"
-                        maxLength={4}
-                        className="tnum h-8 w-16 shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-center text-[11.5px] outline-none focus:border-clay"
-                      />
+                    {locked ? (
+                      <span className="min-w-0 flex-1 text-[12px] font-semibold text-ink">
+                        {r.method}{r.last4 ? ` ····${r.last4}` : ""}
+                        <span className="ml-1.5 font-normal text-ink-faint">already collected{refundedFromRow > 0 ? ` · ${money(refundedFromRow)} refunded` : ""}</span>
+                      </span>
+                    ) : (
+                      <>
+                        <select
+                          value={r.method}
+                          onChange={(e) => updateSource(r.id, { method: e.target.value, last4: e.target.value === "Card" ? r.last4 : "" })}
+                          title="Payment method"
+                          className="h-8 w-[88px] shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-[11.5px] font-semibold outline-none focus:border-clay"
+                        >
+                          {methods.map((m) => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                        {r.method === "Card" && (
+                          <input
+                            value={r.last4}
+                            onChange={(e) => updateSource(r.id, { last4: e.target.value.replace(/\D/g, "").slice(0, 4) })}
+                            placeholder="Last 4"
+                            title="Last 4 digits of the card"
+                            maxLength={4}
+                            className="tnum h-8 w-16 shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-center text-[11.5px] outline-none focus:border-clay"
+                          />
+                        )}
+                      </>
                     )}
-                    <div className="relative min-w-0 flex-1">
+                    <div className="relative min-w-0 flex-1 basis-24 grow-0">
                       <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[11px] font-bold text-ink-faint">$</span>
-                      <input
-                        value={r.amountText}
-                        onChange={(e) => updateSource(r.id, { amountText: e.target.value.replace(/[^\d.]/g, "") })}
-                        placeholder="0.00"
-                        className="tnum h-8 w-full rounded-[7px] border border-input bg-background py-1 pl-5 pr-1.5 text-[12.5px] font-bold outline-none focus:border-clay"
-                      />
+                      {locked ? (
+                        <span className="tnum flex h-8 w-full items-center rounded-[7px] pl-5 pr-1.5 text-[12.5px] font-bold text-ink-faint">{r.amountText}</span>
+                      ) : (
+                        <input
+                          value={r.amountText}
+                          onChange={(e) => updateSource(r.id, { amountText: e.target.value.replace(/[^\d.]/g, "") })}
+                          placeholder="0.00"
+                          className="tnum h-8 w-full rounded-[7px] border border-input bg-background py-1 pl-5 pr-1.5 text-[12.5px] font-bold outline-none focus:border-clay"
+                        />
+                      )}
                     </div>
-                    {sourceRows.length > 1 && (
+                    {!locked && sourceRows.filter((x) => !lockedIds.has(x.id)).length > (existing ? 0 : 1) && (
                       <button
                         onClick={() => removeSource(r.id)}
                         className="shrink-0 text-ink-faint transition-colors hover:text-rust"
@@ -668,17 +725,72 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
               })}
               <div className="flex items-center justify-between gap-2">
                 <button onClick={addSource} className="flex items-center gap-1 text-[11.5px] font-semibold text-clay hover:underline">
-                  <Plus className="h-3 w-3" /> Add payment source
+                  <Plus className="h-3 w-3" /> {existing ? "Add a payment to cover more" : "Add payment source"}
                 </button>
-                <span className={`text-right text-[11px] font-bold ${overAssigned ? "text-rose-500" : balanceDue > 0.004 ? "text-amberw" : "text-olive"}`}>
+                <span className={`text-right text-[11px] font-bold ${overAssigned ? "text-rose-500" : refundNeeded > 0.004 ? "text-rust" : balanceDue > 0.004 ? "text-amberw" : "text-olive"}`}>
                   {overAssigned
                     ? `${money(collected)} assigned, ${money(collected - total)} over the total`
-                    : balanceDue > 0.004
-                      ? `${money(collected)} of ${money(total)}, ${money(balanceDue)} left as a balance`
-                      : `${money(collected)} assigned`}
+                    : refundNeeded > 0.004
+                      ? `${money(refundNeeded)} more collected than the corrected total`
+                      : balanceDue > 0.004
+                        ? `${money(collected)} of ${money(total)}, ${money(balanceDue)} left as a balance`
+                        : `${money(collected)} assigned`}
                 </span>
               </div>
             </div>
+
+            {/* reopen only: the corrected total came in under what's already
+                been collected -- refund the difference from a source above */}
+            {existing && refundNeeded > 0.004 && (
+              <div className="mt-2 rounded-[10px] border border-rust/30 bg-rust-tint/30 p-2.5">
+                <p className="text-[11.5px] font-semibold text-ink">Refund needed: {money(refundNeeded)}</p>
+                <div className="mt-1.5 space-y-1.5">
+                  {lockedSources.map((s) => {
+                    const refunded = refundedBySource(existing.refunds, s.id);
+                    const available = Math.max(0, round2(s.amount - refunded));
+                    if (available <= 0.004) return null;
+                    const open = refundOpenId === s.id;
+                    return (
+                      <div key={s.id} className="rounded-[8px] border border-line bg-surface p-2">
+                        <div className="flex items-center gap-2">
+                          <span className="min-w-0 flex-1 text-[12px] font-semibold text-ink">{s.method}{s.last4 ? ` ····${s.last4}` : ""}</span>
+                          <span className="tnum shrink-0 text-[11px] font-bold text-ink-faint">{money(available)} available</span>
+                          <button
+                            onClick={() => { setRefundOpenId(open ? null : s.id); setRefundAmountText(Math.min(available, refundNeeded).toFixed(2)); }}
+                            className="shrink-0 text-[11px] font-semibold text-rust hover:underline"
+                          >
+                            {open ? "Cancel" : "Refund"}
+                          </button>
+                        </div>
+                        {open && (
+                          <div className="mt-1.5 flex items-center gap-1.5 border-t border-line/60 pt-1.5">
+                            <span className="text-[11px] font-bold text-ink-faint">$</span>
+                            <input
+                              value={refundAmountText}
+                              onChange={(e) => setRefundAmountText(e.target.value.replace(/[^\d.]/g, ""))}
+                              className="tnum h-7 w-20 shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-[12px] font-bold outline-none focus:border-clay"
+                            />
+                            <input
+                              value={refundReason}
+                              onChange={(e) => setRefundReason(e.target.value)}
+                              placeholder="Reason (optional)"
+                              className="h-7 min-w-0 flex-1 rounded-[7px] border border-input bg-background px-2 text-[11px] outline-none focus:border-clay"
+                            />
+                            <button
+                              onClick={() => submitRefund(s.id, available)}
+                              disabled={!(Number(refundAmountText) > 0 && Number(refundAmountText) <= available + 0.005)}
+                              className="shrink-0 rounded-[7px] bg-rust px-2.5 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              Refund
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* invoice note */}
             <p className="mb-1.5 mt-4 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
@@ -723,7 +835,12 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
               </div>
               <div className="flex items-baseline justify-between">
                 <span className="text-[12px] text-ink-soft">{discount > 0 ? <s className="mr-1 text-ink-faint">{money(subtotal + tip)}</s> : null}</span>
-                <span className="text-[15px] font-bold">Total <span className="tnum text-clay">{money(total)}</span></span>
+                <span className="text-[15px] font-bold">
+                  {existing ? "Corrected total" : "Total"} <span className="tnum text-clay">{money(total)}</span>
+                  {existing && round2(total) !== round2(existing.payment.total) && (
+                    <span className="ml-1.5 text-[11px] font-normal text-ink-faint">was {money(existing.payment.total)}</span>
+                  )}
+                </span>
               </div>
             </div>
             {!allocBalanced && tip > 0 && (
@@ -732,15 +849,21 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
               </p>
             )}
             <button
-              onClick={() => setStep("receipt")}
-              disabled={!allocBalanced || overAssigned || collected <= 0}
+              onClick={() => (existing ? submitExisting() : setStep("receipt"))}
+              disabled={!allocBalanced || (existing ? refundNeeded > 0.004 : overAssigned || collected <= 0)}
               className="w-full rounded-xl bg-clay py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-clay-deep disabled:opacity-40"
             >
-              {overAssigned
-                ? "Fix payment amounts to continue"
-                : balanceDue > 0.004
-                  ? `Charge ${money(collected)} now · ${money(balanceDue)} due`
-                  : `Charge ${money(collected)} · ${methodLabel}`}
+              {existing
+                ? refundNeeded > 0.004
+                  ? "Refund the difference above to continue"
+                  : newRowsSum > 0.004
+                    ? `Charge ${money(newRowsSum)}${balanceDue > 0.004 ? ` · ${money(balanceDue)} still due` : ""}`
+                    : "Save changes"
+                : overAssigned
+                  ? "Fix payment amounts to continue"
+                  : balanceDue > 0.004
+                    ? `Charge ${money(collected)} now · ${money(balanceDue)} due`
+                    : `Charge ${money(collected)} · ${methodLabel}`}
             </button>
           </div>
         </>
