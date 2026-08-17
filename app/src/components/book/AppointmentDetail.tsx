@@ -23,6 +23,10 @@ export type DetailAction = 'rebook' | 'cancel' | 'copy' | 'sendtext' | 'checkout
 interface Props {
   appt: Appointment
   group: Appointment[]
+  /** how many distinct clients share this booking's time slot (a real party
+   *  checking out together) — NOT how many services `group` has, which is
+   *  just this one client's own linked services (e.g. gel mani + gel pedi) */
+  partySize: number
   clients: ClientRecord[]
   error: string | null
   /** the day this appointment actually lives on, fixed for the life of this panel even
@@ -94,7 +98,7 @@ const REQUEST_HEART_COLOR: Record<string, string | undefined> = {
 }
 
 export function AppointmentDetail({
-  appt, group, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks,
+  appt, group, partySize, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks,
   findMakeRoomPlan, onRequestMakeRoom, onSave, onAction, onViewProfile, onShowVisits, onClose,
   canCheckout, hasInvoice,
 }: Props) {
@@ -191,8 +195,8 @@ export function AppointmentDetail({
             <div className="mt-1 space-y-0.5 text-[11px] text-ink-faint">
               <div className="flex items-center gap-1.5"><Phone className="h-3 w-3" /> {client?.phone ?? '(555) 842-1177'}</div>
               <div className="flex items-center gap-1.5"><Mail className="h-3 w-3" /> {appt.clientName.split(' ')[0].toLowerCase()}@email.com</div>
-              <div className="flex items-center gap-1.5">Host: Front desk{group.length > 1 && (
-                <span className="flex items-center gap-0.5 text-clay"><Link2 className="h-3 w-3" /> group of {group.length}</span>
+              <div className="flex items-center gap-1.5">Host: Front desk{partySize > 1 && (
+                <span className="flex items-center gap-0.5 text-clay"><Link2 className="h-3 w-3" /> group of {partySize}</span>
               )}</div>
               <div className="flex items-center gap-3">
                 <button onClick={onViewProfile} className="font-semibold text-clay hover:underline">View full profile →</button>

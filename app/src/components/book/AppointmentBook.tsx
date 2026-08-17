@@ -2025,6 +2025,10 @@ export function AppointmentBook() {
       ? detailBoard.filter((a) => a.parallelGroup === detailAppt.parallelGroup)
       : [detailAppt]
     : []
+  // how many distinct clients are actually in that party — detailGroup.length
+  // counts services for the one client being edited (mani + pedi is 2, still
+  // just 1 person), so the "group of N" badge must count names, not rows
+  const detailPartySize = new Set(detailParty.map((a) => a.clientName)).size
 
   const saveDetail = (updated: Appointment[], removedIds: string[], moveToDayKey?: string) => {
     // the edit panel's day rail actually navigates the live calendar as the
@@ -3783,6 +3787,7 @@ export function AppointmentBook() {
         <AppointmentDetail
           appt={detailAppt}
           group={detailGroup}
+          partySize={detailPartySize}
           clients={clients}
           error={detailError}
           originDateKey={detailOriginDay ?? dateKey}
