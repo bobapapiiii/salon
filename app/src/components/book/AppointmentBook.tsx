@@ -317,6 +317,11 @@ export function AppointmentBook() {
   interface CheckoutDraft {
     name: string
     groupId: string | null
+    // the specific appointment(s) this ticket was opened on, for a standalone
+    // (non-parallelGroup) visit -- keeps two separate same-day bookings for
+    // the same client from merging into one ticket just because the name
+    // matches. Unused for group tickets, which key off groupId instead.
+    originIds: string[]
     selected: string[]
     removedIds: string[]
     addedIds: string[]
@@ -1842,11 +1847,14 @@ export function AppointmentBook() {
       const inGroup = appts.filter((a) => a.parallelGroup === checkoutGroup && payable(a) && notRemoved(a))
       return inGroup.filter((a) => checkoutSelected.has(a.clientName))
     }
-    const client = clients.find((c) => c.name === checkoutName)
-    return appts.filter((a) =>
-      (a.clientName === checkoutName || (client != null && a.guestOf === client.id)) && payable(a) && notRemoved(a),
-    )
-  }, [checkoutName, checkoutSelected, checkoutGroup, appts, clients])
+    // a standalone visit (no parallelGroup): only the exact appointment this
+    // ticket was opened on, plus anything added during this checkout session
+    // -- NOT every other booking this client has today, which would wrongly
+    // merge separate visits (e.g. an earlier gel mani/pedi and a later,
+    // unrelated manicure) into one transaction
+    const ticketIds = new Set([...(checkoutDraft?.originIds ?? []), ...(checkoutDraft?.addedIds ?? [])])
+    return appts.filter((a) => ticketIds.has(a.id) && payable(a) && notRemoved(a))
+  }, [checkoutName, checkoutSelected, checkoutGroup, checkoutDraft, appts])
 
   // distinct people in the party, host first (drives the person chips)
   const checkoutPeople = useMemo(() => {
@@ -1889,14 +1897,24 @@ export function AppointmentBook() {
     setCheckoutGroup(a.parallelGroup ?? null)
     setCheckoutGuestOf(a.parallelGroup ? a.guestOf ?? null : null)
     setCheckoutName(name)
-    // resume the saved draft for this client, or start a fresh one
-    const resume = checkoutDraft && checkoutDraft.name === name && checkoutDraft.groupId === (a.parallelGroup ?? null) ? checkoutDraft : null
+    // resume the saved draft for this client, or start a fresh one -- for a
+    // standalone visit (no parallelGroup) this must also be the SAME
+    // appointment the draft was opened on, otherwise clicking into a
+    // different, unrelated same-day visit for this client would wrongly
+    // resume (and merge into) whatever ticket happened to be open last
+    const resume = checkoutDraft
+      && checkoutDraft.name === name
+      && checkoutDraft.groupId === (a.parallelGroup ?? null)
+      && (a.parallelGroup != null || (checkoutDraft.originIds ?? []).includes(a.id))
+      ? checkoutDraft
+      : null
     if (resume) {
       setCheckoutSelected(new Set(resume.selected))
     } else {
       setCheckoutSelected(new Set(people.length > 0 ? people : [name]))
       setCheckoutDraft({
         name, groupId: a.parallelGroup ?? null,
+        originIds: a.parallelGroup ? [] : [a.id],
         selected: people.length > 0 ? people : [name],
         removedIds: [], addedIds: [],
         tipPct: 18, tipCustom: '', method: 'Cash', note: '', redeemId: null, tipByTech: undefined,
