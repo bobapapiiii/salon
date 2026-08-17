@@ -18,7 +18,7 @@ const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
 const actionBtn =
   'flex items-center justify-center gap-1.5 rounded-[8px] border border-line py-2 text-[12px] font-semibold text-ink-soft transition-colors hover:bg-cream hover:text-ink'
 
-export type DetailAction = 'rebook' | 'cancel' | 'copy' | 'sendtext' | 'checkout' | 'log' | 'jobcard' | 'invoice' | 'reopen'
+export type DetailAction = 'cancel' | 'copy' | 'sendtext' | 'checkout' | 'log' | 'jobcard' | 'invoice' | 'reopen'
 
 interface Props {
   appt: Appointment
@@ -47,6 +47,10 @@ interface Props {
   onRequestMakeRoom: (moves: Appointment[], startMin: number, thenSelect: () => void) => void
   onSave: (updated: Appointment[], removedIds: string[], moveToDayKey?: string) => void
   onAction: (a: DetailAction) => void
+  /** book a fresh copy of this client's own services (same services, same
+   *  techs) on the day/time picked in the rail below — a real rebook, not an
+   *  automatic "same time next week" */
+  onRebook: (targetDateKey: string, startMin: number) => void
   onViewProfile: () => void
   /** pop up this client's last 5 visits (services, tech, price, category colors) */
   onShowVisits: () => void
@@ -99,7 +103,7 @@ const REQUEST_HEART_COLOR: Record<string, string | undefined> = {
 
 export function AppointmentDetail({
   appt, group, partySize, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks,
-  findMakeRoomPlan, onRequestMakeRoom, onSave, onAction, onViewProfile, onShowVisits, onClose,
+  findMakeRoomPlan, onRequestMakeRoom, onSave, onAction, onRebook, onViewProfile, onShowVisits, onClose,
   canCheckout, hasInvoice,
 }: Props) {
   const increment = useSettingsStore().booking.increment
@@ -111,6 +115,11 @@ export function AppointmentDetail({
   const [status, setStatus] = useState(appt.status)
   const [notes, setNotes] = useState(appt.notes ?? '')
   const [dayPickerAnchor, setDayPickerAnchor] = useState<DOMRect | null>(null)
+  // rebooking: picking a day/time for a fresh copy of these same services and
+  // techs, using the exact same day rail below (browse days, see openings) —
+  // distinct from the rail's normal job of moving *this* appointment
+  const [rebooking, setRebooking] = useState(false)
+  const [rebookSlot, setRebookSlot] = useState<{ dateKey: string; startMin: number } | null>(null)
 
   const client = clients.find((c) => c.name === appt.clientName)
   const setSvc = (id: string, patch: Partial<Appointment>) =>
@@ -335,7 +344,20 @@ export function AppointmentDetail({
         <div>
           <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Actions</label>
           <div className="grid grid-cols-2 gap-1.5">
-            <button onClick={() => onAction('rebook')} title="Rebook same time next week" className={actionBtn}>
+            <button
+              onClick={() => {
+                setRebooking(true)
+                setRebookSlot(null)
+                // default the rail a week out as a starting point — freely
+                // changeable below via the arrows, the date picker, or by
+                // just picking a different day's opening
+                const d = new Date(dateKey + 'T12:00:00')
+                d.setDate(d.getDate() + 7)
+                onPreviewDay(dayKeyOf(d))
+              }}
+              title="Book the same services and techs on a day/time you pick"
+              className={actionBtn}
+            >
               <RefreshCw className="h-3.5 w-3.5" /> Rebook
             </button>
             <button onClick={() => onAction('copy')} title="Copy each service to the clipboard as its own entry" className={actionBtn}>
@@ -391,7 +413,11 @@ export function AppointmentDetail({
             <ChevronRight className="h-3.5 w-3.5" />
           </button>
         </div>
-        {dateKey !== originDateKey && (
+        {rebooking ? (
+          <div className="mb-3 rounded-[8px] border border-clay/30 bg-clay-tint/30 px-2 py-1.5 text-[10.5px] font-semibold text-clay">
+            Rebooking — pick a day and time for a new copy, same services and techs
+          </div>
+        ) : dateKey !== originDateKey && (
           <div className="mb-3 rounded-[8px] border border-clay/30 bg-clay-tint/30 px-2 py-1.5 text-[10.5px] font-semibold text-clay">
             Save changes to move this appointment to {dayLabelOf(dateKey)}
           </div>
@@ -404,15 +430,18 @@ export function AppointmentDetail({
         )}
         <div className="space-y-1">
           {slotPlans.map(({ start: s, status, moves }) => {
-            const selected = dateKey === originDateKey && s === groupStart
+            const selected = rebooking
+              ? rebookSlot?.dateKey === dateKey && rebookSlot?.startMin === s
+              : dateKey === originDateKey && s === groupStart
+            const pick = () => (rebooking ? setRebookSlot({ dateKey, startMin: s }) : applySlot(s))
             return (
               <button
                 key={s}
                 onClick={() => {
                   if (selected) return
-                  if (status === 'open') applySlot(s)
-                  else if (status === 'movable' && moves) onRequestMakeRoom(moves, s, () => applySlot(s))
-                  else applySlot(s)
+                  if (status === 'open') pick()
+                  else if (status === 'movable' && moves) onRequestMakeRoom(moves, s, pick)
+                  else pick()
                 }}
                 title={
                   status === 'blocked' ? 'No qualified tech free — saving this will double-book a tech'
@@ -452,37 +481,60 @@ export function AppointmentDetail({
           off by notes or a long service list. Check out, View/print receipt,
           and Reopen ticket are the working payment actions today (the old
           Send payment link / Take payment placeholders were disabled stubs
-          for a feature that was never built) */}
+          for a feature that was never built). While rebooking, this swaps
+          to a dedicated Cancel / Confirm pair so it's never confused with
+          Save (which edits *this* booking, not the new copy) */}
       <div className="space-y-1.5 border-t border-line p-3">
-        {(canCheckout || hasInvoice) && (
+        {rebooking ? (
           <div className="flex gap-1.5">
-            {canCheckout && (
-              <button onClick={() => onAction('checkout')} className={`flex-1 ${actionBtn}`}>
-                <CreditCard className="h-3.5 w-3.5" /> Check out {appt.clientName.split(' ')[0]}
-              </button>
-            )}
-            {hasInvoice && (
-              <button onClick={() => onAction('invoice')} className={`flex-1 ${actionBtn}`}>
-                <Receipt className="h-3.5 w-3.5" /> View / print receipt
-              </button>
-            )}
-            {hasInvoice && (
-              <button onClick={() => onAction('reopen')} className={`flex-1 ${actionBtn}`} title="Made a mistake? Clear this payment and redo checkout">
-                <Undo2 className="h-3.5 w-3.5" /> Reopen Ticket
-              </button>
-            )}
+            <button
+              onClick={() => { setRebooking(false); setRebookSlot(null) }}
+              className={`flex-1 ${actionBtn}`}
+            >
+              Cancel rebook
+            </button>
+            <button
+              onClick={() => rebookSlot && onRebook(rebookSlot.dateKey, rebookSlot.startMin)}
+              disabled={!rebookSlot}
+              className="flex flex-[2] items-center justify-center gap-2 rounded-[10px] bg-clay py-2.5 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep disabled:opacity-40"
+            >
+              <RefreshCw className="h-4 w-4" />
+              {rebookSlot ? `Rebook to ${dayLabelOf(rebookSlot.dateKey)}, ${fmtTime(rebookSlot.startMin)}` : 'Pick a day and time'}
+            </button>
           </div>
+        ) : (
+          <>
+            {(canCheckout || hasInvoice) && (
+              <div className="flex gap-1.5">
+                {canCheckout && (
+                  <button onClick={() => onAction('checkout')} className={`flex-1 ${actionBtn}`}>
+                    <CreditCard className="h-3.5 w-3.5" /> Check out {appt.clientName.split(' ')[0]}
+                  </button>
+                )}
+                {hasInvoice && (
+                  <button onClick={() => onAction('invoice')} className={`flex-1 ${actionBtn}`}>
+                    <Receipt className="h-3.5 w-3.5" /> View / print receipt
+                  </button>
+                )}
+                {hasInvoice && (
+                  <button onClick={() => onAction('reopen')} className={`flex-1 ${actionBtn}`} title="Made a mistake? Clear this payment and redo checkout">
+                    <Undo2 className="h-3.5 w-3.5" /> Reopen Ticket
+                  </button>
+                )}
+              </div>
+            )}
+            <button
+              onClick={() => onSave(
+                draft.map((d) => ({ ...d, status: d.id === appt.id ? status : d.status, notes: d.id === appt.id ? notes || undefined : d.notes })),
+                removed,
+                dateKey !== originDateKey ? dateKey : undefined,
+              )}
+              className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2.5 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"
+            >
+              <Clock className="h-4 w-4" /> {dateKey !== originDateKey ? `Save & move to ${dayLabelOf(dateKey)}` : 'Save changes'}
+            </button>
+          </>
         )}
-        <button
-          onClick={() => onSave(
-            draft.map((d) => ({ ...d, status: d.id === appt.id ? status : d.status, notes: d.id === appt.id ? notes || undefined : d.notes })),
-            removed,
-            dateKey !== originDateKey ? dateKey : undefined,
-          )}
-          className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2.5 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"
-        >
-          <Clock className="h-4 w-4" /> {dateKey !== originDateKey ? `Save & move to ${dayLabelOf(dateKey)}` : 'Save changes'}
-        </button>
       </div>
     </div>
   )

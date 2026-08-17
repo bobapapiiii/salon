@@ -2280,22 +2280,35 @@ export function AppointmentBook() {
         setCancelPromptId(a.id) // confirmation happens in the dialog
         break
       }
-      case 'rebook': {
-        const originDate = new Date(originKey + 'T12:00:00')
-        const target = new Date(originDate.getFullYear(), originDate.getMonth(), originDate.getDate() + 7)
-        const key = dayKey(target)
-        const newGroup = a.parallelGroup ? `pg${Date.now()}` : undefined
-        setApptDays((m) => ({
-          ...m,
-          [key]: [...(m[key] ?? generateDay(key)), ...detailGroup.map((g, i) => ({
-            ...g, id: `a${Date.now()}-${i}`, status: 'confirmed' as const, parallelGroup: newGroup,
-          }))],
-        }))
-        setDetailId(null)
-        showFlash(`✓ Rebooked to ${dayLabel(target)}, jump there with ◀ ▶ to see it`)
-        break
-      }
     }
+  }
+
+  // rebook: a full copy of this client's own services (same techs, same
+  // relative timing to each other) placed on whatever day/time the salon
+  // picks via the edit panel's own day rail -- replaces the old behavior of
+  // silently placing it exactly one week later at the same time with no say
+  // in it. `startMin` is the picked slot's start; each service keeps its
+  // original offset from the group's earliest start, so a chained mani+pedi
+  // (or a parallel pair) rebooks with the same shape, not stacked on top of
+  // each other
+  const doRebook = (targetDateKey: string, startMin: number) => {
+    if (!detailAppt) return
+    const newGroup = detailAppt.parallelGroup ? `pg${Date.now()}` : undefined
+    const groupMinStart = Math.min(...detailGroup.map((g) => g.startMin))
+    const fromLabel = dayLabel(new Date((detailOriginDay ?? dateKey) + 'T12:00:00'))
+    setApptDays((m) => ({
+      ...m,
+      [targetDateKey]: [...(m[targetDateKey] ?? generateDay(targetDateKey)), ...detailGroup.map((g, i) => ({
+        ...g,
+        id: `a${Date.now()}-${i}`,
+        startMin: startMin + (g.startMin - groupMinStart),
+        status: 'confirmed' as const,
+        parallelGroup: newGroup,
+        log: [logEntry(`Rebooked from ${fromLabel}`)],
+      }))],
+    }))
+    setDetailId(null)
+    showFlash(`✓ Rebooked to ${dayLabel(new Date(targetDateKey + 'T12:00:00'))} at ${fmtTime(startMin)}`)
   }
 
   // ── cancel confirmation ────────────────────────────────────────────────────
@@ -3799,6 +3812,7 @@ export function AppointmentBook() {
           onRequestMakeRoom={onRequestMakeRoom}
           onSave={saveDetail}
           onAction={onDetailAction}
+          onRebook={doRebook}
           onViewProfile={() => openProfile(detailAppt.clientName)}
           onShowVisits={() => setVisitsName(detailAppt.clientName)}
           onClose={() => setDetailId(null)}
