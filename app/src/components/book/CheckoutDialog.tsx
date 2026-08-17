@@ -3,7 +3,7 @@
 // receipt. CheckoutDialog feeds it a client's live appointment ticket — every
 // edit (service, tech, time, price, added services) lands on the book instantly
 // and persists if the panel closes mid-edit. POS feeds it manual sale lines.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Banknote, Check, CreditCard, Plus, Receipt, Smartphone, X } from "lucide-react";
 import type { Appointment } from "@/lib/booking-types";
 import { DAY_SLOTS, SLOT_MIN, fmtTime } from "@/lib/booking-types";
@@ -144,6 +144,12 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
       techId?: string;
       snapshot: { apptIds: string[]; subtotal: number; tip: number; total: number; points: number };
     }) => void;
+    /** live correction sync -- fires (debounced) whenever a service, tech,
+     *  price, or add/remove settles, so the ticket's totals land on the
+     *  payments ledger immediately without an explicit save. `sources` is
+     *  always empty here; new money and refunds only ever move through
+     *  their own explicit actions below */
+    onSync?: (p: PaymentResult) => void;
   };
 }) {
   const settings = useSettingsStore();
@@ -300,6 +306,26 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
     .map((r) => ({ id: r.id, method: r.method, last4: r.method === "Card" && r.last4.trim() ? r.last4.trim() : undefined, amount: round2(Number(r.amountText) || 0) }));
   const methodLabel = finalSources.length === 0 ? D.method : finalSources.length === 1 ? finalSources[0].method : "Split";
   const apptIds = lines.map((l) => l.id);
+
+  // live sync while correcting an already-paid ticket -- a service, tech,
+  // price, or add/remove change settles onto the payments ledger on its own
+  // (debounced so a run of keystrokes lands as one write), no explicit save
+  // needed. Held off entirely while a refund is required first: that
+  // correction isn't real until the money actually comes back
+  useEffect(() => {
+    if (!existing?.onSync) return;
+    if (refundNeeded > 0.004) return;
+    const t = setTimeout(() => {
+      existing.onSync!({
+        method: methodLabel, sources: [], balanceDue, tip, subtotal, total, points, discount,
+        redeemed: redemption ? { name: redemption.name, points: redemption.pointsCost, value: discount } : undefined,
+        tipByTech: tip > 0 ? tipByTechResult : undefined,
+        apptIds,
+      });
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subtotal, tip, total, discount, points, balanceDue, refundNeeded, apptIds.join(",")]);
 
   const submitExisting = () => {
     onComplete({
@@ -919,7 +945,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
               <div className="flex items-baseline justify-between">
                 <span className="text-[12px] text-ink-soft">{discount > 0 ? <s className="mr-1 text-ink-faint">{money(subtotal + tip)}</s> : null}</span>
                 <span className="text-[15px] font-bold">
-                  {existing ? "Corrected total" : "Total"} <span className="tnum text-clay">{money(total)}</span>
+                  Total <span className="tnum text-clay">{money(total)}</span>
                   {existing && round2(total) !== round2(existing.payment.total) && (
                     <span className="ml-1.5 text-[11px] font-normal text-ink-faint">was {money(existing.payment.total)}</span>
                   )}
@@ -932,7 +958,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                 line above the payment sources */}
             {balanceDue > 0.004 && (
               <div className="mb-2.5 flex items-center justify-between rounded-xl border border-rust/40 bg-rust-tint/40 px-3 py-2">
-                <span className="text-[11.5px] font-bold uppercase tracking-wide text-rust">Still owed</span>
+                <span className="text-[11.5px] font-bold uppercase tracking-wide text-rust">Balance</span>
                 <span className="tnum text-[18px] font-extrabold text-rust">{money(balanceDue)}</span>
               </div>
             )}
@@ -952,8 +978,8 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                   : newRowsSum > 0.004
                     ? `Charge ${money(newRowsSum)}${balanceDue > 0.004 ? ` · ${money(balanceDue)} still due` : ""}`
                     : balanceDue > 0.004
-                      ? `Save changes · ${money(balanceDue)} still due`
-                      : "Save changes"
+                      ? `Done · ${money(balanceDue)} balance`
+                      : "Done"
                 : overAssigned
                   ? "Fix payment amounts to continue"
                   : balanceDue > 0.004

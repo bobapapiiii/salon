@@ -2057,6 +2057,22 @@ export function AppointmentBook() {
       : '✓ Ticket updated')
   }
 
+  // live correction sync while the reopen panel is open -- a service, tech,
+  // or price edit lands on the payments ledger (so the invoice, balance
+  // callouts, and calendar dimming elsewhere all stay current) the moment it
+  // settles, no explicit Save needed. Unlike completeReopen this never
+  // touches appointment status/log or the payment's sources, and never
+  // closes the panel -- it's purely keeping the ticket's own totals current
+  // while the salon keeps editing
+  const reopenSync = (p: PaymentResult) => {
+    if (!refundPrompt) return
+    const payment = refundPrompt.payment
+    const ids = p.apptIds ?? []
+    setPayments((x) => x.map((pay) => (pay.id === payment.id
+      ? { ...pay, subtotal: p.subtotal, tip: p.tip, total: p.total, balanceDue: p.balanceDue, apptIds: ids, tipByTech: p.tipByTech ?? pay.tipByTech }
+      : pay)))
+  }
+
   const reopenRefund = ({ sourceId, amount, reason, from, techId, snapshot }: {
     sourceId: string
     amount: number
@@ -4217,6 +4233,7 @@ export function AppointmentBook() {
           onAddExtra={reopenAddExtra}
           onRemoveExtra={reopenRemoveExtra}
           onRefund={reopenRefund}
+          onSync={reopenSync}
           onComplete={completeReopen}
           onClose={closeReopen}
         />

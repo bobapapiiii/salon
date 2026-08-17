@@ -34,7 +34,7 @@ export interface RefundablePayment {
   tipByTech?: { techId: string; amount: number }[]
 }
 
-export function ReopenCheckoutDialog({ payment, items, dateLabel, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, onRefund, onComplete, onClose }: {
+export function ReopenCheckoutDialog({ payment, items, dateLabel, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, onRefund, onSync, onComplete, onClose }: {
   payment: RefundablePayment
   items: Appointment[]
   dateLabel: string
@@ -50,6 +50,9 @@ export function ReopenCheckoutDialog({ payment, items, dateLabel, onPatchLine, o
     techId?: string
     snapshot: { apptIds: string[]; subtotal: number; tip: number; total: number; points: number }
   }) => void
+  /** live correction sync -- keeps the ledger current as services/tech/price
+   *  change, no explicit save needed; see PaymentFlow's `existing.onSync` */
+  onSync: (p: PaymentResult) => void
   onComplete: (p: PaymentResult) => void
   onClose: () => void
 }) {
@@ -94,7 +97,7 @@ export function ReopenCheckoutDialog({ payment, items, dateLabel, onPatchLine, o
       onRemoveLine={onRemoveLine}
       onAddExtra={onAddExtra}
       onRemoveExtra={onRemoveExtra}
-      existing={{ payment, tip: payment.tip, refunds: payment.refunds, onRefund }}
+      existing={{ payment, tip: payment.tip, refunds: payment.refunds, onRefund, onSync }}
     />
   )
 }
