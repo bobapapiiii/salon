@@ -1889,6 +1889,18 @@ export function AppointmentBook() {
     const people = a.parallelGroup
       ? [...new Set(source.filter((x) => x.parallelGroup === a.parallelGroup && payable(x)).map((x) => x.clientName))]
       : []
+    // a standalone appointment (no parallelGroup) can still be a genuine
+    // same-time pairing that just never got tagged as one -- e.g. gel mani
+    // with one tech and gel pedi with another, at the identical time. Two
+    // bookings for the same client that actually OVERLAP can only be one
+    // visit (nobody is in two chairs for unrelated reasons at once), so
+    // those come along automatically. Anything merely nearby in time, like a
+    // separate booking later that day, stays its own ticket -- that's the
+    // distinction this exists to preserve
+    const overlapping = a.parallelGroup ? [] : source.filter((x) =>
+      x.id !== a.id && x.clientName === a.clientName && payable(x) &&
+      a.startMin < x.startMin + x.durationMin && x.startMin < a.startMin + a.durationMin,
+    )
     const name = a.parallelGroup
       ? a.clientName
       : a.guestOf
@@ -1899,9 +1911,10 @@ export function AppointmentBook() {
     setCheckoutName(name)
     // resume the saved draft for this client, or start a fresh one -- for a
     // standalone visit (no parallelGroup) this must also be the SAME
-    // appointment the draft was opened on, otherwise clicking into a
-    // different, unrelated same-day visit for this client would wrongly
-    // resume (and merge into) whatever ticket happened to be open last
+    // appointment (or one of its overlapping siblings) the draft was opened
+    // on, otherwise clicking into a different, unrelated same-day visit for
+    // this client would wrongly resume (and merge into) whatever ticket
+    // happened to be open last
     const resume = checkoutDraft
       && checkoutDraft.name === name
       && checkoutDraft.groupId === (a.parallelGroup ?? null)
@@ -1914,7 +1927,7 @@ export function AppointmentBook() {
       setCheckoutSelected(new Set(people.length > 0 ? people : [name]))
       setCheckoutDraft({
         name, groupId: a.parallelGroup ?? null,
-        originIds: a.parallelGroup ? [] : [a.id],
+        originIds: a.parallelGroup ? [] : [a.id, ...overlapping.map((x) => x.id)],
         selected: people.length > 0 ? people : [name],
         removedIds: [], addedIds: [],
         tipPct: 18, tipCustom: '', method: 'Cash', note: '', redeemId: null, tipByTech: undefined,
