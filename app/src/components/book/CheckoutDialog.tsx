@@ -659,74 +659,131 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                 for its own amount; split across several to take mixed tender,
                 or bring the total assigned below the ticket total to leave a
                 balance due. Reopening a paid ticket shows its existing
-                sources locked (already collected, not editable here) */}
+                sources locked (already collected, not editable here), each
+                with its own refund control -- available any time a source
+                still has money on it, not just when a price correction
+                happens to create an overage */}
             <p className="mb-1.5 mt-4 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Payment</p>
             <div className="space-y-1.5">
               {sourceRows.map((r) => {
                 const Icon = METHOD_ICONS[r.method as keyof typeof METHOD_ICONS];
                 const locked = lockedIds.has(r.id);
                 const refundedFromRow = locked ? refundedBySource(existing?.refunds, r.id) : 0;
+                const lockedSource = locked ? lockedSources.find((s) => s.id === r.id) : undefined;
+                const availableToRefund = lockedSource ? Math.max(0, round2(lockedSource.amount - refundedFromRow)) : 0;
+                const refundRowOpen = refundOpenId === r.id && availableToRefund > 0.004;
                 return (
-                  <div key={r.id} className={`flex items-center gap-1.5 rounded-[10px] border p-1.5 ${locked ? "border-line bg-cream/50" : "border-line bg-surface"}`}>
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] bg-clay-tint text-clay">
-                      {Icon && <Icon className="h-4 w-4" />}
-                    </span>
-                    {locked ? (
-                      <span className="min-w-0 flex-1 text-[12px] font-semibold text-ink">
-                        {r.method}{r.last4 ? ` ····${r.last4}` : ""}
-                        <span className="ml-1.5 font-normal text-ink-faint">already collected{refundedFromRow > 0 ? ` · ${money(refundedFromRow)} refunded` : ""}</span>
+                  <div key={r.id} className={`rounded-[10px] border p-1.5 ${locked ? "border-line bg-cream/50" : "border-line bg-surface"}`}>
+                    <div className="flex items-center gap-1.5">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] bg-clay-tint text-clay">
+                        {Icon && <Icon className="h-4 w-4" />}
                       </span>
-                    ) : (
-                      <>
-                        <select
-                          value={r.method}
-                          onChange={(e) => updateSource(r.id, { method: e.target.value, last4: e.target.value === "Card" ? r.last4 : "" })}
-                          title="Payment method"
-                          className="h-8 w-[88px] shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-[11.5px] font-semibold outline-none focus:border-clay"
-                        >
-                          {methods.map((m) => <option key={m} value={m}>{m}</option>)}
-                        </select>
-                        {r.method === "Card" && (
+                      {locked ? (
+                        <span className="min-w-0 flex-1 text-[12px] font-semibold text-ink">
+                          {r.method}{r.last4 ? ` ····${r.last4}` : ""}
+                          <span className="ml-1.5 font-normal text-ink-faint">already collected{refundedFromRow > 0 ? ` · ${money(refundedFromRow)} refunded` : ""}</span>
+                        </span>
+                      ) : (
+                        <>
+                          <select
+                            value={r.method}
+                            onChange={(e) => updateSource(r.id, { method: e.target.value, last4: e.target.value === "Card" ? r.last4 : "" })}
+                            title="Payment method"
+                            className="h-8 w-[88px] shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-[11.5px] font-semibold outline-none focus:border-clay"
+                          >
+                            {methods.map((m) => <option key={m} value={m}>{m}</option>)}
+                          </select>
+                          {r.method === "Card" && (
+                            <input
+                              value={r.last4}
+                              onChange={(e) => updateSource(r.id, { last4: e.target.value.replace(/\D/g, "").slice(0, 4) })}
+                              placeholder="Last 4"
+                              title="Last 4 digits of the card"
+                              maxLength={4}
+                              className="tnum h-8 w-16 shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-center text-[11.5px] outline-none focus:border-clay"
+                            />
+                          )}
+                        </>
+                      )}
+                      <div className="relative min-w-0 flex-1 basis-24 grow-0">
+                        <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[11px] font-bold text-ink-faint">$</span>
+                        {locked ? (
+                          <span className="tnum flex h-8 w-full items-center rounded-[7px] pl-5 pr-1.5 text-[12.5px] font-bold text-ink-faint">{r.amountText}</span>
+                        ) : (
                           <input
-                            value={r.last4}
-                            onChange={(e) => updateSource(r.id, { last4: e.target.value.replace(/\D/g, "").slice(0, 4) })}
-                            placeholder="Last 4"
-                            title="Last 4 digits of the card"
-                            maxLength={4}
-                            className="tnum h-8 w-16 shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-center text-[11.5px] outline-none focus:border-clay"
+                            value={r.amountText}
+                            onChange={(e) => updateSource(r.id, { amountText: e.target.value.replace(/[^\d.]/g, "") })}
+                            placeholder="0.00"
+                            className="tnum h-8 w-full rounded-[7px] border border-input bg-background py-1 pl-5 pr-1.5 text-[12.5px] font-bold outline-none focus:border-clay"
                           />
                         )}
-                      </>
-                    )}
-                    <div className="relative min-w-0 flex-1 basis-24 grow-0">
-                      <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[11px] font-bold text-ink-faint">$</span>
-                      {locked ? (
-                        <span className="tnum flex h-8 w-full items-center rounded-[7px] pl-5 pr-1.5 text-[12.5px] font-bold text-ink-faint">{r.amountText}</span>
-                      ) : (
-                        <input
-                          value={r.amountText}
-                          onChange={(e) => updateSource(r.id, { amountText: e.target.value.replace(/[^\d.]/g, "") })}
-                          placeholder="0.00"
-                          className="tnum h-8 w-full rounded-[7px] border border-input bg-background py-1 pl-5 pr-1.5 text-[12.5px] font-bold outline-none focus:border-clay"
-                        />
+                      </div>
+                      {locked && availableToRefund > 0.004 && (
+                        <button
+                          onClick={() => {
+                            setRefundOpenId(refundRowOpen ? null : r.id);
+                            setRefundAmountText((refundNeeded > 0.004 ? Math.min(availableToRefund, refundNeeded) : availableToRefund).toFixed(2));
+                            setRefundReason("");
+                          }}
+                          className="shrink-0 text-[11px] font-semibold text-rust hover:underline"
+                        >
+                          {refundRowOpen ? "Cancel" : "Refund"}
+                        </button>
+                      )}
+                      {!locked && sourceRows.filter((x) => !lockedIds.has(x.id)).length > (existing ? 0 : 1) && (
+                        <button
+                          onClick={() => removeSource(r.id)}
+                          className="shrink-0 text-ink-faint transition-colors hover:text-rust"
+                          title="Remove this payment source"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
                       )}
                     </div>
-                    {!locked && sourceRows.filter((x) => !lockedIds.has(x.id)).length > (existing ? 0 : 1) && (
-                      <button
-                        onClick={() => removeSource(r.id)}
-                        className="shrink-0 text-ink-faint transition-colors hover:text-rust"
-                        title="Remove this payment source"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
+                    {locked && refundRowOpen && (
+                      <div className="mt-1.5 flex items-center gap-1.5 border-t border-line/60 pt-1.5">
+                        <span className="text-[11px] font-bold text-ink-faint">$</span>
+                        <input
+                          value={refundAmountText}
+                          onChange={(e) => setRefundAmountText(e.target.value.replace(/[^\d.]/g, ""))}
+                          className="tnum h-7 w-20 shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-[12px] font-bold outline-none focus:border-clay"
+                        />
+                        <input
+                          value={refundReason}
+                          onChange={(e) => setRefundReason(e.target.value)}
+                          placeholder="Reason (optional)"
+                          className="h-7 min-w-0 flex-1 rounded-[7px] border border-input bg-background px-2 text-[11px] outline-none focus:border-clay"
+                        />
+                        <button
+                          onClick={() => submitRefund(r.id, availableToRefund)}
+                          disabled={!(Number(refundAmountText) > 0 && Number(refundAmountText) <= availableToRefund + 0.005)}
+                          className="shrink-0 rounded-[7px] bg-rust px-2.5 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Refund
+                        </button>
+                      </div>
                     )}
                   </div>
                 );
               })}
               <div className="flex items-center justify-between gap-2">
-                <button onClick={addSource} className="flex items-center gap-1 text-[11.5px] font-semibold text-clay hover:underline">
-                  <Plus className="h-3 w-3" /> {existing ? "Add a payment to cover more" : "Add payment source"}
-                </button>
+                {existing ? (
+                  balanceDue > 0.004 ? (
+                    <button onClick={addSource} className="flex items-center gap-1 text-[11.5px] font-semibold text-clay hover:underline">
+                      <Plus className="h-3 w-3" /> Add a payment to cover more
+                    </button>
+                  ) : refundNeeded > 0.004 ? (
+                    <span className="text-[11.5px] font-semibold text-rust">Refund a source above to continue</span>
+                  ) : (
+                    <span className="flex items-center gap-1 text-[11.5px] font-bold text-olive">
+                      <Check className="h-3 w-3" /> Checkout completed
+                    </span>
+                  )
+                ) : (
+                  <button onClick={addSource} className="flex items-center gap-1 text-[11.5px] font-semibold text-clay hover:underline">
+                    <Plus className="h-3 w-3" /> Add payment source
+                  </button>
+                )}
                 <span className={`text-right text-[11px] font-bold ${overAssigned ? "text-rose-500" : refundNeeded > 0.004 ? "text-rust" : balanceDue > 0.004 ? "text-amberw" : "text-olive"}`}>
                   {overAssigned
                     ? `${money(collected)} assigned, ${money(collected - total)} over the total`
@@ -738,59 +795,6 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                 </span>
               </div>
             </div>
-
-            {/* reopen only: the corrected total came in under what's already
-                been collected -- refund the difference from a source above */}
-            {existing && refundNeeded > 0.004 && (
-              <div className="mt-2 rounded-[10px] border border-rust/30 bg-rust-tint/30 p-2.5">
-                <p className="text-[11.5px] font-semibold text-ink">Refund needed: {money(refundNeeded)}</p>
-                <div className="mt-1.5 space-y-1.5">
-                  {lockedSources.map((s) => {
-                    const refunded = refundedBySource(existing.refunds, s.id);
-                    const available = Math.max(0, round2(s.amount - refunded));
-                    if (available <= 0.004) return null;
-                    const open = refundOpenId === s.id;
-                    return (
-                      <div key={s.id} className="rounded-[8px] border border-line bg-surface p-2">
-                        <div className="flex items-center gap-2">
-                          <span className="min-w-0 flex-1 text-[12px] font-semibold text-ink">{s.method}{s.last4 ? ` ····${s.last4}` : ""}</span>
-                          <span className="tnum shrink-0 text-[11px] font-bold text-ink-faint">{money(available)} available</span>
-                          <button
-                            onClick={() => { setRefundOpenId(open ? null : s.id); setRefundAmountText(Math.min(available, refundNeeded).toFixed(2)); }}
-                            className="shrink-0 text-[11px] font-semibold text-rust hover:underline"
-                          >
-                            {open ? "Cancel" : "Refund"}
-                          </button>
-                        </div>
-                        {open && (
-                          <div className="mt-1.5 flex items-center gap-1.5 border-t border-line/60 pt-1.5">
-                            <span className="text-[11px] font-bold text-ink-faint">$</span>
-                            <input
-                              value={refundAmountText}
-                              onChange={(e) => setRefundAmountText(e.target.value.replace(/[^\d.]/g, ""))}
-                              className="tnum h-7 w-20 shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-[12px] font-bold outline-none focus:border-clay"
-                            />
-                            <input
-                              value={refundReason}
-                              onChange={(e) => setRefundReason(e.target.value)}
-                              placeholder="Reason (optional)"
-                              className="h-7 min-w-0 flex-1 rounded-[7px] border border-input bg-background px-2 text-[11px] outline-none focus:border-clay"
-                            />
-                            <button
-                              onClick={() => submitRefund(s.id, available)}
-                              disabled={!(Number(refundAmountText) > 0 && Number(refundAmountText) <= available + 0.005)}
-                              className="shrink-0 rounded-[7px] bg-rust px-2.5 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                            >
-                              Refund
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
 
             {/* invoice note */}
             <p className="mb-1.5 mt-4 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
