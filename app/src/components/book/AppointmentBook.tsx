@@ -16,7 +16,7 @@ import { ConfirmDialog } from './ConfirmDialog'
 import { BookingPanel, layoutItems, type BookedService, type SlotGroup } from './BookingPanel'
 import { AvailabilityFinder } from './AvailabilityFinder'
 import { AppointmentDetail, type DetailAction } from './AppointmentDetail'
-import { ClientProfile, LastVisitsDialog, type ClientNote } from './ClientProfile'
+import { ClientProfile, LastVisitsDialog, type ClientNote, type VisitLine } from './ClientProfile'
 import { RequestsRail } from './RequestsRail'
 import { DatePickerPopover, LegendPopover } from './LegendPopover'
 import { ContextBar, NavRail } from './AppShell'
@@ -2327,12 +2327,27 @@ export function AppointmentBook() {
       .map((p) => {
         const dayAppts = p.dateKey === dateKey ? appts : apptDays[p.dateKey] ?? []
         const items = (p.apptIds ?? []).map((id) => dayAppts.find((a) => a.id === id)).filter((a): a is Appointment => a != null)
+        // per-service breakdown -- each line keeps its own service, tech, price,
+        // and category color, so the Last 5 visits popup can look like checkout
+        const lines: VisitLine[] = items.length > 0
+          ? items.map((a) => {
+              const svc = svcById[a.serviceId]
+              return {
+                serviceId: a.serviceId,
+                name: svc?.name ?? a.serviceId,
+                price: (a.priceOverride ?? svc?.price ?? 0) + (a.addons ?? []).reduce((x, ad) => x + ad.price, 0),
+                techName: techOf(a.techId).name,
+                color: svc ? catById[svc.categoryId]?.line : undefined,
+              }
+            })
+          : [{ name: 'POS sale', price: p.total, techName: 'Front desk' }]
         return {
           paymentId: p.id,
           invoice: `INV-${p.id.replace(/\D/g, '').slice(-6)}`,
           date: new Date(p.dateKey + 'T12:00:00').toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' }),
           services: items.length > 0 ? items.map((a) => svcById[a.serviceId]?.name ?? a.serviceId) : ['POS sale'],
           serviceIds: items.length > 0 ? items.map((a) => a.serviceId) : [],
+          lines,
           price: p.total,
           techName: items[0] ? techOf(items[0].techId).name : 'Front desk',
         }

@@ -61,6 +61,16 @@ function rng(seed: number) {
   }
 }
 
+/** one service on a visit, with its own tech, price, and category color --
+ *  lets the Last 5 visits popup render a per-service breakdown like checkout */
+export interface VisitLine {
+  serviceId?: string
+  name: string
+  price: number
+  techName: string
+  color?: string
+}
+
 interface PastVisit {
   invoice: string; date: string; services: string[]; status: 'CLOSED' | 'NO SHOW' | 'OPEN'
   price: number; techName: string
@@ -68,6 +78,8 @@ interface PastVisit {
    *  category color; left off (or shorter than `services`) on older shapes,
    *  callers fall back to a plain label for those entries */
   serviceIds?: string[]
+  /** per-service breakdown (service, its own tech, its own price, its color) */
+  lines?: VisitLine[]
   /** real checkout, opens the invoice */
   paymentId?: string
 }
@@ -80,6 +92,8 @@ export interface RealVisit {
   services: string[]
   /** ids paired 1:1 with `services` */
   serviceIds?: string[]
+  /** per-service breakdown (service, its own tech, its own price, its color) */
+  lines?: VisitLine[]
   price: number
   techName: string
 }
@@ -87,19 +101,28 @@ export interface RealVisit {
 function mockHistory(c: ClientRecord): PastVisit[] {
   const r = rng(hash(c.id))
   const n = Math.min(10, Math.max(2, c.visits))
+  const allTechs = getStaff().techs
   const out: PastVisit[] = []
   for (let i = 0; i < n; i++) {
     const svcCount = r() > 0.6 ? 2 : 1
     const svcs = Array.from({ length: svcCount }, () => SERVICES[Math.floor(r() * SERVICES.length)])
     const roll = r()
+    const lines: VisitLine[] = svcs.map((s) => ({
+      serviceId: s.id,
+      name: s.name,
+      price: s.price,
+      techName: allTechs[Math.floor(r() * allTechs.length)]?.name ?? 'Unknown',
+      color: catById[s.categoryId]?.line,
+    }))
     out.push({
       invoice: `INV${50000 + Math.floor(r() * 4000)}`,
       date: `${1 + Math.floor(r() * 6)}/${1 + Math.floor(r() * 28)}/2026`,
       services: svcs.map((s) => s.name),
       serviceIds: svcs.map((s) => s.id),
+      lines,
       status: roll > 0.92 ? 'NO SHOW' : roll > 0.85 ? 'OPEN' : 'CLOSED',
-      price: svcs.reduce((s, x) => s + x.price, 0),
-      techName: getStaff().techs[Math.floor(r() * getStaff().techs.length)]?.name ?? 'Unknown',
+      price: lines.reduce((s, x) => s + x.price, 0),
+      techName: lines[0]?.techName ?? 'Unknown',
     })
   }
   return out
@@ -131,7 +154,7 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
   const [noteText, setNoteText] = useState('')
   const history = useMemo(() => {
     const real: PastVisit[] = realVisits.map((v) => ({
-      invoice: v.invoice, date: v.date, services: v.services, serviceIds: v.serviceIds,
+      invoice: v.invoice, date: v.date, services: v.services, serviceIds: v.serviceIds, lines: v.lines,
       status: 'CLOSED', price: v.price, techName: v.techName, paymentId: v.paymentId,
     }))
     return [...real, ...mockHistory(client)]
@@ -666,7 +689,7 @@ export function LastVisitsDialog({ client, realVisits, onClose }: {
 }) {
   const last5 = useMemo(() => {
     const real: PastVisit[] = realVisits.map((v) => ({
-      invoice: v.invoice, date: v.date, services: v.services, serviceIds: v.serviceIds,
+      invoice: v.invoice, date: v.date, services: v.services, serviceIds: v.serviceIds, lines: v.lines,
       status: 'CLOSED', price: v.price, techName: v.techName, paymentId: v.paymentId,
     }))
     const all = [...real, ...mockHistory(client)]
@@ -694,35 +717,38 @@ export function LastVisitsDialog({ client, realVisits, onClose }: {
           ) : (
             <div className="space-y-3">
               {last5.map((h, i) => {
-                const hasIds = h.serviceIds && h.serviceIds.length > 0
+                // fall back to one aggregate row for older/partial shapes that
+                // never got a per-service breakdown (e.g. a bare POS total)
+                const lines: VisitLine[] = h.lines && h.lines.length > 0
+                  ? h.lines
+                  : [{
+                      name: h.services.join(' + ') || 'Service',
+                      price: h.price,
+                      techName: h.techName,
+                      color: h.serviceIds?.[0] ? catById[svcById[h.serviceIds[0]]?.categoryId ?? '']?.line : undefined,
+                    }]
                 return (
-                  <div key={`${h.invoice}-${i}`} className="rounded-lg border border-border p-3">
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="text-sm font-semibold">{h.date}</span>
+                  <div key={`${h.invoice}-${i}`} className="overflow-hidden rounded-lg border border-border">
+                    <div className="flex items-center justify-between bg-secondary/40 px-3.5 py-2">
+                      <span className="text-[13px] font-semibold">{h.date}</span>
                       <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_STYLE[h.status]}`}>{h.status}</span>
                     </div>
-                    <div className="mb-2 flex flex-wrap gap-1.5">
-                      {hasIds
-                        ? h.serviceIds!.map((id, si) => {
-                          const svc = svcById[id]
-                          const color = svc ? catById[svc.categoryId]?.line : undefined
-                          return (
-                            <span key={`${id}-${si}`} className="flex items-center gap-1.5 rounded-full border border-border bg-secondary/40 px-2 py-1 text-[11px] font-medium">
-                              <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: color ?? '#94a3b8' }} />
-                              {svc?.name ?? id}
-                            </span>
-                          )
-                        })
-                        : h.services.map((name, si) => (
-                          <span key={`${name}-${si}`} className="rounded-full border border-border bg-secondary/40 px-2 py-1 text-[11px] font-medium text-muted-foreground">
-                            {name}
-                          </span>
-                        ))}
-                    </div>
-                    <div className="flex items-center justify-between text-[12px] text-muted-foreground">
-                      <span>Technician: <span className="font-medium text-foreground">{h.techName}</span></span>
-                      <span className="text-sm font-bold text-foreground">${h.price.toFixed(2)}</span>
-                    </div>
+                    {lines.map((l, li) => (
+                      <div key={`${l.serviceId ?? l.name}-${li}`} className="flex items-center gap-2.5 border-b border-border/60 px-3.5 py-2.5 last:border-0">
+                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: l.color ?? '#94a3b8' }} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[13px] font-medium text-foreground">{l.name}</p>
+                          <p className="text-[11px] text-muted-foreground">Technician: {l.techName}</p>
+                        </div>
+                        <span className="tnum shrink-0 text-[13px] font-semibold">${l.price.toFixed(2)}</span>
+                      </div>
+                    ))}
+                    {lines.length > 1 && (
+                      <div className="flex items-center justify-between bg-secondary/20 px-3.5 py-2">
+                        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Total</span>
+                        <span className="tnum text-sm font-bold">${h.price.toFixed(2)}</span>
+                      </div>
+                    )}
                   </div>
                 )
               })}
