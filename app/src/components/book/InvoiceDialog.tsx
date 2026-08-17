@@ -125,12 +125,18 @@ export function InvoiceDialog({ payment, items, onClose }: {
               <span className="font-semibold">{s.method}{s.last4 ? ` ····${s.last4}` : ""} · {money(s.amount)}</span>
             </div>
           ))}
-          {due > 0.004 && (
-            <div className="flex justify-between text-[12px] font-semibold text-rust"><span>Balance due</span><span className="tnum">{money(due)}</span></div>
-          )}
           <div className="flex justify-between text-[11px] text-ink-faint"><span>Loyalty earned</span><span>+{payment.points.toLocaleString()} pts</span></div>
           {payment.notes && <p className="pt-1 text-[11px] italic text-ink-faint">{payment.notes}</p>}
         </div>
+
+        {/* the one thing the salon needs to see at a glance -- called out big
+            and in rust, not buried in the small-print totals above */}
+        {due > 0.004 && (
+          <div className="mx-6 mt-3 flex items-center justify-between rounded-xl border border-rust/40 bg-rust-tint/40 px-4 py-3">
+            <span className="text-[12.5px] font-bold uppercase tracking-wide text-rust">Balance due</span>
+            <span className="tnum text-[22px] font-extrabold text-rust">{money(due)}</span>
+          </div>
+        )}
 
         {(payment.refunds ?? []).length > 0 && (
           <div className="mt-2 space-y-1 border-t border-dashed border-line px-6 pt-2.5 text-[12px]">

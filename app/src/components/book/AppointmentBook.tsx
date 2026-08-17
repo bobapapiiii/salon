@@ -2217,6 +2217,11 @@ export function AppointmentBook() {
   // counts services for the one client being edited (mani + pedi is 2, still
   // just 1 person), so the "group of N" badge must count names, not rows
   const detailPartySize = new Set(detailParty.map((a) => a.clientName)).size
+  // the invoice covering the edit panel's appointment, if any -- drives
+  // whether its reopen action reads as "Reopen checkout" (done, correcting
+  // or refunding) or "Check out" (a balance is still owed, finish the sale)
+  const detailPayment = detailGroup.length > 0 ? payments.find((p) => detailGroup.some((a) => p.apptIds?.includes(a.id))) : undefined
+  const detailBalanceDue = detailPayment ? balanceDue(detailPayment.total, paymentSources(detailPayment), detailPayment.refunds) : 0
 
   const saveDetail = (updated: Appointment[], removedIds: string[], moveToDayKey?: string) => {
     // the edit panel's day rail actually navigates the live calendar as the
@@ -2388,7 +2393,7 @@ export function AppointmentBook() {
   }
 
   // the payment covering the edit panel's current appointment/group, shaped
-  // for both View receipt and Reopen ticket -- shared so they always agree
+  // for both View receipt and Reopen checkout -- shared so they always agree
   // on which payment they're pointing at
   const findDetailPayment = (originKey: string) => {
     const a = detailAppt
@@ -2933,8 +2938,11 @@ export function AppointmentBook() {
     const isNoShow = a.status === 'no_show'
     const isCompleted = a.status === 'completed'
     // completed just means the service is done — it fades out only once the
-    // client has actually paid and checked out, not the moment it's marked done
-    const isPaid = isCompleted && payments.some((p) => p.apptIds?.includes(a.id))
+    // client has actually paid IN FULL and checked out, not the moment it's
+    // marked done, and not while a partial payment still leaves a balance
+    const isPaid = isCompleted && payments.some((p) =>
+      p.apptIds?.includes(a.id) && balanceDue(p.total, paymentSources(p), p.refunds) <= 0.004,
+    )
     const isInService = a.status === 'in_service'
     const elapsed = isInService && isToday(date)
       ? Math.min(1, Math.max(0.05, (DEMO_NOW_MIN - a.startMin) / Math.max(1, a.durationMin)))
@@ -4031,7 +4039,8 @@ export function AppointmentBook() {
           // must stay open until a payment actually exists (mirrors payable(), used
           // everywhere else checkout eligibility is decided)
           canCheckout={detailGroup.some((a) => payable(a))}
-          hasInvoice={detailGroup.some((a) => payments.some((p) => p.apptIds?.includes(a.id)))}
+          hasInvoice={detailPayment != null}
+          invoiceBalanceDue={detailBalanceDue}
         />
       )}
 

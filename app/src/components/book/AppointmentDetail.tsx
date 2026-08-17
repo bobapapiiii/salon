@@ -61,6 +61,10 @@ interface Props {
   /** true once a payment already covers this booking, so the receipt can be
    *  pulled back up (view/print) without hunting for the right-click menu */
   hasInvoice: boolean
+  /** what's still owed on the invoice covering this booking, if any -- while
+   *  this is positive the ticket isn't really "done" yet, so the reopen
+   *  action reads as finishing checkout rather than reopening a closed one */
+  invoiceBalanceDue: number
 }
 
 /** small local date helpers, duplicated from AppointmentBook to avoid a circular import */
@@ -104,7 +108,7 @@ const REQUEST_HEART_COLOR: Record<string, string | undefined> = {
 export function AppointmentDetail({
   appt, group, partySize, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks,
   findMakeRoomPlan, onRequestMakeRoom, onSave, onAction, onRebook, onViewProfile, onShowVisits, onClose,
-  canCheckout, hasInvoice,
+  canCheckout, hasInvoice, invoiceBalanceDue,
 }: Props) {
   const increment = useSettingsStore().booking.increment
   const TIME_OPTIONS = Array.from({ length: (CLOSE_MIN - OPEN_MIN) / increment }, (_, i) => i * increment)
@@ -480,13 +484,15 @@ export function AppointmentDetail({
       )}
 
       {/* footer — pinned outside the scrolling panel above so Check out / View
-          receipt / Reopen ticket and Save are always in view, never pushed
+          receipt / Reopen checkout and Save are always in view, never pushed
           off by notes or a long service list. Check out, View/print receipt,
-          and Reopen ticket are the working payment actions today (the old
+          and Reopen checkout are the working payment actions today (the old
           Send payment link / Take payment placeholders were disabled stubs
-          for a feature that was never built). While rebooking, this swaps
-          to a dedicated Cancel / Confirm pair so it's never confused with
-          Save (which edits *this* booking, not the new copy) */}
+          for a feature that was never built). Reopen checkout reads as
+          "Check out {name}" instead while a balance is still owed, since the
+          ticket isn't really done yet. While rebooking, this swaps to a
+          dedicated Cancel / Confirm pair so it's never confused with Save
+          (which edits *this* booking, not the new copy) */}
       <div className="space-y-1.5 border-t border-line p-3">
         {rebooking ? (
           <div className="flex gap-1.5">
@@ -528,9 +534,15 @@ export function AppointmentDetail({
                   <button
                     onClick={() => onAction('reopen')}
                     className={actionBtn}
-                    title="Correct the service total or tip, or refund this ticket, in full or partial"
+                    title={
+                      invoiceBalanceDue > 0.004
+                        ? 'Finish checking out — a balance is still owed on this ticket'
+                        : 'Correct the service total or tip, or refund this ticket, in full or partial'
+                    }
                   >
-                    <Undo2 className="h-3.5 w-3.5" /> Reopen Ticket
+                    {invoiceBalanceDue > 0.004
+                      ? <><CreditCard className="h-3.5 w-3.5" /> Check out {appt.clientName.split(' ')[0]}</>
+                      : <><Undo2 className="h-3.5 w-3.5" /> Reopen Checkout</>}
                   </button>
                 )}
               </div>

@@ -1,19 +1,20 @@
 // ─── Reopen a paid ticket ─────────────────────────────────────────────────
-// Reached from the edit panel's Reopen Ticket button. This is the exact same
-// checkout panel used for a fresh ticket -- add, remove, or edit services,
-// adjust the tip -- except its payment section starts from what's already
-// been collected (shown locked, since that already happened) instead of an
-// empty ticket. Charging works the same way for any new remainder; a compact
-// refund panel appears only if the correction brings the total below what's
-// already been taken. See PaymentFlow's `existing` prop in CheckoutDialog.tsx
-// for how that's wired up.
+// Reached from the edit panel's Reopen checkout / Check out button. This is
+// the exact same checkout panel used for a fresh ticket -- add, remove, or
+// edit services, adjust the tip -- except its payment section starts from
+// what's already been collected (shown locked, since that already happened)
+// instead of an empty ticket. Charging works the same way for any new
+// remainder; a compact refund panel appears only if the correction brings
+// the total below what's already been taken. See PaymentFlow's `existing`
+// prop in CheckoutDialog.tsx for how that's wired up.
 import { useState } from 'react'
 import type { Appointment } from '@/lib/booking-types'
 import { svcById } from '@/lib/services-store'
 import { catById } from '@/lib/categories-store'
-import { PaymentFlow, type PaymentLine, type PaymentResult, type PaymentSource } from './CheckoutDialog'
+import { PaymentFlow, paymentSources, type PaymentLine, type PaymentResult, type PaymentSource } from './CheckoutDialog'
 
 export { refundedBySource, totalRefunded, netCollected, balanceDue, type RefundRecord } from '@/lib/payments'
+import { balanceDue } from '@/lib/payments'
 import type { RefundRecord } from '@/lib/payments'
 
 /** the slice of a payment record this dialog needs -- includes the per-tech
@@ -58,6 +59,11 @@ export function ReopenCheckoutDialog({ payment, items, dateLabel, onPatchLine, o
   const [originalIds] = useState(() => new Set(items.map((a) => a.id)))
   const addedIds = items.filter((a) => !originalIds.has(a.id)).map((a) => a.id)
 
+  // a balance still owed means this ticket isn't really "done" yet -- reads
+  // as finishing checkout, not reopening one that already closed clean
+  const startingBalanceDue = balanceDue(payment.total, paymentSources(payment), payment.refunds)
+  const title = startingBalanceDue > 0.004 ? `Checkout: ${payment.clientName}` : `Reopen checkout: ${payment.clientName}`
+
   const lines: PaymentLine[] = items.map((a) => {
     const svc = svcById[a.serviceId]
     return {
@@ -76,7 +82,7 @@ export function ReopenCheckoutDialog({ payment, items, dateLabel, onPatchLine, o
 
   return (
     <PaymentFlow
-      title={`Reopen ticket: ${payment.clientName}`}
+      title={title}
       subtitle={`${dateLabel} · ${items.length} ${items.length === 1 ? 'service' : 'services'}`}
       lines={lines}
       onComplete={onComplete}
