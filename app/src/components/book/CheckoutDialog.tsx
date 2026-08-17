@@ -926,6 +926,16 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                 </span>
               </div>
             </div>
+            {/* the one thing that matters most when there's still money left --
+                called out big and in rust so it's never mistaken for already
+                settled, instead of only showing up in the smaller allocation
+                line above the payment sources */}
+            {balanceDue > 0.004 && (
+              <div className="mb-2.5 flex items-center justify-between rounded-xl border border-rust/40 bg-rust-tint/40 px-3 py-2">
+                <span className="text-[11.5px] font-bold uppercase tracking-wide text-rust">Still owed</span>
+                <span className="tnum text-[18px] font-extrabold text-rust">{money(balanceDue)}</span>
+              </div>
+            )}
             {!allocBalanced && tip > 0 && (
               <p className="mb-2 text-center text-[11px] font-semibold text-rose-500">
                 Tip split is {money(tip - allocSum)} short, adjust the provider amounts above
@@ -941,7 +951,9 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                   ? "Refund the difference above to continue"
                   : newRowsSum > 0.004
                     ? `Charge ${money(newRowsSum)}${balanceDue > 0.004 ? ` · ${money(balanceDue)} still due` : ""}`
-                    : "Save changes"
+                    : balanceDue > 0.004
+                      ? `Save changes · ${money(balanceDue)} still due`
+                      : "Save changes"
                 : overAssigned
                   ? "Fix payment amounts to continue"
                   : balanceDue > 0.004
