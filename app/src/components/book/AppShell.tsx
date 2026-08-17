@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  ArrowRightLeft, Bell, CalendarDays, CalendarPlus, CalendarX, Check, CheckCircle2, ClipboardList, Clock, ListPlus,
+  ArrowRightLeft, Banknote, Bell, CalendarDays, CalendarPlus, CalendarX, Check, CheckCircle2, ClipboardList, Clock, ListPlus,
   PhoneOff, Receipt, Search, Settings, Sparkles, UserX, Users, XCircle,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -18,7 +18,7 @@ import { KeyRound } from 'lucide-react'
    Left nav rail (76px, expands to 224px on hover) + 64px top context bar. */
 
 interface RailProps {
-  active: 'calendar' | 'techschedule' | 'jobcard' | 'services' | 'clients'
+  active: 'calendar' | 'techschedule' | 'jobcard' | 'services' | 'clients' | 'register'
   onNavigate: (page: RailProps['active'] | 'settings') => void
 }
 
@@ -29,6 +29,7 @@ const NAV_ITEMS: readonly { id: RailProps['active']; label: string; icon: Lucide
   { id: 'jobcard', label: 'Job Card', icon: ClipboardList, short: 'Cards' },
   { id: 'services', label: 'Services', icon: Sparkles },
   { id: 'clients', label: 'Clients', icon: Users },
+  { id: 'register', label: 'Manage Register', icon: Banknote, short: 'Reg' },
 ]
 
 export function NavRail({ active, onNavigate }: RailProps) {

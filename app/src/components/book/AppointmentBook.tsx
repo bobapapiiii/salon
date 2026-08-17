@@ -22,6 +22,8 @@ import { DatePickerPopover, LegendPopover } from './LegendPopover'
 import { ContextBar, NavRail } from './AppShell'
 import { SettingsPage, type SectionId } from './SettingsPage'
 import { JobCardPage } from './JobCardPage'
+import { RegisterPage, type RegisterSession } from './RegisterPage'
+import { useSessionUser } from '@/lib/session'
 import { buildJobCard, printJobCards } from '@/lib/job-card'
 import { useLocation, useNavigate } from 'react-router'
 import { useSettingsStore, setSettings } from '@/lib/settings-store'
@@ -276,6 +278,7 @@ export function AppointmentBook() {
   const settingsOpen = settingsMatch != null
   const settingsSection = (settingsMatch?.[1] ?? 'general') as SectionId
   // everything the user changes persists across refreshes (localStorage)
+  const sessionUser = useSessionUser()
   const [dateKey, setDateKey] = usePersistentState<string>(upref('ui-date'), () => dayKey(new Date()))
   const date = useMemo(() => new Date(dateKey + 'T12:00:00'), [dateKey])
   const [apptDays, setApptDays] = usePersistentState<Record<string, Appointment[]>>(sdata('appts-v1'), {})
@@ -409,7 +412,7 @@ export function AppointmentBook() {
   const turnawayTitle = canLogTurnaway
     ? turnawaySummary ?? "Log a turnaway, a client we couldn't fit in"
     : `Turnaways can only be logged for today${turnawaySummary ? ` · ${turnawaySummary}` : ''}`
-  const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; clientName: string; /** every distinct client on this ticket (host + any party members/guests), so each of them sees this checkout in their own visit history, not just the host */ clientNames?: string[]; itemCount: number; subtotal: number; tip: number; total: number; method: string; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[] }[]>(sdata('payments-v1'), [])
+  const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; /** when it was taken, to the minute — what buckets a sale into a register shift */ at?: number; clientName: string; /** every distinct client on this ticket (host + any party members/guests), so each of them sees this checkout in their own visit history, not just the host */ clientNames?: string[]; itemCount: number; subtotal: number; tip: number; total: number; method: string; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[] }[]>(sdata('payments-v1'), [])
   // online waitlist (self-serve) + walk-in queue (front desk)
   const [waitlist, setWaitlist] = usePersistentState<QueueEntry[]>(sdata('waitlist-v1'), () => [
     { id: 'w1', name: 'Ava R.', serviceId: 'p-gel', phone: '(555) 220-1188', preferredTechId: getStaff().techs.find((t) => t.teamId === 'pedi')?.id, days: [1, 3, 5], fromMin: 360, toMin: 600, notes: 'Prefers after 2 PM', createdMin: DEMO_NOW_MIN - 25 },
@@ -443,6 +446,10 @@ export function AppointmentBook() {
   const [finderOpen, setFinderOpen] = useState(false)
   // job cards open on whatever day the calendar is showing, then browse on their own
   const [jobCardOpen, setJobCardOpen] = useState(false)
+  // cash drawer: one open→close cycle per shift, salon-shared like the ledger
+  const [registerOpen, setRegisterOpen] = useState(false)
+  const [registerSessions, setRegisterSessions] = usePersistentState<RegisterSession[]>(sdata('register-v1'), [])
+  const openRegister = registerSessions.find((s) => s.closedAt == null) ?? null
   const [jobCardDate, setJobCardDate] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
@@ -1773,6 +1780,9 @@ export function AppointmentBook() {
     setBookingOpen(false) // right-side panels are exclusive, never stack
     setPosOpen(false)
     setFinderOpen(false)
+    // a nudge, not a block — the sale still goes through, it just won't land in
+    // any shift's cash count until the drawer is opened
+    if (!openRegister) showFlash('⚠ Register is closed — open it from Manage Register to track this cash')
     // groupOverride lets a caller pass an already-resolved group (e.g. the
     // edit panel, whose day rail may have navigated the live calendar away
     // from this appointment's own day within this same synchronous call)
@@ -1828,7 +1838,7 @@ export function AppointmentBook() {
       }))
       .filter((l) => l.techId !== '')
     setPayments((x) => [...x, {
-      id: `pay${Date.now()}`, dateKey, clientName: checkoutName!, clientNames: [...party], itemCount: ids.size,
+      id: `pay${Date.now()}`, at: Date.now(), dateKey, clientName: checkoutName!, clientNames: [...party], itemCount: ids.size,
       party: party.size > 1 ? party.size : undefined, lines: payLines, apptIds: [...ids], ...p,
     }])
     // every account holder on the ticket gets a visit
@@ -1854,7 +1864,7 @@ export function AppointmentBook() {
   // POS sale, no appointments touched, just the payment record
   const completePos = (r: { method: string; tip: number; subtotal: number; total: number; points: number; discount?: number; redeemed?: { name: string; points: number; value: number }; clientName: string; itemCount: number; lines?: { techId: string; price: number }[]; tipByTech?: { techId: string; amount: number }[] }) => {
     setPayments((x) => [...x, {
-      id: `pay${Date.now()}`, dateKey, clientName: r.clientName, itemCount: r.itemCount,
+      id: `pay${Date.now()}`, at: Date.now(), dateKey, clientName: r.clientName, itemCount: r.itemCount,
       subtotal: r.subtotal, tip: r.tip, total: r.total, method: r.method, points: r.points, pos: true,
       lines: r.lines?.filter((l) => l.techId !== ''),
       tipByTech: r.tipByTech,
@@ -2912,9 +2922,10 @@ export function AppointmentBook() {
 
   const hours = Array.from({ length: DAY_SLOTS / 4 + 3 }, (_, i) => (i - 1) * 60)
 
-  const onNavNavigate = (page: 'calendar' | 'techschedule' | 'jobcard' | 'services' | 'clients' | 'settings') => {
+  const onNavNavigate = (page: 'calendar' | 'techschedule' | 'jobcard' | 'services' | 'clients' | 'register' | 'settings') => {
     if (page === 'techschedule') { setScheduleOpen(true); return }
     if (page === 'jobcard') { setJobCardDate(dateKey); setJobCardOpen(true); return }
+    if (page === 'register') { setRegisterOpen(true); return }
     if (page === 'settings') { navigate('/settings/general'); return }
     if (page !== 'calendar') showFlash(`${page[0].toUpperCase() + page.slice(1)} page, coming soon`)
   }
@@ -2922,7 +2933,7 @@ export function AppointmentBook() {
   return (
     <div className={`h-full overflow-hidden ${darkMode ? 'dark' : ''} bg-background text-foreground`}>
     <div className="flex h-full">
-      <NavRail active={jobCardOpen ? 'jobcard' : 'calendar'} onNavigate={onNavNavigate} />
+      <NavRail active={registerOpen ? 'register' : jobCardOpen ? 'jobcard' : 'calendar'} onNavigate={onNavNavigate} />
       <div className="flex min-w-0 flex-1 flex-col">
       <ContextBar
         title="Schedule"
@@ -2961,6 +2972,7 @@ export function AppointmentBook() {
           setFinderOpen(false)
           closeCheckout()
           setPosOpen(true)
+          if (!openRegister) showFlash('⚠ Register is closed — open it from Manage Register to track this cash')
         }}
         onFindTime={openFinder}
         requestCount={requested.length}
@@ -3889,6 +3901,27 @@ export function AppointmentBook() {
         clients={clients}
         apptDates={new Set([...Object.keys(apptDays), dateKey])}
         onClose={() => setJobCardOpen(false)}
+      />
+
+      {/* manage register, the cash drawer's open/close and its shift history */}
+      <RegisterPage
+        open={registerOpen}
+        sessions={registerSessions}
+        payments={payments}
+        userName={sessionUser.name}
+        todayKey={dayKey(new Date())}
+        onOpenRegister={(s) => {
+          setRegisterSessions((x) => [...x, s])
+          showFlash(`✓ Register opened with $${s.openingFloat.toFixed(2)}`)
+        }}
+        onCloseRegister={(id, patch) => {
+          setRegisterSessions((x) => x.map((s) => (s.id === id ? { ...s, ...patch } : s)))
+          const v = patch.variance ?? 0
+          showFlash(v === 0
+            ? '✓ Register closed, drawer balanced'
+            : `✓ Register closed, ${v > 0 ? 'over' : 'short'} by $${Math.abs(v).toFixed(2)}`)
+        }}
+        onClose={() => setRegisterOpen(false)}
       />
 
       {/* team schedule, per-day tech status & hours */}
