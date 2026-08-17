@@ -13,7 +13,7 @@ import { useSettingsStore } from "@/lib/settings-store";
 import { svcById } from "@/lib/services-store";
 import { catById } from "@/lib/categories-store";
 
-const METHOD_ICONS = { Cash: Banknote, Card: CreditCard, Venmo: Smartphone, Zelle: Smartphone } as const;
+export const METHOD_ICONS = { Cash: Banknote, Card: CreditCard, Venmo: Smartphone, Zelle: Smartphone } as const;
 
 
 export interface PaymentLine {
@@ -35,8 +35,39 @@ export interface PaymentLine {
   customFields?: Record<string, string>;
 }
 
-export interface PaymentResult {
+/** one tender against a ticket -- cash, or a card with its last 4 digits, for
+ *  a specific amount. A ticket can be split across several of these, and each
+ *  one can later be refunded (in full or in part) on its own */
+export interface PaymentSource {
+  id: string;
   method: string;
+  /** card only */
+  last4?: string;
+  amount: number;
+}
+
+/** the slice of a payment record this file's helpers need */
+export interface PaymentWithSources {
+  total: number;
+  sources?: PaymentSource[];
+  method: string;
+}
+
+/** every payment has at least one source going forward; older records saved
+ *  before split tender existed only have a single `method`/`total`, so they
+ *  fall back to reading as one source covering the whole ticket */
+export function paymentSources(p: PaymentWithSources): PaymentSource[] {
+  return p.sources && p.sources.length > 0 ? p.sources : [{ id: `${p.method}-legacy`, method: p.method, amount: p.total }];
+}
+
+export interface PaymentResult {
+  /** single method name, or "Split" once a ticket carries more than one source */
+  method: string;
+  /** the actual tender(s) taken against this ticket */
+  sources: PaymentSource[];
+  /** total minus what the sources add up to -- >0 means this was left as a
+   *  partial payment, the rest still owed */
+  balanceDue: number;
   tip: number;
   subtotal: number;
   total: number;
@@ -58,10 +89,25 @@ export interface CheckoutExtra {
   person?: string;
 }
 
+/** one editable row in the payment list, before it's turned into a real
+ *  PaymentSource at charge time -- amount stays free text while typing */
+export interface CheckoutSourceDraft {
+  id: string;
+  method: string;
+  last4: string;
+  amountText: string;
+}
+
 export interface CheckoutDraftState {
   tipPct: number | null;
   tipCustom: string;
   method: string;
+  /** card only, single-source fast path */
+  last4?: string;
+  /** the payment list, once it's been touched -- while unset, the panel shows
+   *  one implicit row for the full total on the selected method, kept in
+   *  sync automatically as the ticket total changes */
+  sources?: CheckoutSourceDraft[];
   note: string;
   redeemId: string | null;
   /** general checkout field values, keyed by field id */
@@ -175,6 +221,33 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
   const total = Math.max(0, subtotal + tip - discount);
   // points earn on the discounted service value, never on tips
   const points = Math.floor(Math.max(0, subtotal - discount) * settings.loyalty.pointsPerDollar);
+
+  // the payment list -- while untouched (no draft.sources yet) there's one
+  // implicit row for the full total, kept in sync as the ticket total moves;
+  // touching anything (amount, method, adding a row) locks in an explicit list
+  const sourceRows: CheckoutSourceDraft[] =
+    D.sources && D.sources.length > 0 ? D.sources : [{ id: "default", method: D.method, last4: D.last4 ?? "", amountText: total.toFixed(2) }];
+  const updateSource = (id: string, patch: Partial<CheckoutSourceDraft>) => {
+    const rows = sourceRows.map((r) => (r.id === id ? { ...r, ...patch } : r));
+    setD({ sources: rows, method: rows[0].method, last4: rows[0].last4 });
+  };
+  const addSource = () => {
+    const assigned = sourceRows.reduce((s, r) => s + (Number(r.amountText) || 0), 0);
+    const remaining = Math.max(0, Math.round((total - assigned) * 100) / 100);
+    const otherMethod = methods.find((m) => m !== sourceRows[0]?.method) ?? methods[0];
+    setD({ sources: [...sourceRows, { id: `src${sourceRows.length}-${Date.now()}`, method: otherMethod, last4: "", amountText: remaining > 0 ? remaining.toFixed(2) : "" }] });
+  };
+  const removeSource = (id: string) => {
+    const rows = sourceRows.filter((r) => r.id !== id);
+    setD({ sources: rows.length > 0 ? rows : undefined });
+  };
+  const collected = Math.round(sourceRows.reduce((s, r) => s + (Number(r.amountText) || 0), 0) * 100) / 100;
+  const overAssigned = collected > total + 0.005;
+  const balanceDue = Math.max(0, Math.round((total - collected) * 100) / 100);
+  const finalSources: PaymentSource[] = sourceRows
+    .filter((r) => (Number(r.amountText) || 0) > 0)
+    .map((r) => ({ id: r.id, method: r.method, last4: r.method === "Card" && r.last4.trim() ? r.last4.trim() : undefined, amount: Math.round((Number(r.amountText) || 0) * 100) / 100 }));
+  const methodLabel = finalSources.length === 0 ? D.method : finalSources.length === 1 ? finalSources[0].method : "Split";
 
   // group the ticket per person for party checkouts (host first)
   const persons = [...new Set(allLines.map((l) => l.person).filter((x): x is string => x != null))];
@@ -541,24 +614,70 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
               </div>
             )}
 
-            {/* payment method */}
-            <p className="mb-1.5 mt-4 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Payment method</p>
-            <div className="grid grid-cols-4 gap-1.5">
-              {methods.map((id) => {
-                const Icon = METHOD_ICONS[id as keyof typeof METHOD_ICONS];
+            {/* payment sources -- cash, or a card with its last 4 digits, each
+                for its own amount; split across several to take mixed tender,
+                or bring the total assigned below the ticket total to leave a
+                balance due */}
+            <p className="mb-1.5 mt-4 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Payment</p>
+            <div className="space-y-1.5">
+              {sourceRows.map((r) => {
+                const Icon = METHOD_ICONS[r.method as keyof typeof METHOD_ICONS];
                 return (
-                  <button
-                    key={id}
-                    onClick={() => setD({ method: id })}
-                    className={`flex h-12 flex-col items-center justify-center gap-0.5 rounded-[10px] border text-[11px] font-bold transition-colors ${
-                      D.method === id ? "border-clay bg-clay-tint text-clay" : "border-line bg-surface text-ink-soft hover:border-line-strong"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {id}
-                  </button>
+                  <div key={r.id} className="flex items-center gap-1.5 rounded-[10px] border border-line bg-surface p-1.5">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] bg-clay-tint text-clay">
+                      {Icon && <Icon className="h-4 w-4" />}
+                    </span>
+                    <select
+                      value={r.method}
+                      onChange={(e) => updateSource(r.id, { method: e.target.value, last4: e.target.value === "Card" ? r.last4 : "" })}
+                      title="Payment method"
+                      className="h-8 w-[88px] shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-[11.5px] font-semibold outline-none focus:border-clay"
+                    >
+                      {methods.map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    {r.method === "Card" && (
+                      <input
+                        value={r.last4}
+                        onChange={(e) => updateSource(r.id, { last4: e.target.value.replace(/\D/g, "").slice(0, 4) })}
+                        placeholder="Last 4"
+                        title="Last 4 digits of the card"
+                        maxLength={4}
+                        className="tnum h-8 w-16 shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-center text-[11.5px] outline-none focus:border-clay"
+                      />
+                    )}
+                    <div className="relative min-w-0 flex-1">
+                      <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[11px] font-bold text-ink-faint">$</span>
+                      <input
+                        value={r.amountText}
+                        onChange={(e) => updateSource(r.id, { amountText: e.target.value.replace(/[^\d.]/g, "") })}
+                        placeholder="0.00"
+                        className="tnum h-8 w-full rounded-[7px] border border-input bg-background py-1 pl-5 pr-1.5 text-[12.5px] font-bold outline-none focus:border-clay"
+                      />
+                    </div>
+                    {sourceRows.length > 1 && (
+                      <button
+                        onClick={() => removeSource(r.id)}
+                        className="shrink-0 text-ink-faint transition-colors hover:text-rust"
+                        title="Remove this payment source"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
                 );
               })}
+              <div className="flex items-center justify-between gap-2">
+                <button onClick={addSource} className="flex items-center gap-1 text-[11.5px] font-semibold text-clay hover:underline">
+                  <Plus className="h-3 w-3" /> Add payment source
+                </button>
+                <span className={`text-right text-[11px] font-bold ${overAssigned ? "text-rose-500" : balanceDue > 0.004 ? "text-amberw" : "text-olive"}`}>
+                  {overAssigned
+                    ? `${money(collected)} assigned, ${money(collected - total)} over the total`
+                    : balanceDue > 0.004
+                      ? `${money(collected)} of ${money(total)}, ${money(balanceDue)} left as a balance`
+                      : `${money(collected)} assigned`}
+                </span>
+              </div>
             </div>
 
             {/* invoice note */}
@@ -614,10 +733,14 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
             )}
             <button
               onClick={() => setStep("receipt")}
-              disabled={!allocBalanced}
+              disabled={!allocBalanced || overAssigned || collected <= 0}
               className="w-full rounded-xl bg-clay py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-clay-deep disabled:opacity-40"
             >
-              Charge {money(total)} · {D.method}
+              {overAssigned
+                ? "Fix payment amounts to continue"
+                : balanceDue > 0.004
+                  ? `Charge ${money(collected)} now · ${money(balanceDue)} due`
+                  : `Charge ${money(collected)} · ${methodLabel}`}
             </button>
           </div>
         </>
@@ -627,8 +750,8 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
           <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-olive-tint">
             <Check className="h-7 w-7 text-olive" />
           </span>
-          <h3 className="mt-3 text-[17px] font-bold">Payment complete</h3>
-          <p className="mt-1 text-[12.5px] text-ink-soft">{title} · {D.method}</p>
+          <h3 className="mt-3 text-[17px] font-bold">{balanceDue > 0.004 ? "Partial payment recorded" : "Payment complete"}</h3>
+          <p className="mt-1 text-[12.5px] text-ink-soft">{title} · {methodLabel}</p>
           <div className="mx-auto mt-4 w-64 space-y-1 rounded-xl border border-dashed border-line p-3.5 text-left text-[12.5px]">
             <div className="flex justify-between"><span className="text-ink-faint">Services</span><span className="tnum">{money(subtotal)}</span></div>
             <div className="flex justify-between"><span className="text-ink-faint">Tip</span><span className="tnum">{money(tip)}</span></div>
@@ -641,6 +764,14 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
               <div className="flex justify-between text-violet-500"><span>Redeemed: {redemption.name}</span><span className="tnum">−{money(discount)}</span></div>
             )}
             <div className="flex justify-between border-t border-line pt-1 font-bold"><span>Total</span><span className="tnum">{money(total)}</span></div>
+            {finalSources.map((s) => (
+              <div key={s.id} className="flex justify-between pl-3 text-[11px] text-ink-faint">
+                <span>{s.method}{s.last4 ? ` ····${s.last4}` : ""}</span><span className="tnum">{money(s.amount)}</span>
+              </div>
+            ))}
+            {balanceDue > 0.004 && (
+              <div className="flex justify-between font-semibold text-rust"><span>Balance due</span><span className="tnum">{money(balanceDue)}</span></div>
+            )}
             <div className="flex justify-between text-[11px] text-ink-faint"><span>Loyalty earned</span><span>+{points.toLocaleString()} pts</span></div>
             {D.note.trim() && <div className="flex justify-between gap-3 text-[11px] text-ink-faint"><span className="shrink-0">Note</span><span className="text-right">{D.note.trim()}</span></div>}
             {settings.checkout.generalFields.filter((f) => D.custom?.[f.id]?.trim()).map((f) => (
@@ -650,7 +781,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
             ))}
           </div>
           <button
-            onClick={() => onComplete({ method: D.method, tip, subtotal, total, points, discount, redeemed: redemption ? { name: redemption.name, points: redemption.pointsCost, value: discount } : undefined, notes: D.note.trim() || undefined, customFields: Object.fromEntries(Object.entries(D.custom ?? {}).filter(([, v]) => v.trim())), tipByTech: tip > 0 ? tipByTechResult : undefined })}
+            onClick={() => onComplete({ method: methodLabel, sources: finalSources, balanceDue, tip, subtotal, total, points, discount, redeemed: redemption ? { name: redemption.name, points: redemption.pointsCost, value: discount } : undefined, notes: D.note.trim() || undefined, customFields: Object.fromEntries(Object.entries(D.custom ?? {}).filter(([, v]) => v.trim())), tipByTech: tip > 0 ? tipByTechResult : undefined })}
             className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-clay py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-clay-deep"
           >
             <Receipt className="h-4 w-4" /> Done, close ticket

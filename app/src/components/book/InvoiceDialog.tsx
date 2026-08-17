@@ -7,7 +7,8 @@ import { fmtTime } from "@/lib/booking-types";
 import { useSettingsStore } from "@/lib/settings-store";
 import { useStaffStore } from "@/lib/staff-store";
 import { svcById } from "@/lib/services-store";
-import { totalRefunded, type RefundRecord } from "./RefundDialog";
+import { balanceDue, totalRefunded, type RefundRecord } from "./RefundDialog";
+import { paymentSources, type PaymentSource } from "./CheckoutDialog";
 
 export interface InvoicePayment {
   id: string;
@@ -17,6 +18,7 @@ export interface InvoicePayment {
   tip: number;
   total: number;
   method: string;
+  sources?: PaymentSource[];
   points: number;
   discount?: number;
   redeemed?: { name: string; points: number; value: number };
@@ -38,9 +40,15 @@ export function InvoiceDialog({ payment, items, onClose }: {
   const dateLabel = new Date(payment.dateKey + "T12:00:00").toLocaleDateString("en-US", {
     weekday: "short", month: "short", day: "numeric", year: "numeric",
   });
+  const sources = paymentSources(payment);
   const refunded = totalRefunded(payment.refunds);
+  const due = balanceDue(payment.total, sources, payment.refunds);
   const refundStamp = (ms: number) =>
     new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const sourceLabel = (sourceId: string) => {
+    const s = sources.find((x) => x.id === sourceId);
+    return s ? `${s.method}${s.last4 ? ` ····${s.last4}` : ""}` : "payment";
+  };
 
   return (
     <div className="fixed inset-0 z-[97] flex items-center justify-center bg-slate-900/45 p-4">
@@ -111,7 +119,15 @@ export function InvoiceDialog({ payment, items, onClose }: {
           <div className="flex justify-between border-t border-line pt-1.5 text-[15px] font-bold">
             <span>Total</span><span className="tnum">{money(payment.total)}</span>
           </div>
-          <div className="flex justify-between text-[12px]"><span className="text-ink-faint">Paid with</span><span className="font-semibold">{payment.method}</span></div>
+          {sources.map((s) => (
+            <div key={s.id} className="flex justify-between text-[12px]">
+              <span className="text-ink-faint">Paid with</span>
+              <span className="font-semibold">{s.method}{s.last4 ? ` ····${s.last4}` : ""} · {money(s.amount)}</span>
+            </div>
+          ))}
+          {due > 0.004 && (
+            <div className="flex justify-between text-[12px] font-semibold text-rust"><span>Balance due</span><span className="tnum">{money(due)}</span></div>
+          )}
           <div className="flex justify-between text-[11px] text-ink-faint"><span>Loyalty earned</span><span>+{payment.points.toLocaleString()} pts</span></div>
           {payment.notes && <p className="pt-1 text-[11px] italic text-ink-faint">{payment.notes}</p>}
         </div>
@@ -122,7 +138,7 @@ export function InvoiceDialog({ payment, items, onClose }: {
             {payment.refunds!.map((r) => (
               <div key={r.id} className="flex justify-between gap-3">
                 <span className="min-w-0 truncate text-ink-soft">
-                  {refundStamp(r.at)}, {r.type === "service" ? "services" : "tip"}
+                  {refundStamp(r.at)}, {sourceLabel(r.sourceId)}
                   {r.reason && <span className="text-ink-faint"> · {r.reason}</span>}
                 </span>
                 <span className="tnum shrink-0 font-semibold text-rust">−{money(r.amount)}</span>

@@ -28,9 +28,9 @@ import { buildJobCard, printJobCards } from '@/lib/job-card'
 import { useLocation, useNavigate } from 'react-router'
 import { useSettingsStore, setSettings } from '@/lib/settings-store'
 import { catById } from '@/lib/categories-store'
-import { CheckoutDialog, type PaymentResult } from './CheckoutDialog'
+import { CheckoutDialog, paymentSources, type CheckoutSourceDraft, type PaymentResult, type PaymentSource } from './CheckoutDialog'
 import { InvoiceDialog } from './InvoiceDialog'
-import { ReopenTicketDialog, totalRefunded, type RefundRecord } from './RefundDialog'
+import { ReopenTicketDialog, balanceDue, totalRefunded, type RefundRecord, type ReopenCommit } from './RefundDialog'
 import { PosPanel } from './PosPanel'
 import { STATUS_META, TechSchedulePanel, type DaySchedule } from './TechSchedulePanel'
 import { BlockEditor, type BlockDraft } from './BlockEditor'
@@ -322,6 +322,8 @@ export function AppointmentBook() {
     tipPct: number | null
     tipCustom: string
     method: string
+    last4?: string
+    sources?: CheckoutSourceDraft[]
     note: string
     redeemId: string | null
     tipByTech?: Record<string, string>
@@ -417,7 +419,7 @@ export function AppointmentBook() {
   const turnawayTitle = canLogTurnaway
     ? turnawaySummary ?? "Log a turnaway, a client we couldn't fit in"
     : `Turnaways can only be logged for today${turnawaySummary ? ` · ${turnawaySummary}` : ''}`
-  const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; /** when it was taken, to the minute — what buckets a sale into a register shift */ at?: number; clientName: string; /** every distinct client on this ticket (host + any party members/guests), so each of them sees this checkout in their own visit history, not just the host */ clientNames?: string[]; itemCount: number; subtotal: number; tip: number; total: number; method: string; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[]; /** money given back on this ticket, from services or the tip, in full or in parts */ refunds?: RefundRecord[] }[]>(sdata('payments-v1'), [])
+  const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; /** when it was taken, to the minute — what buckets a sale into a register shift */ at?: number; clientName: string; /** every distinct client on this ticket (host + any party members/guests), so each of them sees this checkout in their own visit history, not just the host */ clientNames?: string[]; itemCount: number; subtotal: number; tip: number; total: number; method: string; /** the actual tender(s) taken against this ticket; older records fall back to method/total via paymentSources() */ sources?: PaymentSource[]; /** total minus what the sources add up to, >0 while a partial payment is still owed */ balanceDue?: number; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[]; /** money given back on this ticket, from a specific payment source, in full or in part */ refunds?: RefundRecord[] }[]>(sdata('payments-v1'), [])
   // online waitlist (self-serve) + walk-in queue (front desk)
   const [waitlist, setWaitlist] = usePersistentState<QueueEntry[]>(sdata('waitlist-v1'), () => [
     { id: 'w1', name: 'Ava R.', serviceId: 'p-gel', phone: '(555) 220-1188', preferredTechId: getStaff().techs.find((t) => t.teamId === 'pedi')?.id, days: [1, 3, 5], fromMin: 360, toMin: 600, notes: 'Prefers after 2 PM', createdMin: DEMO_NOW_MIN - 25 },
@@ -1869,13 +1871,14 @@ export function AppointmentBook() {
     if (host) {
       setPointsByClient((m) => ({ ...m, [host.id]: Math.max(0, (m[host.id] ?? 0) - (p.redeemed?.points ?? 0) + p.points) }))
     }
+    const dueNote = p.balanceDue > 0.004 ? `, $${p.balanceDue.toFixed(2)} left as a balance` : ''
     showFlash(party.size > 1
-      ? `✓ Party of ${party.size} checked out together, $${p.total.toFixed(2)} (${p.method})`
-      : `✓ ${checkoutName} checked out, $${p.total.toFixed(2)} (${p.method})`)
+      ? `✓ Party of ${party.size} checked out together, $${p.total.toFixed(2)} (${p.method})${dueNote}`
+      : `✓ ${checkoutName} checked out, $${p.total.toFixed(2)} (${p.method})${dueNote}`)
     addNotification({
       kind: 'checked_out',
       text: party.size > 1 ? `Party of ${party.size} checked out` : 'Client checked out',
-      detail: `${checkoutName} · $${p.total.toFixed(2)} (${p.method})`,
+      detail: `${checkoutName} · $${p.total.toFixed(2)} (${p.method})${dueNote}`,
       dateKey,
     })
     setCheckoutDraft(null) // ticket closed, draft can go
@@ -1883,10 +1886,10 @@ export function AppointmentBook() {
   }
 
   // POS sale, no appointments touched, just the payment record
-  const completePos = (r: { method: string; tip: number; subtotal: number; total: number; points: number; discount?: number; redeemed?: { name: string; points: number; value: number }; clientName: string; itemCount: number; lines?: { techId: string; price: number }[]; tipByTech?: { techId: string; amount: number }[] }) => {
+  const completePos = (r: { method: string; sources: PaymentSource[]; balanceDue: number; tip: number; subtotal: number; total: number; points: number; discount?: number; redeemed?: { name: string; points: number; value: number }; clientName: string; itemCount: number; lines?: { techId: string; price: number }[]; tipByTech?: { techId: string; amount: number }[] }) => {
     setPayments((x) => [...x, {
       id: `pay${Date.now()}`, at: Date.now(), dateKey, clientName: r.clientName, itemCount: r.itemCount,
-      subtotal: r.subtotal, tip: r.tip, total: r.total, method: r.method, points: r.points, pos: true,
+      subtotal: r.subtotal, tip: r.tip, total: r.total, method: r.method, sources: r.sources, balanceDue: r.balanceDue, points: r.points, pos: true,
       lines: r.lines?.filter((l) => l.techId !== ''),
       tipByTech: r.tipByTech,
     }])
@@ -1900,34 +1903,60 @@ export function AppointmentBook() {
   }
 
   // reopening a ticket no longer voids the payment right away -- it opens a
-  // dialog on top of the still-recorded sale where the service total and tip
-  // can be corrected; any difference between what was charged and the
-  // corrected amount becomes a refund, sourced from services or the tip. The
-  // original sale stays on the books untouched. Only a refund that zeroes out
-  // the whole ticket undoes the loyalty points and visit credit it earned; a
-  // partial correction (an overcharged service, a mistyped tip) leaves those alone
+  // checkout-style panel on top of the still-recorded sale where the service
+  // prices and tip can be corrected, and the difference settled right there:
+  // charge a remainder (a new payment source) if the total went up, or
+  // refund a specific source, in full or in part, if it went down. The
+  // original sale stays on the books until one of those is submitted. Only a
+  // refund that gives back everything a source ever collected undoes the
+  // loyalty points and visit credit the ticket earned; a partial one leaves those alone
   const [refundPrompt, setRefundPrompt] = useState<{ payment: (typeof payments)[number]; items: Appointment[] } | null>(null)
 
-  const doRefund = (lines: { amount: number; type: 'service' | 'tip'; reason?: string }[]) => {
+  const doReopenCommit = (c: ReopenCommit) => {
     if (!refundPrompt) return
     const payment = refundPrompt.payment
-    const records: RefundRecord[] = lines.map((l, i) => ({
-      id: `rf${Date.now()}-${i}`, at: Date.now(), amount: l.amount, type: l.type, reason: l.reason, by: sessionUser.name,
+    const priceById = new Map(c.items.map((i) => [i.id, i.price]))
+    const applyPrice = (list: Appointment[]) => list.map((a) => (priceById.has(a.id) ? { ...a, priceOverride: priceById.get(a.id) } : a))
+    if (payment.dateKey === dateKey) commit(applyPrice(appts))
+    else setApptDays((m) => ({ ...m, [payment.dateKey]: applyPrice(m[payment.dateKey] ?? []) }))
+
+    const newSource: PaymentSource | null = c.kind === 'charge'
+      ? { id: `src${Date.now()}`, method: c.source.method, last4: c.source.last4, amount: c.source.amount }
+      : null
+    const refundRecord: RefundRecord | null = c.kind === 'refund'
+      ? { id: `rf${Date.now()}`, at: Date.now(), amount: c.amount, sourceId: c.sourceId, reason: c.reason, by: sessionUser.name }
+      : null
+
+    setPayments((x) => x.map((p) => {
+      if (p.id !== payment.id) return p
+      const next = { ...p, subtotal: c.subtotal, tip: c.tip, total: c.total }
+      if (newSource) next.sources = [...paymentSources(p), newSource]
+      if (refundRecord) next.refunds = [...(p.refunds ?? []), refundRecord]
+      return next
     }))
-    setPayments((x) => x.map((p) => (p.id === payment.id ? { ...p, refunds: [...(p.refunds ?? []), ...records] } : p)))
-    const amount = lines.reduce((s, l) => s + l.amount, 0)
-    const already = totalRefunded(payment.refunds)
-    const fullyRefunded = Math.round((already + amount) * 100) / 100 >= Math.round(payment.total * 100) / 100 - 0.01
-    if (fullyRefunded) {
-      const partyNames = payment.clientNames ?? [payment.clientName]
-      setClients((cs) => cs.map((c) => (partyNames.includes(c.name) ? { ...c, visits: Math.max(0, c.visits - 1) } : c)))
-      const host = clients.find((c) => c.name === payment.clientName)
-      if (host) {
-        setPointsByClient((m) => ({ ...m, [host.id]: Math.max(0, (m[host.id] ?? 0) + (payment.redeemed?.points ?? 0) - payment.points) }))
+
+    if (refundRecord) {
+      // "fully refunded" means every dollar ever collected on this ticket
+      // has now been given back, regardless of any price correction
+      const grossCollected = paymentSources(payment).reduce((s, x) => s + x.amount, 0)
+      const refundedAfter = totalRefunded(payment.refunds) + refundRecord.amount
+      const fullyRefunded = Math.round(refundedAfter * 100) / 100 >= Math.round(grossCollected * 100) / 100 - 0.005
+      if (fullyRefunded) {
+        const partyNames = payment.clientNames ?? [payment.clientName]
+        setClients((cs) => cs.map((cl) => (partyNames.includes(cl.name) ? { ...cl, visits: Math.max(0, cl.visits - 1) } : cl)))
+        const host = clients.find((cl) => cl.name === payment.clientName)
+        if (host) {
+          setPointsByClient((m) => ({ ...m, [host.id]: Math.max(0, (m[host.id] ?? 0) + (payment.redeemed?.points ?? 0) - payment.points) }))
+        }
       }
     }
+
     setRefundPrompt(null)
-    showFlash(`✓ Refunded $${amount.toFixed(2)}${fullyRefunded ? ', ticket fully refunded' : ''}`)
+    showFlash(
+      c.kind === 'charge' ? `✓ Charged $${c.source.amount.toFixed(2)}`
+        : c.kind === 'refund' ? `✓ Refunded $${c.amount.toFixed(2)}`
+        : '✓ Ticket updated',
+    )
   }
 
   // opening the editor dismisses booking, POS, and checkout — panels are exclusive
@@ -2956,6 +2985,12 @@ export function AppointmentBook() {
     () => (dateKey === todayKey ? appts : apptDays[todayKey] ?? []).filter((a) => payable(a)).length,
     [appts, apptDays, dateKey, todayKey, payments],
   )
+  // today's tickets that were only partially paid -- money is still owed, so
+  // these block closing a register too, alongside openTicketsToday above
+  const balanceDueToday = useMemo(
+    () => payments.filter((p) => p.dateKey === todayKey && balanceDue(p.total, paymentSources(p), p.refunds) > 0.004).length,
+    [payments, todayKey],
+  )
 
   const hours = Array.from({ length: DAY_SLOTS / 4 + 3 }, (_, i) => (i - 1) * 60)
 
@@ -3951,6 +3986,7 @@ export function AppointmentBook() {
         userName={sessionUser.name}
         todayKey={todayKey}
         openTicketsToday={openTicketsToday}
+        balanceDueToday={balanceDueToday}
         onOpenRegister={(s) => {
           setRegisterSessions((x) => [...x, s])
           showFlash(`✓ ${s.registerName} opened with $${s.openingFloat.toFixed(2)}`)
@@ -4007,13 +4043,13 @@ export function AppointmentBook() {
       )}
 
       {/* reopen ticket -- the payment stays on the books; this lets the
-          service total or tip be corrected, and any difference becomes a
-          refund, sourced from services or the tip */}
+          service prices or tip be corrected, then settled right there by
+          charging a remainder or refunding a payment source */}
       {refundPrompt && (
         <ReopenTicketDialog
           payment={refundPrompt.payment}
           items={refundPrompt.items}
-          onRefund={doRefund}
+          onCommit={doReopenCommit}
           onClose={() => setRefundPrompt(null)}
         />
       )}
@@ -4036,7 +4072,7 @@ export function AppointmentBook() {
           onRemoveLine={removeCheckoutLine}
           onAddExtra={addCheckoutExtra}
           onRemoveExtra={removeCheckoutExtra}
-          draft={checkoutDraft ? { tipPct: checkoutDraft.tipPct, tipCustom: checkoutDraft.tipCustom, method: checkoutDraft.method, note: checkoutDraft.note, redeemId: checkoutDraft.redeemId, tipByTech: checkoutDraft.tipByTech } : undefined}
+          draft={checkoutDraft ? { tipPct: checkoutDraft.tipPct, tipCustom: checkoutDraft.tipCustom, method: checkoutDraft.method, last4: checkoutDraft.last4, sources: checkoutDraft.sources, note: checkoutDraft.note, redeemId: checkoutDraft.redeemId, tipByTech: checkoutDraft.tipByTech } : undefined}
           onDraft={(patch) => setCheckoutDraft((d) => d && { ...d, ...patch })}
         />
       )}

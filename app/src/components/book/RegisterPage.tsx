@@ -12,6 +12,7 @@ import {
   AlertTriangle, Banknote, Check, ChevronDown, Lock, LockOpen, Scale, X,
 } from 'lucide-react'
 import type { RegisterConfig } from '@/lib/settings-store'
+import { paymentSources, type PaymentSource } from './CheckoutDialog'
 
 /** one open→close cycle of the drawer */
 export interface RegisterSession {
@@ -50,6 +51,10 @@ export interface RegisterPayment {
   clientName: string
   method: string
   total: number
+  /** the actual tender(s) taken; older records fall back to method/total via paymentSources() */
+  sources?: PaymentSource[]
+  /** money given back on this ticket, from a specific source -- reduces what actually sits in the drawer/account */
+  refunds?: { amount: number; sourceId: string }[]
   /** when it was taken; older records fall back to the timestamp in their id */
   at?: number
 }
@@ -67,14 +72,29 @@ export function sessionPayments(s: RegisterSession, payments: RegisterPayment[])
 }
 
 export function cashTakenIn(list: RegisterPayment[]): number {
-  return list.filter((p) => p.method === 'Cash').reduce((t, p) => t + p.total, 0)
+  let total = 0
+  for (const p of list) {
+    for (const s of paymentSources(p)) {
+      if (s.method !== 'Cash') continue
+      const refunded = (p.refunds ?? []).filter((r) => r.sourceId === s.id).reduce((a, r) => a + r.amount, 0)
+      total += s.amount - refunded
+    }
+  }
+  return Math.round(total * 100) / 100
 }
 
+/** net amount actually taken per tender, across every source on every
+ *  payment, with anything refunded back off a source subtracted out */
 export function tenderBreakdown(list: RegisterPayment[]): { method: string; amount: number; count: number }[] {
   const m = new Map<string, { amount: number; count: number }>()
   for (const p of list) {
-    const cur = m.get(p.method) ?? { amount: 0, count: 0 }
-    m.set(p.method, { amount: cur.amount + p.total, count: cur.count + 1 })
+    for (const s of paymentSources(p)) {
+      const refunded = (p.refunds ?? []).filter((r) => r.sourceId === s.id).reduce((a, r) => a + r.amount, 0)
+      const net = Math.round((s.amount - refunded) * 100) / 100
+      if (net === 0) continue
+      const cur = m.get(s.method) ?? { amount: 0, count: 0 }
+      m.set(s.method, { amount: Math.round((cur.amount + net) * 100) / 100, count: cur.count + 1 })
+    }
   }
   return [...m.entries()]
     .map(([method, v]) => ({ method, ...v }))
@@ -219,13 +239,15 @@ interface Props {
   todayKey: string
   /** today's appointments still needing checkout — closing is blocked while this is above 0 */
   openTicketsToday: number
+  /** today's tickets left with a balance due after a partial payment — closing is blocked while this is above 0 too */
+  balanceDueToday: number
   onOpenRegister: (s: RegisterSession) => void
   onCloseRegister: (id: string, patch: Partial<RegisterSession>) => void
   onClose: () => void
 }
 
 export function RegisterPage({
-  open, registers, defaultRegisterId, sessions, payments, userName, todayKey, openTicketsToday,
+  open, registers, defaultRegisterId, sessions, payments, userName, todayKey, openTicketsToday, balanceDueToday,
   onOpenRegister, onCloseRegister, onClose,
 }: Props) {
   // active registers show in the picker; an inactive one still shows if it
@@ -269,7 +291,7 @@ export function RegisterPage({
   const shift = useMemo(() => (active ? sessionPayments(active, payments) : []), [active, payments])
   const cashIn = cashTakenIn(shift)
   const tenders = tenderBreakdown(shift)
-  const collected = shift.reduce((t, p) => t + p.total, 0)
+  const collected = Math.round(tenders.reduce((t, x) => t + x.amount, 0) * 100) / 100
   const expected = active ? Math.round((active.openingFloat + cashIn) * 100) / 100 : 0
 
   const counted = closeByDenom ? countsTotal(closeCounts) : Number(closeManual) || 0
@@ -454,7 +476,7 @@ export function RegisterPage({
                     <Row label="Opening float" value={money(active.openingFloat)} />
                     <Row
                       label="Cash taken"
-                      sub={`${shift.filter((p) => p.method === 'Cash').length} sale${shift.filter((p) => p.method === 'Cash').length === 1 ? '' : 's'}`}
+                      sub={(() => { const n = tenders.find((t) => t.method === 'Cash')?.count ?? 0; return `${n} sale${n === 1 ? '' : 's'}` })()}
                       value={`+ ${money(cashIn)}`}
                     />
                     <Row label="Expected in drawer" value={money(expected)} strong />
@@ -485,14 +507,21 @@ export function RegisterPage({
                 </div>
               </div>
 
-              {/* close, blocked until every appointment today has been checked out */}
+              {/* close, blocked until every appointment today has been checked
+                  out and every partial payment today has been settled */}
               {!closing ? (
-                openTicketsToday > 0 ? (
+                openTicketsToday > 0 || balanceDueToday > 0 ? (
                   <div className="flex items-start gap-2 rounded-xl border border-amberw/40 bg-amberw-tint/50 px-3.5 py-2.5 text-[12px] text-ink">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amberw" />
                     <span>
-                      {openTicketsToday} appointment{openTicketsToday === 1 ? '' : 's'} today still {openTicketsToday === 1 ? 'needs' : 'need'} to
-                      be checked out before any register can close.
+                      {openTicketsToday > 0 && (
+                        <>{openTicketsToday} appointment{openTicketsToday === 1 ? '' : 's'} today still {openTicketsToday === 1 ? 'needs' : 'need'} to be checked out</>
+                      )}
+                      {openTicketsToday > 0 && balanceDueToday > 0 && <> and </>}
+                      {balanceDueToday > 0 && (
+                        <>{balanceDueToday} ticket{balanceDueToday === 1 ? '' : 's'} today still {balanceDueToday === 1 ? 'has' : 'have'} a balance due</>
+                      )}
+                      {' '}before any register can close.
                     </span>
                   </div>
                 ) : (
