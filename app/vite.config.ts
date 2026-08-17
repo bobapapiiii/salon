@@ -8,7 +8,7 @@ export default defineConfig({
   base: './',
   plugins: [inspectAttr(), react()],
   server: {
-    port: 3000,
+    port: 7100,
   },
   resolve: {
     alias: {
