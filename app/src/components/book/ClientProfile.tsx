@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  CreditCard, Crown, Heart, History, Mail, MapPin, Pencil, Phone, Plus, Printer, Star, Trash2, X,
+  CreditCard, Crown, Heart, Mail, MapPin, Pencil, Phone, Plus, Printer, Star, Trash2, X,
 } from 'lucide-react'
 import type { Appointment, ClientRecord, ClientTechPreference } from '@/lib/booking-types'
 import { fmtTime } from '@/lib/booking-types'
@@ -129,7 +129,6 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
     [guestVisits, activeGuest],
   )
   const [noteText, setNoteText] = useState('')
-  const [showVisits, setShowVisits] = useState(false)
   const history = useMemo(() => {
     const real: PastVisit[] = realVisits.map((v) => ({
       invoice: v.invoice, date: v.date, services: v.services, serviceIds: v.serviceIds,
@@ -300,15 +299,7 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
 
           {tab === 'profile' && (
             <div className="max-w-3xl space-y-5">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Guest details</p>
-                <button
-                  onClick={() => setShowVisits(true)}
-                  className="flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:border-sky-400 hover:text-sky-600"
-                >
-                  <History className="h-3.5 w-3.5" /> Last 5 visits
-                </button>
-              </div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Guest details</p>
               <div className="grid grid-cols-3 gap-4">
                 <div><label className={label}>First name *</label><input className={field} value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} /></div>
                 <div><label className={label}>Phone *</label><input className={field} value={draft.phone} onChange={(e) => setDraft((d) => ({ ...d, phone: e.target.value }))} /></div>
@@ -660,9 +651,6 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
           onClose={() => setPendingNoteId(null)}
         />
       )}
-
-      {/* last 5 visits, each service tagged with its category color */}
-      {showVisits && <LastVisitsDialog client={client} realVisits={realVisits} onClose={() => setShowVisits(false)} />}
     </div>
   )
 }

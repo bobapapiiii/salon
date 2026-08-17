@@ -409,7 +409,7 @@ export function AppointmentBook() {
   const turnawayTitle = canLogTurnaway
     ? turnawaySummary ?? "Log a turnaway, a client we couldn't fit in"
     : `Turnaways can only be logged for today${turnawaySummary ? ` · ${turnawaySummary}` : ''}`
-  const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; clientName: string; itemCount: number; subtotal: number; tip: number; total: number; method: string; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[] }[]>(sdata('payments-v1'), [])
+  const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; clientName: string; /** every distinct client on this ticket (host + any party members/guests), so each of them sees this checkout in their own visit history, not just the host */ clientNames?: string[]; itemCount: number; subtotal: number; tip: number; total: number; method: string; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[] }[]>(sdata('payments-v1'), [])
   // online waitlist (self-serve) + walk-in queue (front desk)
   const [waitlist, setWaitlist] = usePersistentState<QueueEntry[]>(sdata('waitlist-v1'), () => [
     { id: 'w1', name: 'Ava R.', serviceId: 'p-gel', phone: '(555) 220-1188', preferredTechId: getStaff().techs.find((t) => t.teamId === 'pedi')?.id, days: [1, 3, 5], fromMin: 360, toMin: 600, notes: 'Prefers after 2 PM', createdMin: DEMO_NOW_MIN - 25 },
@@ -1828,7 +1828,7 @@ export function AppointmentBook() {
       }))
       .filter((l) => l.techId !== '')
     setPayments((x) => [...x, {
-      id: `pay${Date.now()}`, dateKey, clientName: checkoutName!, itemCount: ids.size,
+      id: `pay${Date.now()}`, dateKey, clientName: checkoutName!, clientNames: [...party], itemCount: ids.size,
       party: party.size > 1 ? party.size : undefined, lines: payLines, apptIds: [...ids], ...p,
     }])
     // every account holder on the ticket gets a visit
@@ -2318,9 +2318,12 @@ export function AppointmentBook() {
     clients.find((c) => c.name === name) ?? { id: 'guest', name, phone: '(555) 000-0000', visits: 0 }
 
   // this client's completed checkouts, shaped for ClientProfile/LastVisitsDialog
+  // -- matches the ticket's host name OR any other name on the same ticket, so
+  // a party member or a guest checked out under someone else's ticket still
+  // sees that visit in their own history, not just whoever paid
   const buildRealVisits = (name: string) =>
     payments
-      .filter((p) => p.clientName === name)
+      .filter((p) => p.clientName === name || p.clientNames?.includes(name))
       .map((p) => {
         const dayAppts = p.dateKey === dateKey ? appts : apptDays[p.dateKey] ?? []
         const items = (p.apptIds ?? []).map((id) => dayAppts.find((a) => a.id === id)).filter((a): a is Appointment => a != null)
