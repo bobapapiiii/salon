@@ -2103,8 +2103,17 @@ export function AppointmentBook() {
     showFlash(`✓ Refunded $${amount.toFixed(2)}`)
   }
 
-  // opening the editor dismisses booking, POS, and checkout — panels are exclusive
+  // opening the editor dismisses booking, POS, and checkout — panels are exclusive.
+  // once it's open for one appointment, clicking a DIFFERENT card must NOT
+  // retarget it — the panel keeps its own local draft/notes/status state that
+  // only initializes on mount, so swapping the id under it would leave that
+  // state stale under the new appointment's name. Close it first, then open
+  // the one you actually want.
   const openDetail = (id: string) => {
+    if (detailId && detailId !== id) {
+      showFlash('Close the edit panel first to open another appointment')
+      return
+    }
     setDetailError(null)
     setDetailId(id)
     // the day this appointment actually lives on, fixed for the life of the
