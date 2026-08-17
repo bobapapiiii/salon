@@ -2338,6 +2338,8 @@ export function AppointmentBook() {
                 price: (a.priceOverride ?? svc?.price ?? 0) + (a.addons ?? []).reduce((x, ad) => x + ad.price, 0),
                 techName: techOf(a.techId).name,
                 color: svc ? catById[svc.categoryId]?.line : undefined,
+                // salon-entered per-service notation from checkout (polish color, etc.)
+                customFields: a.customFields,
               }
             })
           : [{ name: 'POS sale', price: p.total, techName: 'Front desk' }]

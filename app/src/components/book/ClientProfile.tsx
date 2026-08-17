@@ -69,6 +69,9 @@ export interface VisitLine {
   price: number
   techName: string
   color?: string
+  /** salon-entered per-service notation from checkout (polish color, etc.),
+   *  keyed by the checkout field id -- see settings.checkout.serviceFields */
+  customFields?: Record<string, string>
 }
 
 interface PastVisit {
@@ -687,6 +690,7 @@ export function LastVisitsDialog({ client, realVisits, onClose }: {
   realVisits: RealVisit[]
   onClose: () => void
 }) {
+  const settings = useSettingsStore()
   const last5 = useMemo(() => {
     const real: PastVisit[] = realVisits.map((v) => ({
       invoice: v.invoice, date: v.date, services: v.services, serviceIds: v.serviceIds, lines: v.lines,
@@ -733,16 +737,23 @@ export function LastVisitsDialog({ client, realVisits, onClose }: {
                       <span className="text-[13px] font-semibold">{h.date}</span>
                       <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${STATUS_STYLE[h.status]}`}>{h.status}</span>
                     </div>
-                    {lines.map((l, li) => (
-                      <div key={`${l.serviceId ?? l.name}-${li}`} className="flex items-center gap-2.5 border-b border-border/60 px-3.5 py-2.5 last:border-0">
-                        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: l.color ?? '#94a3b8' }} />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[13px] font-medium text-foreground">{l.name}</p>
-                          <p className="text-[11px] text-muted-foreground">Technician: {l.techName}</p>
+                    {lines.map((l, li) => {
+                      const notes = settings.checkout.serviceFields
+                        .filter((f) => l.customFields?.[f.id]?.trim())
+                        .map((f) => `${f.label}: ${l.customFields![f.id].trim()}`)
+                        .join(' · ')
+                      return (
+                        <div key={`${l.serviceId ?? l.name}-${li}`} className="flex items-center gap-2.5 border-b border-border/60 px-3.5 py-2.5 last:border-0">
+                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: l.color ?? '#94a3b8' }} />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-[13px] font-medium text-foreground">{l.name}</p>
+                            <p className="text-[11px] text-muted-foreground">Technician: {l.techName}</p>
+                            {notes && <p className="text-[11px] text-muted-foreground">{notes}</p>}
+                          </div>
+                          <span className="tnum shrink-0 text-[13px] font-semibold">${l.price.toFixed(2)}</span>
                         </div>
-                        <span className="tnum shrink-0 text-[13px] font-semibold">${l.price.toFixed(2)}</span>
-                      </div>
-                    ))}
+                      )
+                    })}
                     {lines.length > 1 && (
                       <div className="flex items-center justify-between bg-secondary/20 px-3.5 py-2">
                         <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Total</span>
