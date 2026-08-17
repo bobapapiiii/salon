@@ -320,7 +320,7 @@ export function AppointmentDetail({
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            rows={3}
+            rows={2}
             placeholder="Allergies, design references, preferences"
             className="w-full rounded-[8px] border border-input bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           />
@@ -355,30 +355,6 @@ export function AppointmentDetail({
             </button>
           </div>
         </div>
-
-        {/* payment — Check out and View/print receipt are the working payment
-            actions today, so this is the whole section now (the old Send
-            payment link / Take payment placeholders were disabled stubs for a
-            feature that was never built). Styled like the Actions buttons, not
-            the bold Save CTA below — Save is the one button on this panel that
-            should read as "the" action to take */}
-        {(canCheckout || hasInvoice) && (
-          <div>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Payment</label>
-            <div className="flex gap-1.5">
-              {canCheckout && (
-                <button onClick={() => onAction('checkout')} className={`flex-1 ${actionBtn}`}>
-                  <CreditCard className="h-3.5 w-3.5" /> Check out {appt.clientName.split(' ')[0]}
-                </button>
-              )}
-              {hasInvoice && (
-                <button onClick={() => onAction('invoice')} className={`flex-1 ${actionBtn}`}>
-                  <Receipt className="h-3.5 w-3.5" /> View / print receipt
-                </button>
-              )}
-            </div>
-          </div>
-        )}
 
         {error && <p className="text-[12px] font-medium text-rust">{error}</p>}
       </div>
@@ -467,9 +443,26 @@ export function AppointmentDetail({
         />
       )}
 
-      {/* footer — just Save; Check out now lives in the Payment section above,
-          next to the other ways to collect payment */}
-      <div className="border-t border-line p-3">
+      {/* footer — pinned outside the scrolling panel above so Check out / View
+          receipt and Save are always in view, never pushed off by notes or a
+          long service list. Check out and View/print receipt are the working
+          payment actions today (the old Send payment link / Take payment
+          placeholders were disabled stubs for a feature that was never built) */}
+      <div className="space-y-1.5 border-t border-line p-3">
+        {(canCheckout || hasInvoice) && (
+          <div className="flex gap-1.5">
+            {canCheckout && (
+              <button onClick={() => onAction('checkout')} className={`flex-1 ${actionBtn}`}>
+                <CreditCard className="h-3.5 w-3.5" /> Check out {appt.clientName.split(' ')[0]}
+              </button>
+            )}
+            {hasInvoice && (
+              <button onClick={() => onAction('invoice')} className={`flex-1 ${actionBtn}`}>
+                <Receipt className="h-3.5 w-3.5" /> View / print receipt
+              </button>
+            )}
+          </div>
+        )}
         <button
           onClick={() => onSave(
             draft.map((d) => ({ ...d, status: d.id === appt.id ? status : d.status, notes: d.id === appt.id ? notes || undefined : d.notes })),

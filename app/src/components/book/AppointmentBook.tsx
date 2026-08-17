@@ -1868,6 +1868,38 @@ export function AppointmentBook() {
     setPosOpen(false)
   }
 
+  // reopening a ticket: undo exactly what completing it did (the visit credit
+  // + loyalty points swing) and drop the payment from the ledger. Once it's
+  // gone, payable() sees its appointments as unpaid again, so checkout can
+  // just be re-run to record the fix -- no separate "edit a payment" UI needed
+  const voidPayment = (payment: (typeof payments)[number]) => {
+    setPayments((x) => x.filter((p) => p.id !== payment.id))
+    const partyNames = payment.clientNames ?? [payment.clientName]
+    setClients((cs) => cs.map((c) => (partyNames.includes(c.name) ? { ...c, visits: Math.max(0, c.visits - 1) } : c)))
+    const host = clients.find((c) => c.name === payment.clientName)
+    if (host) {
+      setPointsByClient((m) => ({ ...m, [host.id]: Math.max(0, (m[host.id] ?? 0) + (payment.redeemed?.points ?? 0) - payment.points) }))
+    }
+  }
+
+  const [reopenPrompt, setReopenPrompt] = useState<{ payment: (typeof payments)[number]; items: Appointment[] } | null>(null)
+
+  const doReopenTicket = () => {
+    if (!reopenPrompt) return
+    const { payment, items } = reopenPrompt
+    voidPayment(payment)
+    setInvoicePayment(null)
+    setReopenPrompt(null)
+    const host = items[0]
+    if (!host) { showFlash('Payment cleared'); return }
+    // land on the ticket's own day first -- checkout resolves its items off
+    // the live board for whatever day is showing, same caveat as the edit
+    // panel's own checkout action
+    if (payment.dateKey !== dateKey) goDay(new Date(payment.dateKey + 'T12:00:00'))
+    openCheckout(host, items)
+    showFlash('Ticket reopened — fix it up, then check out again')
+  }
+
   // opening the editor dismisses booking, POS, and checkout — panels are exclusive
   const openDetail = (id: string) => {
     setDetailError(null)
@@ -3850,6 +3882,21 @@ export function AppointmentBook() {
           payment={invoicePayment.payment}
           items={invoicePayment.items}
           onClose={() => setInvoicePayment(null)}
+          // only a real checkout ticket has something to reopen into -- a bare
+          // POS sale (no linked appointments) has no ticket to rebuild
+          onReopen={invoicePayment.items.length > 0 ? () => setReopenPrompt(invoicePayment) : undefined}
+        />
+      )}
+
+      {/* reopen-ticket confirmation -- clears the payment (and the loyalty
+          points/visit credit it gave) before dropping back into checkout */}
+      {reopenPrompt && (
+        <ConfirmDialog
+          title="Reopen this ticket?"
+          body={`This clears the recorded payment for ${reopenPrompt.payment.clientName}${(reopenPrompt.payment.party ?? 0) > 1 ? ` (party of ${reopenPrompt.payment.party})` : ''} — along with the loyalty points and visit credit it gave — so it can be fixed and checked out again.`}
+          confirmLabel="Reopen ticket"
+          onConfirm={doReopenTicket}
+          onClose={() => setReopenPrompt(null)}
         />
       )}
 
