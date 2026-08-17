@@ -4,7 +4,7 @@
 // everything else writes instantly to the salon's settings store.
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart3, Bell, Briefcase, Check, CreditCard, Download, FileText, Globe, GripVertical, KeyRound, Plus, Sparkles, Star, Store, Trash2, Users, X,
+  BarChart3, Banknote, Bell, Briefcase, Check, CreditCard, Download, FileText, Globe, KeyRound, Plus, Sparkles, Star, Store, Trash2, Users, X,
 } from "lucide-react";
 import type { Tech } from "../../lib/booking-types";
 import { roleColor, setStaff, uid, useStaffStore, type JobRole } from "../../lib/staff-store";
@@ -14,9 +14,9 @@ const todayKey = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 import { activeServices, setServices, svcById, useServicesStore } from "../../lib/services-store";
-import { addCategory, catById, setCategories, useCategoriesStore } from "../../lib/categories-store";
+import { addCategory, catById, removeCategory, setCategories, useCategoriesStore } from "../../lib/categories-store";
 import type { ServiceAddon } from "../../lib/booking-types";
-import { ALL_METHODS, setSettings, useSettingsStore, type Redemption } from "../../lib/settings-store";
+import { ALL_METHODS, setSettings, useSettingsStore, type RegisterConfig, type Redemption } from "../../lib/settings-store";
 import { sdata, usePersistentState } from "../../lib/persist";
 import type { Appointment, Service, TechDocument, TechTimeOff, WeeklyDay } from "../../lib/booking-types";
 import { DAY_SLOTS, SLOT_MIN, fmtTime } from "../../lib/booking-types";
@@ -84,7 +84,7 @@ interface DraftTech {
 }
 const newPin = () => String(Math.floor(1000 + Math.random() * 9000));
 
-export type SectionId = "general" | "roles" | "techs" | "services" | "booking" | "payments" | "checkout" | "loyalty" | "notifications" | "reports";
+export type SectionId = "general" | "roles" | "techs" | "services" | "booking" | "payments" | "checkout" | "registers" | "loyalty" | "notifications" | "reports";
 
 const SECTIONS: { id: SectionId; label: string; blurb: string; icon: typeof Store }[] = [
   { id: "general", label: "General", blurb: "Salon name & contact", icon: Store },
@@ -94,6 +94,7 @@ const SECTIONS: { id: SectionId; label: string; blurb: string; icon: typeof Stor
   { id: "booking", label: "Online booking", blurb: "Approvals & rules", icon: Globe },
   { id: "payments", label: "Payments", blurb: "Methods & tip presets", icon: CreditCard },
   { id: "checkout", label: "Checkout", blurb: "Service & invoice fields", icon: FileText },
+  { id: "registers", label: "Registers", blurb: "Cash drawers to open & close", icon: Banknote },
   { id: "loyalty", label: "Loyalty", blurb: "Points earning", icon: Star },
   { id: "notifications", label: "Notifications", blurb: "SMS preferences", icon: Bell },
   { id: "reports", label: "Reports", blurb: "Sales, techs & clients", icon: BarChart3 },
@@ -337,6 +338,7 @@ export function SettingsPage({ open, section, onSection, onClose, focusTechId }:
           {section === "booking" && <BookingSection />}
           {section === "payments" && <PaymentsSection />}
           {section === "checkout" && <CheckoutSection />}
+          {section === "registers" && <RegistersSection />}
           {section === "loyalty" && <LoyaltySection />}
           {section === "notifications" && <NotificationsSection />}
           {section === "reports" && <ReportsSection />}
@@ -993,38 +995,6 @@ function TechsSection({ techs, roles, selTech, onSelectTech, onAddTech, onPatchT
 // ─── Services ────────────────────────────────────────────────────────────────
 const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180];
 
-/** number input that stays exactly what you typed while focused instead of
- *  snapping to 0 (and re-formatting) on every keystroke — it only clamps
- *  and commits on blur / Enter, so clearing a field and typing a fresh
- *  value never leaves a stray leading digit behind */
-function NumberField({ value, onCommit, min = 0, step, className }: {
-  value: number;
-  onCommit: (n: number) => void;
-  min?: number;
-  step?: number;
-  className?: string;
-}) {
-  const [text, setText] = useState(String(value));
-  useEffect(() => { setText(String(value)); }, [value]);
-  const commit = () => {
-    const n = Math.max(min, Number(text) || 0);
-    setText(String(n));
-    if (n !== value) onCommit(n);
-  };
-  return (
-    <input
-      type="number"
-      min={min}
-      step={step}
-      value={text}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={commit}
-      onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-      className={className}
-    />
-  );
-}
-
 function ServicesSection() {
   const services = useServicesStore();
   const cats = useCategoriesStore();
@@ -1032,11 +1002,6 @@ function ServicesSection() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteCatId, setDeleteCatId] = useState<string | null>(null);
   const [addonsFor, setAddonsFor] = useState<string | null>(null);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [overId, setOverId] = useState<string | null>(null);
-  const [dragCatId, setDragCatId] = useState<string | null>(null);
-  const [overCatId, setOverCatId] = useState<string | null>(null);
-  const [archOpen, setArchOpen] = useState(false);
 
   const usedIds = useMemo(
     () => new Set(Object.values(apptDays).flat().map((a) => a.serviceId)),
@@ -1064,276 +1029,7 @@ function ServicesSection() {
   const renameCategory = (id: string, name: string) =>
     setCategories((list) => list.map((c) => (c.id === id ? { ...c, name } : c)));
 
-  /** archive a category (and, for a top-level one, its subcategories) along
-   *  with every service inside it. Nothing is removed from storage -- every
-   *  appointment that already references it, past or already booked, keeps
-   *  resolving its name/color/price exactly as before. It just disappears
-   *  from booking menus and this list until it's restored. */
-  const archiveCategory = (id: string) => {
-    const ids = [id, ...cats.filter((c) => c.parentId === id).map((c) => c.id)];
-    setCategories((list) => list.map((c) => (ids.includes(c.id) ? { ...c, archived: true } : c)));
-    setServices((list) => list.map((s) => (ids.includes(s.categoryId) ? { ...s, active: false } : s)));
-  };
-
-  /** bring a category back -- for a top-level one, its subcategories too,
-   *  and their services. Restoring a lone subcategory also un-archives its
-   *  parent (just the category record, not the parent's own services) so
-   *  it has a card to sit in again. */
-  const restoreCategory = (id: string) => {
-    const target = cats.find((c) => c.id === id);
-    const ids = [id, ...cats.filter((c) => c.parentId === id).map((c) => c.id)];
-    setCategories((list) => list.map((c) => (ids.includes(c.id) || c.id === target?.parentId ? { ...c, archived: false } : c)));
-    setServices((list) => list.map((s) => (ids.includes(s.categoryId) ? { ...s, active: true } : s)));
-  };
-
-  /** actually remove a category (and, for a top-level one, its
-   *  subcategories) and every service inside it. Only ever offered once
-   *  it's empty or already archived with nothing still in use. */
-  const permanentlyDeleteCategory = (id: string) => {
-    const ids = [id, ...cats.filter((c) => c.parentId === id).map((c) => c.id)];
-    setServices((list) => list.filter((s) => !ids.includes(s.categoryId)));
-    setCategories((list) => list.filter((c) => !ids.includes(c.id)));
-  };
-
   const patchAddons = (svcId: string, addons: ServiceAddon[]) => patch(svcId, { addons } as Partial<Service>);
-
-  /** drag a service to a new spot -- dropping it onto another row inserts it
-   *  right before that row (and moves it into that row's category if it's
-   *  not already there); `beforeId: null` drops it at the end of
-   *  `targetCategoryId`'s group instead. This is how both plain reordering
-   *  and dragging a service into a subcategory are handled, they're the
-   *  same operation, one just also changes categoryId. */
-  const moveServiceTo = (draggedId: string, targetCategoryId: string, beforeId: string | null) =>
-    setServices((list) => {
-      const dragged = list.find((s) => s.id === draggedId);
-      if (!dragged) return list;
-      const rest = list.filter((s) => s.id !== draggedId);
-      const moved = dragged.categoryId === targetCategoryId ? dragged : { ...dragged, categoryId: targetCategoryId };
-      let insertAt: number;
-      if (beforeId) {
-        insertAt = rest.findIndex((s) => s.id === beforeId);
-        if (insertAt === -1) insertAt = rest.length;
-      } else {
-        const groupItems = rest.filter((s) => s.categoryId === targetCategoryId);
-        const last = groupItems[groupItems.length - 1];
-        insertAt = last ? rest.findIndex((s) => s.id === last.id) + 1 : rest.length;
-      }
-      const next = [...rest];
-      next.splice(insertAt, 0, moved);
-      return next;
-    });
-
-  /** drag a subcategory to reorder it among its own siblings (same parent
-   *  category); dropping it onto another subcategory inserts it right
-   *  before that one, `beforeId: null` drops it at the end. Re-parenting a
-   *  subcategory to a different top-level category isn't supported here. */
-  const moveCategoryTo = (draggedId: string, parentId: string, beforeId: string | null) =>
-    setCategories((list) => {
-      const dragged = list.find((c) => c.id === draggedId);
-      if (!dragged || dragged.parentId !== parentId) return list;
-      const rest = list.filter((c) => c.id !== draggedId);
-      let insertAt: number;
-      if (beforeId) {
-        insertAt = rest.findIndex((c) => c.id === beforeId);
-        if (insertAt === -1) return list;
-      } else {
-        const siblings = rest.filter((c) => c.parentId === parentId);
-        const last = siblings[siblings.length - 1];
-        insertAt = last ? rest.findIndex((c) => c.id === last.id) + 1 : rest.length;
-      }
-      const next = [...rest];
-      next.splice(insertAt, 0, dragged);
-      return next;
-    });
-
-  // flat list for the "move to category" picker, subcategories indented
-  // under their parent so the hierarchy still reads at a glance
-  const catOptions = useMemo(() => {
-    const top = cats.filter((c) => !c.parentId && !c.archived);
-    return top.flatMap((t) => [
-      { id: t.id, label: t.name },
-      ...cats.filter((c) => c.parentId === t.id && !c.archived).map((s) => ({ id: s.id, label: `— ${s.name}` })),
-    ]);
-  }, [cats]);
-
-  const renderServiceRow = (sv: Service) => {
-    const active = (sv as Service & { active?: boolean }).active !== false;
-    const inUse = usedIds.has(sv.id);
-    const addons = sv.addons ?? [];
-    const addonsOpen = addonsFor === sv.id;
-    const dropBefore = dragId && dragId !== sv.id && overId === sv.id;
-    return (
-      <div
-        key={sv.id}
-        onDragOver={(e) => {
-          if (!dragId || dragId === sv.id) return;
-          e.preventDefault();
-          if (overId !== sv.id) setOverId(sv.id);
-        }}
-        onDragLeave={() => setOverId((o) => (o === sv.id ? null : o))}
-        onDrop={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (dragId && dragId !== sv.id) moveServiceTo(dragId, sv.categoryId, sv.id);
-          setDragId(null);
-          setOverId(null);
-        }}
-      >
-        <div
-          className={`svc-row flex items-center gap-2 rounded-lg border border-[#EDE7EE] px-2.5 py-1.5 transition-[opacity,box-shadow] duration-150 ${active ? "bg-white" : "bg-slate-50 opacity-60"} ${dragId === sv.id ? "opacity-40" : ""} ${dropBefore ? "shadow-[0_-2px_0_0_#5B54D6]" : ""}`}
-        >
-          <span
-            draggable
-            onDragStart={(e) => {
-              setDragId(sv.id);
-              e.dataTransfer.effectAllowed = "move";
-              e.dataTransfer.setData("text/plain", sv.id);
-              // drag the actual row as the ghost image instead of the tiny
-              // grip icon, and anchor it under the cursor where it was
-              // grabbed so it doesn't jump when the drag starts
-              const row = (e.currentTarget as HTMLElement).closest(".svc-row") as HTMLElement | null;
-              if (row) {
-                const r = row.getBoundingClientRect();
-                e.dataTransfer.setDragImage(row, e.clientX - r.left, e.clientY - r.top);
-              }
-            }}
-            onDragEnd={() => {
-              setDragId(null);
-              setOverId(null);
-            }}
-            title="Drag to reorder"
-            className="shrink-0 cursor-grab text-slate-300 transition hover:text-slate-500 active:cursor-grabbing"
-          >
-            <GripVertical className="h-3.5 w-3.5" />
-          </span>
-          <input
-            value={sv.name}
-            onChange={(e) => patch(sv.id, { name: e.target.value })}
-            className="min-w-0 flex-[2] rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[12.5px] font-semibold text-slate-800 outline-none transition focus:border-[#5B54D6] focus:bg-white"
-          />
-          <input
-            value={sv.short}
-            onChange={(e) => patch(sv.id, { short: e.target.value })}
-            title="Short label for tight calendar cells"
-            className="min-w-0 w-20 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[11.5px] text-slate-500 outline-none transition focus:border-[#5B54D6] focus:bg-white"
-          />
-          <select
-            value={sv.categoryId}
-            onChange={(e) => patch(sv.id, { categoryId: e.target.value })}
-            title="Move to a different category"
-            className="w-[132px] shrink-0 rounded-md border border-[#E3DDE3] bg-white px-1.5 py-1 text-[11.5px] outline-none focus:border-[#5B54D6]"
-          >
-            {catOptions.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-          </select>
-          <select
-            value={sv.durationMin}
-            onChange={(e) => patch(sv.id, { durationMin: Number(e.target.value) })}
-            className="w-[86px] rounded-md border border-[#E3DDE3] bg-white px-1.5 py-1 text-[11.5px] outline-none focus:border-[#5B54D6]"
-          >
-            {DURATIONS.map((d) => <option key={d} value={d}>{d} min</option>)}
-          </select>
-          <span className="flex items-center text-[12px] font-semibold text-slate-600">
-            $<NumberField
-              value={sv.price}
-              onCommit={(n) => patch(sv.id, { price: n })}
-              className="tnum w-14 rounded-md border border-[#E3DDE3] bg-white px-1 py-1 text-right outline-none focus:border-[#5B54D6]"
-            />
-          </span>
-          <button
-            onClick={() => setAddonsFor(addonsOpen ? null : sv.id)}
-            title="Add-ons, extra time & money offered with this service"
-            className={`shrink-0 rounded-md px-1.5 py-1 text-[10.5px] font-bold transition ${
-              addonsOpen || addons.length > 0 ? "bg-[#5B54D6]/[0.08] text-[#5B54D6]" : "text-slate-400 hover:text-slate-600"
-            }`}
-          >
-            {addons.length > 0 ? `${addons.length} add-on${addons.length > 1 ? "s" : ""}` : "+ add-on"}
-          </button>
-          <span title={active ? "Active, bookable" : "Inactive, hidden from menus"}>
-            <Toggle on={active} onClick={() => patch(sv.id, { active: !active } as Partial<Service>)} />
-          </span>
-          <button
-            onClick={() => !inUse && setDeleteId(sv.id)}
-            disabled={inUse}
-            title={inUse ? "Used by appointments, deactivate instead" : "Delete service"}
-            className="shrink-0 text-slate-300 transition hover:text-rose-500 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-        </div>
-        {addonsOpen && (
-          <div className="ml-6 mt-1 space-y-1 rounded-lg border border-[#EDE7EE] bg-[#FAF8FA] p-2">
-            {addons.length === 0 && <p className="px-1 py-1 text-[11px] text-slate-400">No add-ons yet, they add time and price on top of {sv.name}.</p>}
-            {addons.map((a) => (
-              <div key={a.id} className="flex items-center gap-1.5">
-                <input
-                  value={a.name}
-                  onChange={(e) => patchAddons(sv.id, addons.map((x) => (x.id === a.id ? { ...x, name: e.target.value } : x)))}
-                  placeholder="Add-on name"
-                  className="min-w-0 flex-1 rounded-md border border-[#E3DDE3] bg-white px-1.5 py-1 text-[11.5px] outline-none focus:border-[#5B54D6]"
-                />
-                <span className="flex items-center gap-0.5 text-[10.5px] font-semibold text-slate-500">
-                  +<NumberField
-                    value={a.mins}
-                    step={5}
-                    onCommit={(n) => patchAddons(sv.id, addons.map((x) => (x.id === a.id ? { ...x, mins: n } : x)))}
-                    className="tnum w-12 rounded-md border border-[#E3DDE3] bg-white px-1 py-1 text-right outline-none focus:border-[#5B54D6]"
-                  />m
-                </span>
-                <span className="flex items-center gap-0.5 text-[10.5px] font-semibold text-slate-500">
-                  +$<NumberField
-                    value={a.price}
-                    onCommit={(n) => patchAddons(sv.id, addons.map((x) => (x.id === a.id ? { ...x, price: n } : x)))}
-                    className="tnum w-12 rounded-md border border-[#E3DDE3] bg-white px-1 py-1 text-right outline-none focus:border-[#5B54D6]"
-                  />
-                </span>
-                <button
-                  onClick={() => patchAddons(sv.id, addons.filter((x) => x.id !== a.id))}
-                  className="shrink-0 text-slate-300 transition hover:text-rose-500"
-                  title="Remove add-on"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-            <button
-              onClick={() => patchAddons(sv.id, [...addons, { id: `ao-${Math.random().toString(36).slice(2, 8)}`, name: "", mins: 15, price: 10 }])}
-              className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold text-[#5B54D6] transition hover:bg-[#5B54D6]/[0.07]"
-            >
-              <Plus className="h-3 w-3" /> Add add-on
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  /** strip below a group's last row (or the whole group, if it's empty) —
-   *  dropping a dragged service here sends it to the end of that
-   *  category/subcategory, moving it in if it wasn't already there */
-  const renderTrailingDrop = (categoryId: string, empty: boolean) => (
-    <div
-      onDragOver={(e) => {
-        if (!dragId) return;
-        e.preventDefault();
-        e.stopPropagation();
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (dragId) moveServiceTo(dragId, categoryId, null);
-        setDragId(null);
-        setOverId(null);
-      }}
-      className={empty
-        ? "flex h-9 items-center justify-center rounded-lg border border-dashed border-[#E3DDE3] text-[10.5px] text-slate-300"
-        : "h-2"}
-    >
-      {empty && "Drop a service here"}
-    </div>
-  );
-
-  const topCats = cats.filter((c) => !c.parentId && !c.archived);
-  const draggedCat = dragCatId ? cats.find((c) => c.id === dragCatId) : undefined;
 
   return (
     <div>
@@ -1347,9 +1043,8 @@ function ServicesSection() {
         </button>
       </div>
       <div className="space-y-4">
-        {topCats.map((cat) => {
+        {cats.map((cat) => {
           const svcs = services.filter((s) => s.categoryId === cat.id);
-          const subCats = cats.filter((c) => c.parentId === cat.id && !c.archived);
           return (
             <div key={cat.id} className={card}>
               <div className="mb-2.5 flex items-center gap-2">
@@ -1374,9 +1069,10 @@ function ServicesSection() {
                 />
                 <span className="text-[10.5px] text-slate-400">{svcs.length} services</span>
                 <button
-                  onClick={() => setDeleteCatId(cat.id)}
-                  title="Delete or archive category"
-                  className="shrink-0 text-slate-300 transition hover:text-rose-500"
+                  onClick={() => svcs.length === 0 && setDeleteCatId(cat.id)}
+                  disabled={svcs.length > 0}
+                  title={svcs.length > 0 ? "Move or delete its services first" : "Delete category"}
+                  className="shrink-0 text-slate-300 transition hover:text-rose-500 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -1388,197 +1084,120 @@ function ServicesSection() {
                 </button>
               </div>
               <div className="space-y-1.5">
-                {svcs.map((sv) => renderServiceRow(sv))}
-                {renderTrailingDrop(cat.id, svcs.length === 0)}
-              </div>
-
-              {subCats.map((sub) => {
-                const subSvcs = services.filter((s) => s.categoryId === sub.id);
-                const catDropBefore = dragCatId && dragCatId !== sub.id && overCatId === sub.id;
-                return (
-                  <div
-                    key={sub.id}
-                    onDragOver={(e) => {
-                      // a subcategory drag reorders siblings; a service drag
-                      // dropped anywhere in here (header, padding, empty
-                      // space) still moves the service into this subcategory
-                      if (dragCatId && dragCatId !== sub.id && draggedCat?.parentId === cat.id) {
-                        e.preventDefault();
-                        if (overCatId !== sub.id) setOverCatId(sub.id);
-                      } else if (dragId) {
-                        e.preventDefault();
-                      }
-                    }}
-                    onDragLeave={() => setOverCatId((o) => (o === sub.id ? null : o))}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      if (dragCatId && dragCatId !== sub.id && draggedCat?.parentId === cat.id) moveCategoryTo(dragCatId, cat.id, sub.id);
-                      else if (dragId) moveServiceTo(dragId, sub.id, null);
-                      setDragCatId(null);
-                      setOverCatId(null);
-                      setDragId(null);
-                      setOverId(null);
-                    }}
-                    className={`mt-3 ml-3 border-l-2 pl-3 transition-colors ${
-                      catDropBefore ? "border-[#5B54D6]" : "border-[#EDE7EE]"
-                    } ${dragCatId === sub.id ? "opacity-40" : ""}`}
-                  >
-                    <div className="subcat-header mb-2 flex items-center gap-2">
-                      <span
-                        draggable
-                        onDragStart={(e) => {
-                          setDragCatId(sub.id);
-                          e.dataTransfer.effectAllowed = "move";
-                          e.dataTransfer.setData("text/plain", sub.id);
-                          const header = (e.currentTarget as HTMLElement).closest(".subcat-header") as HTMLElement | null;
-                          if (header) {
-                            const r = header.getBoundingClientRect();
-                            e.dataTransfer.setDragImage(header, e.clientX - r.left, e.clientY - r.top);
-                          }
-                        }}
-                        onDragEnd={() => {
-                          setDragCatId(null);
-                          setOverCatId(null);
-                        }}
-                        title="Drag to reorder"
-                        className="shrink-0 cursor-grab text-slate-300 transition hover:text-slate-500 active:cursor-grabbing"
-                      >
-                        <GripVertical className="h-3.5 w-3.5" />
-                      </span>
-                      <label
-                        title="Subcategory color, updates the calendar rail and legend instantly"
-                        className="relative h-5 w-5 shrink-0 cursor-pointer overflow-hidden rounded-md border border-[#EDE7EE]"
-                        style={{ background: sub.line }}
-                      >
-                        <input
-                          type="color"
-                          value={sub.line.startsWith('#') ? sub.line : '#5B54D6'}
-                          onChange={(e) => setCategories((list) =>
-                            list.map((c) => (c.id === sub.id ? { ...c, line: e.target.value, fill: `${e.target.value}26`, text: e.target.value } : c)),
-                          )}
-                          className="absolute inset-0 cursor-pointer opacity-0"
-                        />
-                      </label>
+                {svcs.map((sv) => {
+                  const active = (sv as Service & { active?: boolean }).active !== false;
+                  const inUse = usedIds.has(sv.id);
+                  const addons = sv.addons ?? [];
+                  const addonsOpen = addonsFor === sv.id;
+                  return (
+                    <div key={sv.id}>
+                    <div className={`flex items-center gap-2 rounded-lg border border-[#EDE7EE] px-2.5 py-1.5 ${active ? "bg-white" : "bg-slate-50 opacity-60"}`}>
                       <input
-                        value={sub.name}
-                        onChange={(e) => renameCategory(sub.id, e.target.value)}
-                        className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-[12px] font-bold text-slate-700 outline-none transition focus:border-[#5B54D6] focus:bg-white"
+                        value={sv.name}
+                        onChange={(e) => patch(sv.id, { name: e.target.value })}
+                        className="min-w-0 flex-[2] rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[12.5px] font-semibold text-slate-800 outline-none transition focus:border-[#5B54D6] focus:bg-white"
                       />
-                      <span className="text-[10.5px] text-slate-400">{subSvcs.length} services</span>
+                      <input
+                        value={sv.short}
+                        onChange={(e) => patch(sv.id, { short: e.target.value })}
+                        title="Short label for tight calendar cells"
+                        className="min-w-0 w-20 rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[11.5px] text-slate-500 outline-none transition focus:border-[#5B54D6] focus:bg-white"
+                      />
+                      <select
+                        value={sv.durationMin}
+                        onChange={(e) => patch(sv.id, { durationMin: Number(e.target.value) })}
+                        className="w-[86px] rounded-md border border-[#E3DDE3] bg-white px-1.5 py-1 text-[11.5px] outline-none focus:border-[#5B54D6]"
+                      >
+                        {DURATIONS.map((d) => <option key={d} value={d}>{d} min</option>)}
+                      </select>
+                      <span className="flex items-center text-[12px] font-semibold text-slate-600">
+                        $<input
+                          type="number" min={0} value={sv.price}
+                          onChange={(e) => patch(sv.id, { price: Math.max(0, Number(e.target.value) || 0) })}
+                          className="tnum w-14 rounded-md border border-[#E3DDE3] bg-white px-1 py-1 text-right outline-none focus:border-[#5B54D6]"
+                        />
+                      </span>
                       <button
-                        onClick={() => setDeleteCatId(sub.id)}
-                        title="Delete or archive subcategory"
-                        className="shrink-0 text-slate-300 transition hover:text-rose-500"
+                        onClick={() => setAddonsFor(addonsOpen ? null : sv.id)}
+                        title="Add-ons, extra time & money offered with this service"
+                        className={`shrink-0 rounded-md px-1.5 py-1 text-[10.5px] font-bold transition ${
+                          addonsOpen || addons.length > 0 ? "bg-[#5B54D6]/[0.08] text-[#5B54D6]" : "text-slate-400 hover:text-slate-600"
+                        }`}
+                      >
+                        {addons.length > 0 ? `${addons.length} add-on${addons.length > 1 ? "s" : ""}` : "+ add-on"}
+                      </button>
+                      <span title={active ? "Active, bookable" : "Inactive, hidden from menus"}>
+                        <Toggle on={active} onClick={() => patch(sv.id, { active: !active } as Partial<Service>)} />
+                      </span>
+                      <button
+                        onClick={() => !inUse && setDeleteId(sv.id)}
+                        disabled={inUse}
+                        title={inUse ? "Used by appointments, deactivate instead" : "Delete service"}
+                        className="shrink-0 text-slate-300 transition hover:text-rose-500 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
-                      <button
-                        onClick={() => addService(sub.id)}
-                        className="ml-auto flex items-center gap-1 rounded-lg px-2 py-1 text-[11.5px] font-semibold text-[#5B54D6] transition hover:bg-[#5B54D6]/[0.07]"
-                      >
-                        <Plus className="h-3 w-3" /> Add service
-                      </button>
                     </div>
-                    <div className="space-y-1.5">
-                      {subSvcs.map((sv) => renderServiceRow(sv))}
-                      {renderTrailingDrop(sub.id, subSvcs.length === 0)}
+                    {addonsOpen && (
+                      <div className="ml-6 mt-1 space-y-1 rounded-lg border border-[#EDE7EE] bg-[#FAF8FA] p-2">
+                        {addons.length === 0 && <p className="px-1 py-1 text-[11px] text-slate-400">No add-ons yet, they add time and price on top of {sv.name}.</p>}
+                        {addons.map((a) => (
+                          <div key={a.id} className="flex items-center gap-1.5">
+                            <input
+                              value={a.name}
+                              onChange={(e) => patchAddons(sv.id, addons.map((x) => (x.id === a.id ? { ...x, name: e.target.value } : x)))}
+                              placeholder="Add-on name"
+                              className="min-w-0 flex-1 rounded-md border border-[#E3DDE3] bg-white px-1.5 py-1 text-[11.5px] outline-none focus:border-[#5B54D6]"
+                            />
+                            <span className="flex items-center gap-0.5 text-[10.5px] font-semibold text-slate-500">
+                              +<input
+                                type="number" min={0} step={5} value={a.mins}
+                                onChange={(e) => patchAddons(sv.id, addons.map((x) => (x.id === a.id ? { ...x, mins: Math.max(0, Number(e.target.value) || 0) } : x)))}
+                                className="tnum w-12 rounded-md border border-[#E3DDE3] bg-white px-1 py-1 text-right outline-none focus:border-[#5B54D6]"
+                              />m
+                            </span>
+                            <span className="flex items-center gap-0.5 text-[10.5px] font-semibold text-slate-500">
+                              +$<input
+                                type="number" min={0} value={a.price}
+                                onChange={(e) => patchAddons(sv.id, addons.map((x) => (x.id === a.id ? { ...x, price: Math.max(0, Number(e.target.value) || 0) } : x)))}
+                                className="tnum w-12 rounded-md border border-[#E3DDE3] bg-white px-1 py-1 text-right outline-none focus:border-[#5B54D6]"
+                              />
+                            </span>
+                            <button
+                              onClick={() => patchAddons(sv.id, addons.filter((x) => x.id !== a.id))}
+                              className="shrink-0 text-slate-300 transition hover:text-rose-500"
+                              title="Remove add-on"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          onClick={() => patchAddons(sv.id, [...addons, { id: `ao-${Math.random().toString(36).slice(2, 8)}`, name: "", mins: 15, price: 10 }])}
+                          className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold text-[#5B54D6] transition hover:bg-[#5B54D6]/[0.07]"
+                        >
+                          <Plus className="h-3 w-3" /> Add add-on
+                        </button>
+                      </div>
+                    )}
                     </div>
-                  </div>
-                );
-              })}
-              {subCats.length > 0 && (
-                <div
-                  onDragOver={(e) => { if (dragCatId && draggedCat?.parentId === cat.id) e.preventDefault(); }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (dragCatId && draggedCat?.parentId === cat.id) moveCategoryTo(dragCatId, cat.id, null);
-                    setDragCatId(null);
-                    setOverCatId(null);
-                  }}
-                  className="h-2"
-                />
-              )}
-
-              <button
-                onClick={() => addCategory("New subcategory", cat.id)}
-                className="mt-3 flex items-center gap-1 text-[11.5px] font-semibold text-[#5B54D6]/80 transition hover:text-[#5B54D6]"
-              >
-                <Plus className="h-3 w-3" /> Add subcategory
-              </button>
+                  );
+                })}
+              </div>
             </div>
           );
         })}
       </div>
 
-      {(() => {
-        const archivedCats = cats.filter((c) => c.archived);
-        if (archivedCats.length === 0) return null;
-        return (
-          <div className="mt-4 border-t border-[#EDE7EE] pt-3">
-            <button
-              onClick={() => setArchOpen((o) => !o)}
-              className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-bold text-slate-400 transition hover:bg-[#F4F0F5] hover:text-slate-600"
-            >
-              <span className={`transition-transform ${archOpen ? "rotate-180" : ""}`}>▾</span>
-              Archived categories ({archivedCats.length})
-            </button>
-            {archOpen && (
-              <div className="mt-1.5 space-y-1.5">
-                {archivedCats.map((c) => {
-                  const ids = [c.id, ...cats.filter((x) => x.parentId === c.id).map((x) => x.id)];
-                  const count = services.filter((s) => ids.includes(s.categoryId)).length;
-                  const stillUsed = services.some((s) => ids.includes(s.categoryId) && usedIds.has(s.id));
-                  const parentName = c.parentId ? catById[c.parentId]?.name : undefined;
-                  return (
-                    <div key={c.id} className="flex items-center gap-2 rounded-lg border border-[#EDE7EE] bg-slate-50 px-2.5 py-2 opacity-80">
-                      <span className="h-4 w-4 shrink-0 rounded-md border border-[#EDE7EE]" style={{ background: c.line }} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[12px] font-semibold text-slate-500">{c.name}</span>
-                        <span className="block truncate text-[9.5px] text-slate-400">
-                          {parentName ? `subcategory of ${parentName} · ` : ""}{count} service{count === 1 ? "" : "s"}
-                        </span>
-                      </span>
-                      <button
-                        onClick={() => restoreCategory(c.id)}
-                        title="Restore to the active menu"
-                        className="shrink-0 rounded-md border border-emerald-600/30 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700 transition hover:bg-emerald-100"
-                      >
-                        Restore
-                      </button>
-                      <button
-                        onClick={() => !stillUsed && permanentlyDeleteCategory(c.id)}
-                        disabled={stillUsed}
-                        title={stillUsed ? "Still used by an appointment, can't permanently delete" : "Delete permanently"}
-                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition hover:bg-rose-50 hover:text-rose-500 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      {deleteCatId && (() => {
-        const target = catById[deleteCatId];
-        const ids = [deleteCatId, ...cats.filter((c) => c.parentId === deleteCatId).map((c) => c.id)];
-        const count = services.filter((s) => ids.includes(s.categoryId)).length;
-        const willArchive = count > 0;
-        return (
-          <ConfirmDialog
-            title={willArchive ? `Archive "${target?.name ?? "category"}"?` : `Delete "${target?.name ?? "category"}"?`}
-            body={willArchive
-              ? `This has ${count} service${count === 1 ? "" : "s"} in it. Archiving hides it from booking and from this list, but every appointment that already uses one of its services -- past or upcoming -- keeps showing it exactly as before. Restore it any time from Archived categories below.`
-              : "This can't be undone."}
-            confirmLabel={willArchive ? "Archive category" : "Delete category"}
-            onConfirm={() => (willArchive ? archiveCategory(deleteCatId) : permanentlyDeleteCategory(deleteCatId))}
-            onClose={() => setDeleteCatId(null)}
-          />
-        );
-      })()}
+      {deleteCatId && (
+        <ConfirmDialog
+          title={`Delete "${catById[deleteCatId]?.name ?? "category"}"?`}
+          body="Only empty categories can be deleted. This can't be undone."
+          confirmLabel="Delete category"
+          onConfirm={() => removeCategory(deleteCatId)}
+          onClose={() => setDeleteCatId(null)}
+        />
+      )}
 
       {deleteId && (
         <ConfirmDialog
@@ -1818,6 +1437,82 @@ function CheckoutSection() {
           confirmLabel="Remove field"
           onConfirm={() => {
             patch({ [confirmRemove.scope]: co[confirmRemove.scope].filter((x) => x.id !== confirmRemove.id) } as Partial<typeof co>);
+            setConfirmRemove(null);
+          }}
+          onClose={() => setConfirmRemove(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Registers ───────────────────────────────────────────────────────────────
+function RegistersSection() {
+  const s = useSettingsStore();
+  const regs = s.registers;
+  const activeCount = regs.filter((r) => r.active).length;
+  const [confirmRemove, setConfirmRemove] = useState<{ id: string; name: string } | null>(null);
+  const patch = (id: string, p: Partial<RegisterConfig>) =>
+    setSettings((x) => ({ ...x, registers: x.registers.map((r) => (r.id === id ? { ...r, ...p } : r)) }));
+
+  return (
+    <div>
+      <SectionHead title="Registers" blurb="Cash drawers your team opens and closes each day" />
+      <div className={card}>
+        <p className="mb-0.5 text-[12px] font-bold text-slate-800">Cash registers</p>
+        <p className="mb-3 text-[10.5px] text-slate-400">
+          Each register keeps its own opening float, shift totals, and close-out history. Signing in for the day
+          asks which one is in use when there is more than one active.
+        </p>
+        <div className="space-y-1.5">
+          {regs.map((r) => (
+            <div key={r.id} className="flex items-center gap-2">
+              <input
+                value={r.name}
+                onChange={(e) => patch(r.id, { name: e.target.value })}
+                className="h-9 min-w-0 flex-1 rounded-lg border border-[#E3DDE3] bg-white px-2.5 text-[12.5px] font-semibold outline-none focus:border-[#5B54D6]"
+              />
+              <span title={r.active ? "Active, shows in the daily picker" : "Inactive, hidden from the daily picker"}>
+                <Toggle
+                  on={r.active}
+                  onClick={() => {
+                    if (r.active && activeCount === 1) return;
+                    patch(r.id, { active: !r.active });
+                  }}
+                />
+              </span>
+              <button
+                onClick={() => setConfirmRemove({ id: r.id, name: r.name })}
+                disabled={r.active && activeCount === 1}
+                title={r.active && activeCount === 1 ? "Keep at least one active register" : `Remove ${r.name}`}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-300 transition hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-slate-300"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+          {regs.length === 0 && <p className="text-[11px] text-slate-400">No registers yet.</p>}
+        </div>
+        <button
+          onClick={() =>
+            setSettings((x) => ({
+              ...x,
+              registers: [...x.registers, { id: uid("reg"), name: `Register ${x.registers.length + 1}`, active: true }],
+            }))
+          }
+          className="mt-3 flex items-center gap-1.5 rounded-lg border border-dashed border-[#D8D0D9] px-3 py-1.5 text-[12px] font-bold text-slate-500 transition hover:border-[#5B54D6] hover:text-[#5B54D6]"
+        >
+          <Plus className="h-3.5 w-3.5" /> Add register
+        </button>
+      </div>
+
+      {confirmRemove && (
+        <ConfirmDialog
+          title={`Remove "${confirmRemove.name}"?`}
+          body="It drops off the daily register picker. Any shifts already opened and closed on it stay in Manage Register's history."
+          confirmLabel="Remove register"
+          onConfirm={() => {
+            setSettings((x) => ({ ...x, registers: x.registers.filter((r) => r.id !== confirmRemove.id) }));
             setConfirmRemove(null);
           }}
           onClose={() => setConfirmRemove(null)}

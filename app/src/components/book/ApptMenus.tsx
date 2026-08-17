@@ -21,11 +21,13 @@ interface MenuProps {
   pairCount: number
   /** a payment record actually exists for this appointment (only then is there anything to invoice) */
   hasPayment: boolean
+  /** the board currently showing is today, not a past or future day -- checkout only runs against today */
+  isToday: boolean
   onAction: (a: MenuAction) => void
   onClose: () => void
 }
 
-export function ApptContextMenu({ x, y, appt, pairCount, hasPayment, onAction, onClose }: MenuProps) {
+export function ApptContextMenu({ x, y, appt, pairCount, hasPayment, isToday, onAction, onClose }: MenuProps) {
   const menuRef = useRef<HTMLDivElement>(null)
   // start with a rough estimate so it renders somewhere sane, then re-measure
   // the actual menu once it's in the DOM — the row count varies a lot by
@@ -44,13 +46,17 @@ export function ApptContextMenu({ x, y, appt, pairCount, hasPayment, onAction, o
   }, [x, y])
 
   const item = (
-    action: MenuAction, label: string, icon: React.ReactNode, danger = false,
+    action: MenuAction, label: string, icon: React.ReactNode, danger = false, disabled = false, disabledTitle?: string,
   ) => (
     <button
       key={action}
-      onClick={() => onAction(action)}
+      onClick={() => !disabled && onAction(action)}
+      disabled={disabled}
+      title={disabled ? disabledTitle : undefined}
       className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition-colors ${
-        danger ? 'text-red-400 hover:bg-red-500/10' : 'hover:bg-accent'
+        disabled
+          ? 'cursor-not-allowed text-muted-foreground/50'
+          : danger ? 'text-red-400 hover:bg-red-500/10' : 'hover:bg-accent'
       }`}
     >
       {icon}
@@ -92,7 +98,7 @@ export function ApptContextMenu({ x, y, appt, pairCount, hasPayment, onAction, o
         {appt.status === 'checked_in' && item('backtoconfirmed', 'Back to confirmed', <Undo2 className="h-3.5 w-3.5" />)}
         {appt.status === 'completed' && hasPayment && item('invoice', 'View invoice / Print', <Receipt className="h-3.5 w-3.5" />)}
         {(appt.status === 'booked' || appt.status === 'confirmed' || appt.status === 'checked_in' || appt.status === 'completed' || appt.status === 'in_service') &&
-          item('checkout', 'Check out', <CreditCard className="h-3.5 w-3.5" />)}
+          item('checkout', 'Check out', <CreditCard className="h-3.5 w-3.5" />, false, !isToday, 'Checkout is only available for today\'s appointments')}
         {(appt.status === 'booked' || appt.status === 'confirmed' || appt.status === 'checked_in') && (
           <>
             <div className="my-1 border-t border-border" />

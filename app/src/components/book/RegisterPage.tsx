@@ -7,14 +7,19 @@
 //
 // Deliberately not here: mid-day counts and tips payout — cash leaves the
 // drawer only through the close count in this build.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle, Banknote, Check, ChevronDown, Lock, LockOpen, Scale, X,
 } from 'lucide-react'
+import type { RegisterConfig } from '@/lib/settings-store'
 
 /** one open→close cycle of the drawer */
 export interface RegisterSession {
   id: string
+  /** which configured register this shift ran on (see RegisterConfig in Settings) */
+  registerId: string
+  /** frozen at open time, so history still reads right if the register is later renamed or removed */
+  registerName: string
   /** business day the register was opened on */
   dateKey: string
   openedAt: number
@@ -202,25 +207,48 @@ function Row({ label, value, sub, strong, tone }: {
 
 interface Props {
   open: boolean
+  /** every configured register, active or not (see RegisterConfig in Settings) */
+  registers: RegisterConfig[]
+  /** the register picked at today's login, preselects the panel below */
+  defaultRegisterId?: string | null
   sessions: RegisterSession[]
   payments: RegisterPayment[]
   /** who's signed in, recorded as the person opening/closing */
   userName: string
   /** today's business day key, the day a new session is stamped with */
   todayKey: string
+  /** today's appointments still needing checkout — closing is blocked while this is above 0 */
+  openTicketsToday: number
   onOpenRegister: (s: RegisterSession) => void
   onCloseRegister: (id: string, patch: Partial<RegisterSession>) => void
   onClose: () => void
 }
 
 export function RegisterPage({
-  open, sessions, payments, userName, todayKey, onOpenRegister, onCloseRegister, onClose,
+  open, registers, defaultRegisterId, sessions, payments, userName, todayKey, openTicketsToday,
+  onOpenRegister, onCloseRegister, onClose,
 }: Props) {
-  // the drawer is a single register: at most one session is ever open
-  const active = sessions.find((s) => s.closedAt == null) ?? null
+  // active registers show in the picker; an inactive one still shows if it
+  // was somehow left open, so it's never stuck un-closeable behind the toggle
+  const visibleRegisters = useMemo(
+    () => registers.filter((r) => r.active || sessions.some((s) => s.registerId === r.id && s.closedAt == null)),
+    [registers, sessions],
+  )
+  const [selectedId, setSelectedId] = useState<string | null>(defaultRegisterId ?? visibleRegisters[0]?.id ?? null)
+  // keep the selection valid as the configured list or today's pick changes
+  useEffect(() => {
+    if (selectedId && visibleRegisters.some((r) => r.id === selectedId)) return
+    setSelectedId(defaultRegisterId ?? visibleRegisters[0]?.id ?? null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultRegisterId, visibleRegisters.map((r) => r.id).join(',')])
+
+  const selected = visibleRegisters.find((r) => r.id === selectedId) ?? null
+  const active = selected ? sessions.find((s) => s.registerId === selected.id && s.closedAt == null) ?? null : null
   const history = useMemo(
-    () => sessions.filter((s) => s.closedAt != null).sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0)),
-    [sessions],
+    () => (selected
+      ? sessions.filter((s) => s.registerId === selected.id && s.closedAt != null).sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))
+      : []),
+    [sessions, selected],
   )
 
   // open form
@@ -256,8 +284,11 @@ export function RegisterPage({
   }
 
   const doOpen = () => {
+    if (!selected) return
     onOpenRegister({
       id: `reg${Date.now()}`,
+      registerId: selected.id,
+      registerName: selected.name,
       dateKey: todayKey,
       openedAt: Date.now(),
       openedBy: userName,
@@ -296,19 +327,23 @@ export function RegisterPage({
         <div className="min-w-0">
           <h1 className="text-[17px] font-extrabold leading-tight text-ink">Manage register</h1>
           <p className="truncate text-[12px] font-medium text-ink-soft">
-            {active
-              ? `Open since ${stamp(active.openedAt)} · by ${active.openedBy}`
-              : 'The drawer is closed — open it to start taking cash'}
+            {!selected
+              ? 'No registers configured, add one in Settings, Registers'
+              : active
+                ? `${selected.name}, open since ${stamp(active.openedAt)} · by ${active.openedBy}`
+                : `${selected.name} is closed, open it to start taking cash`}
           </p>
         </div>
-        <span
-          className={`ml-2 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${
-            active ? 'bg-olive-tint text-olive' : 'bg-secondary text-ink-faint'
-          }`}
-        >
-          {active ? <LockOpen className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
-          {active ? 'Open' : 'Closed'}
-        </span>
+        {selected && (
+          <span
+            className={`ml-2 flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${
+              active ? 'bg-olive-tint text-olive' : 'bg-secondary text-ink-faint'
+            }`}
+          >
+            {active ? <LockOpen className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
+            {active ? 'Open' : 'Closed'}
+          </span>
+        )}
         <button
           type="button"
           title="Close"
@@ -323,10 +358,45 @@ export function RegisterPage({
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
         <div className="mx-auto w-full max-w-3xl space-y-4">
 
+          {/* ── switch between registers, only shown once there's more than one ── */}
+          {visibleRegisters.length > 1 && (
+            <div className="flex flex-wrap gap-1.5">
+              {visibleRegisters.map((r) => {
+                const isOpen = sessions.some((s) => s.registerId === r.id && s.closedAt == null)
+                const isSel = r.id === selected?.id
+                return (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => setSelectedId(r.id)}
+                    className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] font-bold transition-colors ${
+                      isSel ? 'border-clay bg-clay-tint text-clay' : 'border-line bg-surface text-ink-soft hover:bg-cream'
+                    }`}
+                  >
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${isOpen ? 'bg-olive' : 'bg-ink-faint/50'}`} />
+                    {r.name}
+                    {!r.active && <span className="text-[10px] font-normal text-ink-faint">(inactive)</span>}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* ── no registers configured at all ── */}
+          {!selected && (
+            <div className="rounded-2xl border border-line bg-surface p-5 text-center">
+              <Banknote className="mx-auto h-6 w-6 text-ink-faint" />
+              <h2 className="mt-2 text-[15px] font-bold text-ink">No registers set up yet</h2>
+              <p className="mx-auto mt-1 max-w-sm text-[12.5px] text-ink-soft">
+                Add at least one cash register in Settings, Registers before you can open a drawer.
+              </p>
+            </div>
+          )}
+
           {/* ── no register open: open it ── */}
-          {!active && (
+          {!active && selected && (
             <div className="rounded-2xl border border-line bg-surface p-5">
-              <h2 className="text-[15px] font-bold text-ink">Open the register</h2>
+              <h2 className="text-[15px] font-bold text-ink">Open {selected.name}</h2>
               <p className="mt-0.5 text-[12.5px] text-ink-soft">
                 Count the cash you're starting the drawer with. Everything taken from here until you close
                 gets measured against it.
@@ -353,7 +423,7 @@ export function RegisterPage({
                 onClick={doOpen}
                 className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-xl bg-clay py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-clay-deep"
               >
-                <LockOpen className="h-4 w-4" /> Open register with {money(openingTotal)}
+                <LockOpen className="h-4 w-4" /> Open {selected.name} with {money(openingTotal)}
               </button>
               <p className="mt-2 text-center text-[11px] text-ink-faint">
                 Opening as <b className="text-ink-soft">{userName}</b> · {dayLabelOf(todayKey)}
@@ -415,15 +485,25 @@ export function RegisterPage({
                 </div>
               </div>
 
-              {/* close */}
+              {/* close, blocked until every appointment today has been checked out */}
               {!closing ? (
-                <button
-                  type="button"
-                  onClick={() => setClosing(true)}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-clay py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-clay-deep"
-                >
-                  <Lock className="h-4 w-4" /> Close register
-                </button>
+                openTicketsToday > 0 ? (
+                  <div className="flex items-start gap-2 rounded-xl border border-amberw/40 bg-amberw-tint/50 px-3.5 py-2.5 text-[12px] text-ink">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amberw" />
+                    <span>
+                      {openTicketsToday} appointment{openTicketsToday === 1 ? '' : 's'} today still {openTicketsToday === 1 ? 'needs' : 'need'} to
+                      be checked out before any register can close.
+                    </span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setClosing(true)}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-clay py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-clay-deep"
+                  >
+                    <Lock className="h-4 w-4" /> Close register
+                  </button>
+                )
               ) : (
                 <div className="rounded-2xl border border-line bg-surface p-5">
                   <h2 className="text-[15px] font-bold text-ink">Close the register</h2>
@@ -541,6 +621,43 @@ export function RegisterPage({
               )
             )}
           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── which register today, asked once a day whenever more than one is active.
+   Not dismissable without picking — every sale from here on counts against
+   whichever register is chosen, so this can't be skipped or clicked past. ── */
+export function RegisterDayPrompt({ registers, userName, onPick }: {
+  registers: RegisterConfig[]
+  userName: string
+  onPick: (registerId: string) => void
+}) {
+  return (
+    <div className="fixed inset-0 z-[99] flex items-center justify-center bg-slate-900/55 p-4">
+      <div className="w-[380px] rounded-2xl border border-line bg-popover p-5 shadow-2xl">
+        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-clay-tint text-clay">
+          <Banknote className="h-5 w-5" />
+        </span>
+        <h2 className="mt-3 text-[16px] font-bold text-ink">Which register today?</h2>
+        <p className="mt-1 text-[12.5px] text-ink-soft">
+          Hi {userName.split(' ')[0]}, pick the drawer you're working from today. Sales ring in against it until
+          you switch registers in Manage Register or a new day starts.
+        </p>
+        <div className="mt-3.5 space-y-1.5">
+          {registers.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => onPick(r.id)}
+              className="flex w-full items-center gap-2.5 rounded-xl border border-line px-3.5 py-2.5 text-left transition-colors hover:border-clay hover:bg-clay-tint/40"
+            >
+              <Banknote className="h-4 w-4 shrink-0 text-clay" />
+              <span className="text-[13px] font-bold text-ink">{r.name}</span>
+            </button>
+          ))}
         </div>
       </div>
     </div>

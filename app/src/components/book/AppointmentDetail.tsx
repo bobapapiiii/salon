@@ -121,6 +121,9 @@ export function AppointmentDetail({
   const [rebooking, setRebooking] = useState(false)
   const [rebookSlot, setRebookSlot] = useState<{ dateKey: string; startMin: number } | null>(null)
 
+  // checkout (and reopening a ticket, which just redoes checkout) only ever
+  // runs against today -- this panel can be opened for any day's appointment
+  const isOriginToday = originDateKey === dayKeyOf(new Date())
   const client = clients.find((c) => c.name === appt.clientName)
   const setSvc = (id: string, patch: Partial<Appointment>) =>
     setDraft((d) => d.map((x) => (x.id === id ? { ...x, ...patch } : x)))
@@ -505,7 +508,12 @@ export function AppointmentDetail({
             {(canCheckout || hasInvoice) && (
               <div className="flex gap-1.5">
                 {canCheckout && (
-                  <button onClick={() => onAction('checkout')} className={`flex-1 ${actionBtn}`}>
+                  <button
+                    onClick={() => isOriginToday && onAction('checkout')}
+                    disabled={!isOriginToday}
+                    title={isOriginToday ? undefined : 'Checkout is only available for today\'s appointments'}
+                    className={`flex-1 ${actionBtn} disabled:cursor-not-allowed disabled:opacity-40`}
+                  >
                     <CreditCard className="h-3.5 w-3.5" /> Check out {appt.clientName.split(' ')[0]}
                   </button>
                 )}
@@ -515,7 +523,12 @@ export function AppointmentDetail({
                   </button>
                 )}
                 {hasInvoice && (
-                  <button onClick={() => onAction('reopen')} className={`flex-1 ${actionBtn}`} title="Made a mistake? Clear this payment and redo checkout">
+                  <button
+                    onClick={() => isOriginToday && onAction('reopen')}
+                    disabled={!isOriginToday}
+                    className={`flex-1 ${actionBtn} disabled:cursor-not-allowed disabled:opacity-40`}
+                    title={isOriginToday ? 'Made a mistake? Clear this payment and redo checkout' : 'Only today\'s tickets can be reopened'}
+                  >
                     <Undo2 className="h-3.5 w-3.5" /> Reopen Ticket
                   </button>
                 )}

@@ -22,7 +22,7 @@ import { DatePickerPopover, LegendPopover } from './LegendPopover'
 import { ContextBar, NavRail } from './AppShell'
 import { SettingsPage, type SectionId } from './SettingsPage'
 import { JobCardPage } from './JobCardPage'
-import { RegisterPage, type RegisterSession } from './RegisterPage'
+import { RegisterPage, RegisterDayPrompt, type RegisterSession } from './RegisterPage'
 import { useSessionUser } from '@/lib/session'
 import { buildJobCard, printJobCards } from '@/lib/job-card'
 import { useLocation, useNavigate } from 'react-router'
@@ -279,6 +279,10 @@ export function AppointmentBook() {
   const settingsSection = (settingsMatch?.[1] ?? 'general') as SectionId
   // everything the user changes persists across refreshes (localStorage)
   const sessionUser = useSessionUser()
+  // real-world today, distinct from `dateKey` (whatever day the calendar is
+  // currently showing) — checkout and register close are only ever allowed
+  // against today, no matter which day staff happen to be browsing
+  const todayKey = dayKey(new Date())
   const [dateKey, setDateKey] = usePersistentState<string>(upref('ui-date'), () => dayKey(new Date()))
   const date = useMemo(() => new Date(dateKey + 'T12:00:00'), [dateKey])
   const [apptDays, setApptDays] = usePersistentState<Record<string, Appointment[]>>(sdata('appts-v1'), {})
@@ -446,10 +450,26 @@ export function AppointmentBook() {
   const [finderOpen, setFinderOpen] = useState(false)
   // job cards open on whatever day the calendar is showing, then browse on their own
   const [jobCardOpen, setJobCardOpen] = useState(false)
-  // cash drawer: one open→close cycle per shift, salon-shared like the ledger
+  // cash drawer: one open→close cycle per shift, salon-shared like the ledger.
+  // Multiple registers can each run their own shift at once (see Settings → Registers)
   const [registerOpen, setRegisterOpen] = useState(false)
   const [registerSessions, setRegisterSessions] = usePersistentState<RegisterSession[]>(sdata('register-v1'), [])
-  const openRegister = registerSessions.find((s) => s.closedAt == null) ?? null
+  const anyRegisterOpen = registerSessions.some((s) => s.closedAt == null)
+  const registers = useSettingsStore().registers
+  const activeRegisters = registers.filter((r) => r.active)
+  // which register today's shift runs on, asked once a day (see RegisterDayPrompt
+  // below) — remembered salon-wide so it doesn't re-ask every time someone signs in
+  const [registerDaySelect, setRegisterDaySelect] = usePersistentState<{ dateKey: string; registerId: string } | null>(
+    sdata('register-day-select-v1'), null,
+  )
+  // with only one active register there's nothing to actually choose, so skip
+  // the prompt and just default to it
+  useEffect(() => {
+    if (registerDaySelect?.dateKey === todayKey) return
+    if (activeRegisters.length === 1) setRegisterDaySelect({ dateKey: todayKey, registerId: activeRegisters[0].id })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [todayKey, activeRegisters.length])
+  const registerPromptNeeded = activeRegisters.length > 1 && registerDaySelect?.dateKey !== todayKey
   const [jobCardDate, setJobCardDate] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<string | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
@@ -1781,8 +1801,8 @@ export function AppointmentBook() {
     setPosOpen(false)
     setFinderOpen(false)
     // a nudge, not a block — the sale still goes through, it just won't land in
-    // any shift's cash count until the drawer is opened
-    if (!openRegister) showFlash('⚠ Register is closed — open it from Manage Register to track this cash')
+    // any shift's cash count until a drawer is opened
+    if (!anyRegisterOpen) showFlash('⚠ Register is closed — open it from Manage Register to track this cash')
     // groupOverride lets a caller pass an already-resolved group (e.g. the
     // edit panel, whose day rail may have navigated the live calendar away
     // from this appointment's own day within this same synchronous call)
@@ -1897,6 +1917,14 @@ export function AppointmentBook() {
   const doReopenTicket = () => {
     if (!reopenPrompt) return
     const { payment, items } = reopenPrompt
+    // reopening only exists to redo checkout right away, and checkout only
+    // ever runs against today -- so don't void a past ticket's payment if
+    // there'd be no way to actually recheck it out
+    if (payment.dateKey !== todayKey) {
+      showFlash('Only today\'s tickets can be reopened and checked out again')
+      setReopenPrompt(null)
+      return
+    }
     voidPayment(payment)
     setInvoicePayment(null)
     setReopenPrompt(null)
@@ -1980,6 +2008,9 @@ export function AppointmentBook() {
       case 'start': setStatus(a, 'in_service', '▶ Service started'); break
       case 'complete': setStatus(a, 'completed', '✓ Completed, ready for checkout'); break
       case 'checkout': {
+        // only today's board can check out — a past or future day's appointments
+        // aren't real cash movement yet (or already happened elsewhere)
+        if (dateKey !== todayKey) { showFlash('Checkout is only available for today\'s appointments'); break }
         const payableNow = appts.some((x) =>
           (x.clientName === a.clientName || (a.guestOf && x.guestOf === a.guestOf) || (a.parallelGroup && x.parallelGroup === a.parallelGroup)) &&
           payable(x))
@@ -2235,6 +2266,10 @@ export function AppointmentBook() {
     if (originKey !== dateKey) goDay(new Date(originKey + 'T12:00:00'))
     switch (action) {
       case 'checkout':
+        // only today's own appointments can check out (the AppointmentDetail
+        // footer already disables the button for any other day, this is the
+        // backstop in case the action still fires)
+        if (originKey !== todayKey) { showFlash('Checkout is only available for today\'s appointments'); break }
         // pass detailParty (the whole party, not just this client) explicitly —
         // it's already resolved against the appointment's own day, whereas
         // `appts` may not have caught up to the goDay() above yet within this
@@ -2248,6 +2283,7 @@ export function AppointmentBook() {
         break
       }
       case 'reopen': {
+        if (originKey !== todayKey) { showFlash('Only today\'s tickets can be reopened and checked out again'); break }
         const found = findDetailPayment(originKey)
         if (!found) { showFlash('No payment recorded for this appointment'); break }
         setReopenPrompt(found)
@@ -2919,6 +2955,13 @@ export function AppointmentBook() {
   const dayGuests = useMemo(() => new Set(appts.map((a) => a.clientName)).size, [appts])
   const dayValue = useMemo(() => appts.reduce((s, a) => s + (a.priceOverride ?? svcById[a.serviceId].price) + (a.addons ?? []).reduce((x, ad) => x + ad.price, 0), 0), [appts])
   const dayCollected = useMemo(() => payments.filter((p) => p.dateKey === dateKey).reduce((s, p) => s + p.total, 0), [payments, dateKey])
+  // today's appointments still needing checkout, regardless of which day the
+  // calendar happens to be showing right now -- Manage Register blocks
+  // closing any drawer until this reaches zero
+  const openTicketsToday = useMemo(
+    () => (dateKey === todayKey ? appts : apptDays[todayKey] ?? []).filter((a) => payable(a)).length,
+    [appts, apptDays, dateKey, todayKey, payments],
+  )
 
   const hours = Array.from({ length: DAY_SLOTS / 4 + 3 }, (_, i) => (i - 1) * 60)
 
@@ -2972,7 +3015,7 @@ export function AppointmentBook() {
           setFinderOpen(false)
           closeCheckout()
           setPosOpen(true)
-          if (!openRegister) showFlash('⚠ Register is closed — open it from Manage Register to track this cash')
+          if (!anyRegisterOpen) showFlash('⚠ Register is closed — open it from Manage Register to track this cash')
         }}
         onFindTime={openFinder}
         requestCount={requested.length}
@@ -3720,6 +3763,7 @@ export function AppointmentBook() {
           appt={appts.find((a) => a.id === menu.apptId)!}
           pairCount={appts.filter((a) => a.parallelGroup && a.parallelGroup === appts.find((x) => x.id === menu.apptId)?.parallelGroup).length}
           hasPayment={payments.some((p) => p.apptIds?.includes(menu.apptId))}
+          isToday={dateKey === todayKey}
           onAction={onMenuAction}
           onClose={() => setMenu(null)}
         />
@@ -3906,13 +3950,16 @@ export function AppointmentBook() {
       {/* manage register, the cash drawer's open/close and its shift history */}
       <RegisterPage
         open={registerOpen}
+        registers={registers}
+        defaultRegisterId={registerDaySelect?.dateKey === todayKey ? registerDaySelect.registerId : null}
         sessions={registerSessions}
         payments={payments}
         userName={sessionUser.name}
-        todayKey={dayKey(new Date())}
+        todayKey={todayKey}
+        openTicketsToday={openTicketsToday}
         onOpenRegister={(s) => {
           setRegisterSessions((x) => [...x, s])
-          showFlash(`✓ Register opened with $${s.openingFloat.toFixed(2)}`)
+          showFlash(`✓ ${s.registerName} opened with $${s.openingFloat.toFixed(2)}`)
         }}
         onCloseRegister={(id, patch) => {
           setRegisterSessions((x) => x.map((s) => (s.id === id ? { ...s, ...patch } : s)))
@@ -3923,6 +3970,17 @@ export function AppointmentBook() {
         }}
         onClose={() => setRegisterOpen(false)}
       />
+
+      {/* which register today -- asked once a day whenever more than one is
+          active, so the first sale of the day already lands against the
+          right drawer instead of needing a manual switch later */}
+      {registerPromptNeeded && (
+        <RegisterDayPrompt
+          registers={activeRegisters}
+          userName={sessionUser.name}
+          onPick={(registerId) => setRegisterDaySelect({ dateKey: todayKey, registerId })}
+        />
+      )}
 
       {/* team schedule, per-day tech status & hours */}
       {scheduleOpen && (

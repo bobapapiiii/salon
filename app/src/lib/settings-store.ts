@@ -23,6 +23,17 @@ export interface CheckoutField {
   label: string;
 }
 
+/** a cash register the salon can open and close a daily shift on. Multiple
+ *  registers let more than one drawer run at once (front desk, a second
+ *  station); each keeps its own open/close history in Manage Register. */
+export interface RegisterConfig {
+  id: string;
+  name: string;
+  /** inactive registers drop out of the "which register today" prompt and
+   *  Manage Register's picker, but their past shifts stay in history */
+  active: boolean;
+}
+
 export interface SalonSettings {
   general: {
     name: string; phone: string; email: string; address: string; website: string; clockFormat: '12h' | '24h';
@@ -64,6 +75,8 @@ export interface SalonSettings {
     /** receipt roll width in mm — 80 is the TM-T30III default, 58 is the narrow roll */
     width: 58 | 80;
   };
+  /** cash registers the salon operates; see RegisterConfig */
+  registers: RegisterConfig[];
 }
 
 export const ALL_METHODS = ["Cash", "Card", "Venmo", "Zelle"];
@@ -92,6 +105,7 @@ const defaults: SalonSettings = {
   notifications: { confirmSms: true, reminderSms: true, reminderHrs: 24 },
   checkout: { serviceFields: [{ id: "f-color", label: "Color" }], generalFields: [] },
   jobCard: { width: 80 },
+  registers: [{ id: "reg-1", name: "Front Desk", active: true }],
 };
 
 const KEY = sdata("settings-v1");
@@ -110,6 +124,7 @@ function load(): SalonSettings {
       notifications: { ...defaults.notifications, ...p.notifications },
       checkout: { ...defaults.checkout, ...p.checkout },
       jobCard: { ...defaults.jobCard, ...p.jobCard },
+      registers: p.registers && p.registers.length > 0 ? p.registers : defaults.registers,
     };
   } catch {
     return defaults;
