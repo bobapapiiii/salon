@@ -12,7 +12,7 @@ import { getStaff } from "@/lib/staff-store";
 import { useSettingsStore } from "@/lib/settings-store";
 import { svcById } from "@/lib/services-store";
 import { catById } from "@/lib/categories-store";
-import { paymentSources, refundedBySource, round2, totalRefunded, type PaymentSource, type PaymentWithSources, type RefundRecord } from "@/lib/payments";
+import { paymentSources, refundedBySource, round2, techServiceTotals, techTipTotals, totalRefunded, type PaymentSource, type PaymentWithSources, type RefundRecord } from "@/lib/payments";
 
 export { paymentSources, type PaymentSource, type PaymentWithSources } from "@/lib/payments";
 
@@ -134,7 +134,16 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
      *  charged instead of a fresh 18% guess */
     tip: number;
     refunds?: RefundRecord[];
-    onRefund: (sourceId: string, amount: number, reason: string | undefined, snapshot: { apptIds: string[]; subtotal: number; tip: number; total: number; points: number }) => void;
+    onRefund: (input: {
+      sourceId: string;
+      amount: number;
+      reason?: string;
+      /** which bucket this money comes back out of -- services (reduces
+       *  that tech's commission-earning sales) or tip (reduces their payout) */
+      from?: "service" | "tip";
+      techId?: string;
+      snapshot: { apptIds: string[]; subtotal: number; tip: number; total: number; points: number };
+    }) => void;
   };
 }) {
   const settings = useSettingsStore();
@@ -157,6 +166,8 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
   const [refundOpenId, setRefundOpenId] = useState<string | null>(null);
   const [refundAmountText, setRefundAmountText] = useState("");
   const [refundReason, setRefundReason] = useState("");
+  const [refundFrom, setRefundFrom] = useState<"service" | "tip" | undefined>(undefined);
+  const [refundTechId, setRefundTechId] = useState("");
 
   const methods = settings.payments.methods.filter((m) => m in METHOD_ICONS);
   const tipPresets = settings.payments.tipPresets;
@@ -230,6 +241,22 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
   const lockedSources = existing ? paymentSources(existing.payment) : [];
   const lockedIds = new Set(lockedSources.map((s) => s.id));
 
+  // a refund on a reopened ticket comes back out of either a tech's service
+  // value (their commission basis) or their tip -- these are what's left of
+  // each, per tech, to pick from
+  const techName = (techId: string) => getStaff().techs.find((t) => t.id === techId)?.name ?? "Unassigned";
+  const serviceTechTotals = useMemo(
+    () => techServiceTotals(existing?.payment.lines).map((t) => ({ ...t, name: techName(t.techId) })),
+    [existing],
+  );
+  const tipTechTotals = useMemo(
+    () => techTipTotals(existing?.payment.tipByTech).map((t) => ({ ...t, name: techName(t.techId) })),
+    [existing],
+  );
+  const canRefundService = serviceTechTotals.length > 0;
+  const canRefundTip = tipTechTotals.length > 0;
+  const refundTechOptions = refundFrom === "tip" ? tipTechTotals : serviceTechTotals;
+
   // the payment list -- while untouched (no draft.sources yet) there's one
   // implicit row for the full total (or the existing locked sources, when
   // reopening), kept in sync as the ticket total moves; touching anything
@@ -285,9 +312,15 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
     });
   };
   const submitRefund = (sourceId: string, available: number) => {
-    const amount = round2(Number(refundAmountText) || 0);
-    if (!(amount > 0 && amount <= available + 0.005)) return;
-    existing?.onRefund(sourceId, amount, refundReason.trim() || undefined, { apptIds, subtotal, tip, total, points });
+    // never more than what's actually left on this source -- cap it instead
+    // of blocking the refund
+    const amount = Math.min(round2(Number(refundAmountText) || 0), available);
+    if (!(amount > 0)) return;
+    existing?.onRefund({
+      sourceId, amount, reason: refundReason.trim() || undefined,
+      from: refundFrom, techId: refundTechId || undefined,
+      snapshot: { apptIds, subtotal, tip, total, points },
+    });
   };
 
   // group the ticket per person for party checkouts (host first)
@@ -724,6 +757,9 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                             setRefundOpenId(refundRowOpen ? null : r.id);
                             setRefundAmountText((refundNeeded > 0.004 ? Math.min(availableToRefund, refundNeeded) : availableToRefund).toFixed(2));
                             setRefundReason("");
+                            const defaultFrom = canRefundService ? "service" : canRefundTip ? "tip" : undefined;
+                            setRefundFrom(defaultFrom);
+                            setRefundTechId((defaultFrom === "tip" ? tipTechTotals : serviceTechTotals)[0]?.techId ?? "");
                           }}
                           className="shrink-0 text-[11px] font-semibold text-rust hover:underline"
                         >
@@ -741,26 +777,69 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                       )}
                     </div>
                     {locked && refundRowOpen && (
-                      <div className="mt-1.5 flex items-center gap-1.5 border-t border-line/60 pt-1.5">
-                        <span className="text-[11px] font-bold text-ink-faint">$</span>
-                        <input
-                          value={refundAmountText}
-                          onChange={(e) => setRefundAmountText(e.target.value.replace(/[^\d.]/g, ""))}
-                          className="tnum h-7 w-20 shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-[12px] font-bold outline-none focus:border-clay"
-                        />
-                        <input
-                          value={refundReason}
-                          onChange={(e) => setRefundReason(e.target.value)}
-                          placeholder="Reason (optional)"
-                          className="h-7 min-w-0 flex-1 rounded-[7px] border border-input bg-background px-2 text-[11px] outline-none focus:border-clay"
-                        />
-                        <button
-                          onClick={() => submitRefund(r.id, availableToRefund)}
-                          disabled={!(Number(refundAmountText) > 0 && Number(refundAmountText) <= availableToRefund + 0.005)}
-                          className="shrink-0 rounded-[7px] bg-rust px-2.5 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          Refund
-                        </button>
+                      <div className="mt-1.5 space-y-1.5 border-t border-line/60 pt-1.5">
+                        {(canRefundService || canRefundTip) && (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-ink-faint">Refund from</span>
+                            {canRefundService && (
+                              <button
+                                onClick={() => { setRefundFrom("service"); setRefundTechId(serviceTechTotals[0]?.techId ?? ""); }}
+                                className={`rounded-full border px-2 py-0.5 text-[10.5px] font-bold transition ${
+                                  refundFrom === "service" ? "border-clay bg-clay-tint text-clay" : "border-line bg-surface text-ink-faint hover:border-line-strong"
+                                }`}
+                              >
+                                Services
+                              </button>
+                            )}
+                            {canRefundTip && (
+                              <button
+                                onClick={() => { setRefundFrom("tip"); setRefundTechId(tipTechTotals[0]?.techId ?? ""); }}
+                                className={`rounded-full border px-2 py-0.5 text-[10.5px] font-bold transition ${
+                                  refundFrom === "tip" ? "border-clay bg-clay-tint text-clay" : "border-line bg-surface text-ink-faint hover:border-line-strong"
+                                }`}
+                              >
+                                Tip
+                              </button>
+                            )}
+                            {refundTechOptions.length > 1 && (
+                              <select
+                                value={refundTechId}
+                                onChange={(e) => setRefundTechId(e.target.value)}
+                                title="Technician"
+                                className="h-6 min-w-0 flex-1 rounded-[6px] border border-input bg-background px-1.5 text-[11px] font-semibold outline-none focus:border-clay"
+                              >
+                                {refundTechOptions.map((t) => <option key={t.techId} value={t.techId}>{t.name} · {money(t.value)}</option>)}
+                              </select>
+                            )}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] font-bold text-ink-faint">$</span>
+                          <input
+                            value={refundAmountText}
+                            onChange={(e) => {
+                              const raw = e.target.value.replace(/[^\d.]/g, "");
+                              const n = Number(raw);
+                              // never let the field hold more than this source has left
+                              setRefundAmountText(raw !== "" && !Number.isNaN(n) && n > availableToRefund ? availableToRefund.toFixed(2) : raw);
+                            }}
+                            className="tnum h-7 w-20 shrink-0 rounded-[7px] border border-input bg-background px-1.5 text-[12px] font-bold outline-none focus:border-clay"
+                          />
+                          <span className="shrink-0 text-[10px] text-ink-faint">of {money(availableToRefund)}</span>
+                          <input
+                            value={refundReason}
+                            onChange={(e) => setRefundReason(e.target.value)}
+                            placeholder="Reason (optional)"
+                            className="h-7 min-w-0 flex-1 rounded-[7px] border border-input bg-background px-2 text-[11px] outline-none focus:border-clay"
+                          />
+                          <button
+                            onClick={() => submitRefund(r.id, availableToRefund)}
+                            disabled={!(Number(refundAmountText) > 0)}
+                            className="shrink-0 rounded-[7px] bg-rust px-2.5 py-1 text-[11px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Refund
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

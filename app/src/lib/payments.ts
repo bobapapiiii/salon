@@ -16,7 +16,9 @@ export interface PaymentSource {
 }
 
 /** one refund against a payment -- always drawn from a specific source (the
- *  card or cash it was originally taken on), in full or in part */
+ *  card or cash it was originally taken on), in full or in part. Also always
+ *  charged against either the service value or the tip of one technician, so
+ *  payroll (commission off sales, or the tip payout) reflects the giveback */
 export interface RefundRecord {
   id: string
   at: number
@@ -25,13 +27,25 @@ export interface RefundRecord {
   sourceId: string
   reason?: string
   by: string
+  /** 'service' reduces that tech's commission-earning sales; 'tip' reduces
+   *  their tip payout. Omitted only for legacy refunds recorded before this
+   *  existed, or a ticket with no tech/tip to charge it against */
+  from?: 'service' | 'tip'
+  /** the technician this refund's service or tip reduction applies to */
+  techId?: string
 }
 
-/** the slice of a payment record paymentSources() needs */
+/** the slice of a payment record paymentSources() needs -- also carries the
+ *  per-tech breakdown so a refund can be charged against the right person's
+ *  commission or tip */
 export interface PaymentWithSources {
   total: number
   sources?: PaymentSource[]
   method: string
+  /** service value per line item, source of each tech's commission basis */
+  lines?: { techId: string; price: number }[]
+  /** tip payout per tech */
+  tipByTech?: { techId: string; amount: number }[]
 }
 
 /** every payment has at least one source going forward; older records saved
@@ -59,4 +73,46 @@ export function netCollected(sources: PaymentSource[], refunds: RefundRecord[] |
 /** what's still owed on top of what's been collected -- 0 once paid in full */
 export function balanceDue(total: number, sources: PaymentSource[], refunds: RefundRecord[] | undefined): number {
   return Math.max(0, round2(total - netCollected(sources, refunds)))
+}
+
+/** a service refund reduces that tech's commission-earning sales -- eats
+ *  into their line items (in order) until the refunded amount is used up,
+ *  never past zero, even if the refund is larger than what's left on the lines */
+export function reduceTechLines(
+  lines: { techId: string; price: number }[] | undefined,
+  techId: string,
+  amount: number,
+): { techId: string; price: number }[] | undefined {
+  if (!lines) return lines
+  let remaining = amount
+  return lines.map((l) => {
+    if (l.techId !== techId || remaining <= 0.004) return l
+    const cut = Math.min(l.price, remaining)
+    remaining = round2(remaining - cut)
+    return { ...l, price: round2(l.price - cut) }
+  })
+}
+
+/** a tip refund reduces that tech's tip payout, never past zero */
+export function reduceTechTip(
+  tipByTech: { techId: string; amount: number }[] | undefined,
+  techId: string,
+  amount: number,
+): { techId: string; amount: number }[] | undefined {
+  if (!tipByTech) return tipByTech
+  return tipByTech.map((t) => (t.techId === techId ? { ...t, amount: Math.max(0, round2(t.amount - amount)) } : t))
+}
+
+/** each tech's current service value on this ticket -- what a "from
+ *  services" refund reduces, i.e. their commission basis */
+export function techServiceTotals(lines: { techId: string; price: number }[] | undefined): { techId: string; value: number }[] {
+  const m = new Map<string, number>()
+  for (const l of lines ?? []) m.set(l.techId, round2((m.get(l.techId) ?? 0) + l.price))
+  return [...m.entries()].filter(([, v]) => v > 0.004).map(([techId, value]) => ({ techId, value }))
+}
+
+/** each tech's current tip payout on this ticket -- what a "from tip"
+ *  refund reduces */
+export function techTipTotals(tipByTech: { techId: string; amount: number }[] | undefined): { techId: string; value: number }[] {
+  return (tipByTech ?? []).filter((t) => t.amount > 0.004).map((t) => ({ techId: t.techId, value: t.amount }))
 }

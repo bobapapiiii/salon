@@ -31,7 +31,7 @@ import { catById } from '@/lib/categories-store'
 import { CheckoutDialog, paymentSources, type CheckoutSourceDraft, type PaymentResult, type PaymentSource } from './CheckoutDialog'
 import { InvoiceDialog } from './InvoiceDialog'
 import { ReopenCheckoutDialog, balanceDue, totalRefunded, type RefundRecord } from './RefundDialog'
-import { round2 } from '@/lib/payments'
+import { reduceTechLines, reduceTechTip, round2 } from '@/lib/payments'
 import { PosPanel } from './PosPanel'
 import { STATUS_META, TechSchedulePanel, type DaySchedule } from './TechSchedulePanel'
 import { BlockEditor, type BlockDraft } from './BlockEditor'
@@ -2039,15 +2039,26 @@ export function AppointmentBook() {
       : '✓ Ticket updated')
   }
 
-  const reopenRefund = (sourceId: string, amount: number, reason: string | undefined, snapshot: { apptIds: string[]; subtotal: number; tip: number; total: number; points: number }) => {
+  const reopenRefund = ({ sourceId, amount, reason, from, techId, snapshot }: {
+    sourceId: string
+    amount: number
+    reason?: string
+    /** which bucket this comes out of -- services (cuts that tech's
+     *  commission-earning sales) or tip (cuts their payout) */
+    from?: 'service' | 'tip'
+    techId?: string
+    snapshot: { apptIds: string[]; subtotal: number; tip: number; total: number; points: number }
+  }) => {
     if (!refundPrompt) return
     const payment = refundPrompt.payment
-    const refundRecord: RefundRecord = { id: `rf${Date.now()}`, at: Date.now(), amount, sourceId, reason, by: sessionUser.name }
-    setPayments((x) => x.map((p) =>
-      p.id === payment.id
-        ? { ...p, subtotal: snapshot.subtotal, tip: snapshot.tip, total: snapshot.total, apptIds: snapshot.apptIds, refunds: [...(p.refunds ?? []), refundRecord] }
-        : p,
-    ))
+    const refundRecord: RefundRecord = { id: `rf${Date.now()}`, at: Date.now(), amount, sourceId, reason, by: sessionUser.name, from, techId }
+    setPayments((x) => x.map((p) => {
+      if (p.id !== payment.id) return p
+      const next = { ...p, subtotal: snapshot.subtotal, tip: snapshot.tip, total: snapshot.total, apptIds: snapshot.apptIds, refunds: [...(p.refunds ?? []), refundRecord] }
+      if (from === 'service' && techId) next.lines = reduceTechLines(p.lines, techId, amount)
+      if (from === 'tip' && techId) next.tipByTech = reduceTechTip(p.tipByTech, techId, amount)
+      return next
+    }))
     // "fully refunded" means every dollar ever collected on this ticket has
     // now been given back, regardless of any price correction along the way
     const grossCollected = paymentSources(payment).reduce((s, x) => s + x.amount, 0)
@@ -2061,9 +2072,16 @@ export function AppointmentBook() {
         setPointsByClient((m) => ({ ...m, [host.id]: Math.max(0, (m[host.id] ?? 0) + (payment.redeemed?.points ?? 0) - payment.points) }))
       }
     }
-    // keep the panel's `existing` payment/refunds in sync so refundNeeded
-    // recalculates against what's actually been given back, live
-    setRefundPrompt((r) => r && { ...r, payment: { ...r.payment, subtotal: snapshot.subtotal, tip: snapshot.tip, total: snapshot.total, apptIds: snapshot.apptIds, refunds: [...(r.payment.refunds ?? []), refundRecord] } })
+    // keep the panel's `existing` payment/refunds (and its service/tip
+    // totals) in sync so refundNeeded and the per-tech pickers recalculate
+    // against what's actually been given back, live
+    setRefundPrompt((r) => {
+      if (!r) return r
+      const nextPayment = { ...r.payment, subtotal: snapshot.subtotal, tip: snapshot.tip, total: snapshot.total, apptIds: snapshot.apptIds, refunds: [...(r.payment.refunds ?? []), refundRecord] }
+      if (from === 'service' && techId) nextPayment.lines = reduceTechLines(r.payment.lines, techId, amount)
+      if (from === 'tip' && techId) nextPayment.tipByTech = reduceTechTip(r.payment.tipByTech, techId, amount)
+      return { ...r, payment: nextPayment }
+    })
     showFlash(`✓ Refunded $${amount.toFixed(2)}`)
   }
 

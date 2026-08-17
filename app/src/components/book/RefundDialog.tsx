@@ -16,7 +16,9 @@ import { PaymentFlow, type PaymentLine, type PaymentResult, type PaymentSource }
 export { refundedBySource, totalRefunded, netCollected, balanceDue, type RefundRecord } from '@/lib/payments'
 import type { RefundRecord } from '@/lib/payments'
 
-/** the slice of a payment record this dialog needs */
+/** the slice of a payment record this dialog needs -- includes the per-tech
+ *  service/tip breakdown so a refund can be charged against the right
+ *  person's commission or tip payout */
 export interface RefundablePayment {
   id: string
   clientName: string
@@ -27,6 +29,8 @@ export interface RefundablePayment {
   method: string
   sources?: PaymentSource[]
   refunds?: RefundRecord[]
+  lines?: { techId: string; price: number }[]
+  tipByTech?: { techId: string; amount: number }[]
 }
 
 export function ReopenCheckoutDialog({ payment, items, dateLabel, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, onRefund, onComplete, onClose }: {
@@ -37,7 +41,14 @@ export function ReopenCheckoutDialog({ payment, items, dateLabel, onPatchLine, o
   onRemoveLine: (id: string) => void
   onAddExtra: (x: { serviceId: string; techId: string; person?: string }) => void
   onRemoveExtra: (id: string) => void
-  onRefund: (sourceId: string, amount: number, reason: string | undefined, snapshot: { apptIds: string[]; subtotal: number; tip: number; total: number; points: number }) => void
+  onRefund: (input: {
+    sourceId: string
+    amount: number
+    reason?: string
+    from?: 'service' | 'tip'
+    techId?: string
+    snapshot: { apptIds: string[]; subtotal: number; tip: number; total: number; points: number }
+  }) => void
   onComplete: (p: PaymentResult) => void
   onClose: () => void
 }) {
