@@ -9,7 +9,7 @@
 // drawer only through the close count in this build.
 import { useEffect, useMemo, useState } from 'react'
 import {
-  AlertTriangle, Banknote, Check, ChevronDown, ChevronRight, CreditCard, Lock, LockOpen, Scale, X,
+  AlertTriangle, Banknote, Check, ChevronDown, ChevronRight, CreditCard, Lock, LockOpen, Receipt, Scale, Search, X,
 } from 'lucide-react'
 import type { RegisterConfig } from '@/lib/settings-store'
 import { paymentSources, type PaymentSource } from './CheckoutDialog'
@@ -57,6 +57,10 @@ export interface RegisterPayment {
   refunds?: { amount: number; sourceId: string }[]
   /** when it was taken; older records fall back to the timestamp in their id */
   at?: number
+  /** every distinct name on the ticket (host + party/guests), so the
+   *  transaction search below can find it under a guest's name too, not
+   *  just whoever the ticket happens to be filed under */
+  clientNames?: string[]
 }
 
 /** every payment carries a time, one way or another — new records stamp `at`,
@@ -141,6 +145,12 @@ const stamp = (ms: number) =>
 
 const dayLabelOf = (key: string) =>
   new Date(key + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+
+/** same invoice-number scheme InvoiceDialog prints, so a number written down
+ *  from a receipt can be typed straight into the search below */
+const invoiceNoOf = (p: RegisterPayment) => `INV-${p.id.replace(/\D/g, '').slice(-6)}`
+
+const TX_RESULTS_CAP = 25
 
 /* ── cash counter: count the drawer by denomination, or just type the total ── */
 function CashCounter({ counts, onCounts, manual, onManual, byDenom, onMode, label }: {
@@ -309,6 +319,23 @@ export function RegisterPage({
   const [closeNote, setCloseNote] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
 
+  // find a transaction, any day -- not scoped to the current shift or even
+  // this register, so a ticket from two weeks ago is just as reachable as
+  // today's. Matches client name, any guest riding on the ticket, or the
+  // printed invoice number
+  const [txQuery, setTxQuery] = useState('')
+  const txAllMatches = useMemo(() => {
+    const q = txQuery.trim().toLowerCase()
+    if (!q) return []
+    return payments
+      .filter((p) => {
+        const names = [p.clientName, ...(p.clientNames ?? [])]
+        return names.some((n) => n.toLowerCase().includes(q)) || invoiceNoOf(p).toLowerCase().includes(q)
+      })
+      .sort((a, b) => paymentAt(b) - paymentAt(a))
+  }, [payments, txQuery])
+  const txMatches = txAllMatches.slice(0, TX_RESULTS_CAP)
+
   // this shift's takings, live while it's open
   const shift = useMemo(() => (active ? sessionPayments(active, payments) : []), [active, payments])
   const cashIn = cashTakenIn(shift)
@@ -425,6 +452,58 @@ export function RegisterPage({
               })}
             </div>
           )}
+
+          {/* ── find a transaction, any day, any register -- the fast path
+              back to a ticket you don't remember the date of, e.g. a
+              refund that comes up weeks after the sale ── */}
+          <div className="rounded-2xl border border-line bg-surface p-4">
+            <h2 className="mb-2.5 flex items-center gap-1.5 text-[13px] font-bold text-ink">
+              <Search className="h-4 w-4 text-clay" /> Find a transaction
+            </h2>
+            <input
+              value={txQuery}
+              onChange={(e) => setTxQuery(e.target.value)}
+              placeholder="Client, guest, or invoice number, any date"
+              className="w-full rounded-[8px] border border-input bg-background px-2.5 py-2 text-[12.5px] outline-none focus:border-clay"
+            />
+            {txQuery.trim() && (
+              txMatches.length === 0 ? (
+                <p className="mt-3 text-center text-[12px] text-ink-faint">No transactions match &quot;{txQuery.trim()}&quot;</p>
+              ) : (
+                <>
+                  <div className="mt-3 max-h-72 space-y-1.5 overflow-y-auto">
+                    {txMatches.map((p) => {
+                      const names = [p.clientName, ...(p.clientNames ?? []).filter((n) => n !== p.clientName)]
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => onResolvePayment(p.id)}
+                          title="Open this ticket, e.g. to issue a refund"
+                          className="flex w-full items-center gap-2.5 rounded-[10px] border border-line bg-surface px-3 py-2 text-left transition-colors hover:border-clay hover:bg-clay-tint/30"
+                        >
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-clay-tint text-clay">
+                            <Receipt className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[12.5px] font-bold text-ink">{names.join(', ')}</span>
+                            <span className="block truncate text-[11px] text-ink-faint">{dayLabelOf(p.dateKey)} · {invoiceNoOf(p)} · {p.method}</span>
+                          </span>
+                          <span className="tnum shrink-0 text-[12.5px] font-bold text-ink">{money(p.total)}</span>
+                          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {txAllMatches.length > TX_RESULTS_CAP && (
+                    <p className="mt-2 text-center text-[11px] text-ink-faint">
+                      Showing the {TX_RESULTS_CAP} most recent of {txAllMatches.length} matches, narrow the search to see others
+                    </p>
+                  )}
+                </>
+              )
+            )}
+          </div>
 
           {/* ── no registers configured at all ── */}
           {!selected && (

@@ -2212,10 +2212,13 @@ export function AppointmentBook() {
   const resolveRegisterPayment = (paymentId: string) => {
     const p = payments.find((x) => x.id === paymentId)
     if (!p) return
-    const dayAppts = dateKey === todayKey ? appts : apptDays[todayKey] ?? []
-    const items = (p.apptIds ?? []).map((id) => dayAppts.find((x) => x.id === id)).filter((x): x is Appointment => x != null)
+    // scope to the payment's OWN day, not today -- this is also the target
+    // of Manage Register's "find a transaction" search, which can surface a
+    // ticket from any past day, not just something still owed today
+    const payDayAppts = p.dateKey === dateKey ? appts : apptDays[p.dateKey] ?? []
+    const items = (p.apptIds ?? []).map((id) => payDayAppts.find((x) => x.id === id)).filter((x): x is Appointment => x != null)
     setRegisterOpen(false)
-    if (dateKey !== todayKey) goDay(new Date(todayKey + 'T12:00:00'))
+    if (p.dateKey !== dateKey) goDay(new Date(p.dateKey + 'T12:00:00'))
     openReopen({ payment: p, items })
   }
 
