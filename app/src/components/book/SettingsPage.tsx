@@ -1358,9 +1358,9 @@ function ServicesSection() {
         <span className="min-w-0 w-20" title="Short label for tight calendar cells">Short label</span>
         <span className="w-[132px] shrink-0">Category</span>
         <span className="w-[86px] shrink-0">Duration</span>
-        <span className="w-16 shrink-0 text-right">Price</span>
-        <span className="w-16 shrink-0 text-center">Add-ons</span>
-        <span className="w-9 shrink-0 text-center">Active</span>
+        <span className="w-16 shrink-0">Price</span>
+        <span className="w-16 shrink-0">Add-ons</span>
+        <span className="w-9 shrink-0">Active</span>
         <span className="h-3.5 w-3.5 shrink-0" />
       </div>
       <div className="space-y-4">
