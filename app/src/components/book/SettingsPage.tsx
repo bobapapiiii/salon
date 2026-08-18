@@ -1245,7 +1245,7 @@ function ServicesSection() {
           <button
             onClick={() => setAddonsFor(addonsOpen ? null : sv.id)}
             title="Add-ons, extra time & money offered with this service"
-            className={`shrink-0 rounded-md px-1.5 py-1 text-[10.5px] font-bold transition ${
+            className={`w-[72px] shrink-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-md px-1.5 py-1 text-left text-[10.5px] font-bold transition ${
               addonsOpen || addons.length > 0 ? "bg-[#5B54D6]/[0.08] text-[#5B54D6]" : "text-slate-400 hover:text-slate-600"
             }`}
           >
@@ -1359,7 +1359,7 @@ function ServicesSection() {
         <span className="w-[132px] shrink-0">Category</span>
         <span className="w-[86px] shrink-0">Duration</span>
         <span className="w-16 shrink-0">Price</span>
-        <span className="w-16 shrink-0">Add-ons</span>
+        <span className="w-[72px] shrink-0">Add-ons</span>
         <span className="w-9 shrink-0">Active</span>
         <span className="h-3.5 w-3.5 shrink-0" />
       </div>
