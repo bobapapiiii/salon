@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  AlertTriangle, Calendar, CalendarX, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, History, Link2, Mail, MessageSquare, Phone, Printer, Receipt, RefreshCw, ScrollText, Undo2, X,
+  AlertTriangle, Calendar, CalendarX, Check, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, History, Link2, Mail, MessageSquare, Phone, Printer, Receipt, RefreshCw, ScrollText, Undo2, X,
 } from 'lucide-react'
 import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, fmtTime } from '@/lib/booking-types'
@@ -513,6 +513,15 @@ export function AppointmentDetail({
           </div>
         ) : (
           <>
+            {appt.status === 'requested' && (
+              <button
+                onClick={() => applyStatus('booked')}
+                title="Confirm this request and put it on the book as a real booking"
+                className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2.5 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"
+              >
+                <Check className="h-4 w-4" /> Confirm booking
+              </button>
+            )}
             {(canCheckout || hasInvoice) && (
               <div className="grid grid-cols-2 gap-1.5">
                 {canCheckout && (
