@@ -593,13 +593,17 @@ export function AppointmentBook() {
     setApptDays((m) => (m[dateKey] === appts ? m : { ...m, [dateKey]: appts }))
   }, [appts, dateKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // one-time migration: a ticket checked out before the checked_out status
-  // existed is still tagged 'completed', even though a payment already
-  // covers it -- fold those over across every day, not just the one on
-  // screen, so an old checkout reads the same as a new one instead of
-  // waiting for the salon to happen to revisit that day. Idempotent (once
-  // migrated, nothing here matches 'completed' + a payment anymore), so
-  // this settles after one pass and doesn't loop.
+  // one-time migration: any appointment actually covered by a real payment
+  // (regardless of what status it happens to still say -- 'completed' from
+  // before checked_out existed, or anything else a manual status edit left
+  // behind) should read as checked_out. Fold those over across every day,
+  // not just the one on screen, so an old checkout reads the same as a new
+  // one instead of waiting for the salon to happen to revisit that day.
+  // Idempotent (once migrated, nothing here still has a mismatched status),
+  // so this settles after one pass and doesn't loop. Future days are
+  // exempt from this promotion -- checkout itself is blocked for a day
+  // that hasn't arrived yet, so nothing there should ever read as checked
+  // out either, no matter what a payment record might say
   //
   // matching MUST stay scoped to the appointment's own day -- ids only
   // reset to a1 per day (the generator restarts the counter every
@@ -612,7 +616,8 @@ export function AppointmentBook() {
   // corrective branch below undoes exactly that: anything checked_out with
   // no real same-day payment behind it gets its original status restored
   // from the (deterministic) generator, rather than staying stuck reading
-  // as paid
+  // as paid -- this one runs regardless of day, since undoing a wrong
+  // checked_out is never the same thing as completing one
   useEffect(() => {
     let anyChanged = false
     const migrated: Record<string, Appointment[]> = {}
@@ -621,7 +626,7 @@ export function AppointmentBook() {
       const dayHasPayment = (id: string) => payments.some((p) => p.dateKey === k && p.apptIds?.includes(id))
       let pristine: Appointment[] | null = null
       const nextList = list.map((a) => {
-        if (a.status === 'completed' && dayHasPayment(a.id)) {
+        if (k <= todayKey && a.status !== 'checked_out' && a.status !== 'no_show' && dayHasPayment(a.id)) {
           dayChanged = true
           return { ...a, status: 'checked_out' as const }
         }
@@ -1902,8 +1907,13 @@ export function AppointmentBook() {
   // goes through. Even so, the payments ledger stays the only reliable
   // record of what's actually been paid for -- status alone (however it got
   // there, including a manual edit from the panel's dropdown) shouldn't be trusted on its own.
-  const payable = (a: Appointment) =>
-    a.status !== 'no_show' && a.status !== 'requested' && !payments.some((p) => p.apptIds?.includes(a.id))
+  // `day` defaults to whatever's on screen, but MUST be passed explicitly
+  // whenever `a` isn't from the live `appts` array (e.g. today's-register
+  // lookups, or the edit panel after its day rail has navigated elsewhere)
+  // -- ids reset to a1 every day, so matching against the wrong day's
+  // payments would pair a real payment to a totally unrelated appointment
+  const payable = (a: Appointment, day: string = dateKey) =>
+    a.status !== 'no_show' && a.status !== 'requested' && !payments.some((p) => p.dateKey === day && p.apptIds?.includes(a.id))
   const checkoutItems = useMemo(() => {
     if (!checkoutName) return []
     const notRemoved = (a: Appointment) => !(checkoutDraft?.removedIds ?? []).includes(a.id)
@@ -1980,7 +1990,10 @@ export function AppointmentBook() {
     return true
   }
 
-  const openCheckout = (a: Appointment, groupOverride?: Appointment[]) => {
+  // day defaults to whatever's on screen, but the edit panel passes the
+  // appointment's OWN day explicitly (see the 'checkout' case below) since
+  // its rail can navigate the live calendar elsewhere while it's still open
+  const openCheckout = (a: Appointment, groupOverride?: Appointment[], day: string = dateKey) => {
     setDetailId(null)
     setBookingOpen(false) // right-side panels are exclusive, never stack
     setPosOpen(false)
@@ -1995,7 +2008,7 @@ export function AppointmentBook() {
     // instead of re-deriving it from `appts`, which might not be it yet
     const source = groupOverride ?? appts
     const people = a.parallelGroup
-      ? [...new Set(source.filter((x) => x.parallelGroup === a.parallelGroup && payable(x)).map((x) => x.clientName))]
+      ? [...new Set(source.filter((x) => x.parallelGroup === a.parallelGroup && payable(x, day)).map((x) => x.clientName))]
       : []
     // a standalone appointment (no parallelGroup) can still be a genuine
     // same-time pairing that just never got tagged as one -- e.g. gel mani
@@ -2006,7 +2019,7 @@ export function AppointmentBook() {
     // separate booking later that day, stays its own ticket -- that's the
     // distinction this exists to preserve
     const overlapping = a.parallelGroup ? [] : source.filter((x) =>
-      x.id !== a.id && x.clientName === a.clientName && payable(x) &&
+      x.id !== a.id && x.clientName === a.clientName && payable(x, day) &&
       a.startMin < x.startMin + x.durationMin && x.startMin < a.startMin + a.durationMin,
     )
     const name = a.parallelGroup
@@ -2158,7 +2171,11 @@ export function AppointmentBook() {
     if (!a) return
     setRegisterOpen(false)
     if (dateKey !== todayKey) goDay(new Date(todayKey + 'T12:00:00'))
-    openCheckout(a)
+    // pass todayKey explicitly -- goDay's setDateKey hasn't taken effect yet
+    // within this same synchronous call, so openCheckout's own default
+    // (the `dateKey` closure) could still read the day being browsed away
+    // from, not the today this list is actually about
+    openCheckout(a, undefined, todayKey)
   }
 
   const resolveRegisterPayment = (paymentId: string) => {
@@ -2383,7 +2400,7 @@ export function AppointmentBook() {
       case 'backtoconfirmed': setStatus(a, 'confirmed', `Back to confirmed, ${a.clientName}`); break
       case 'invoice': {
         const host = a.guestOf ? clients.find((c) => c.id === a.guestOf)?.name ?? a.clientName : a.clientName
-        const payment = payments.find((p) => p.apptIds?.includes(a.id))
+        const payment = payments.find((p) => p.dateKey === dateKey && p.apptIds?.includes(a.id))
           ?? [...payments].reverse().find((p) => p.clientName === host && p.dateKey === dateKey)
         if (!payment) { showFlash('No payment recorded for this appointment'); break }
         const items = payment.apptIds
@@ -2433,8 +2450,14 @@ export function AppointmentBook() {
   const detailPartySize = new Set(detailParty.map((a) => a.clientName)).size
   // the invoice covering the edit panel's appointment, if any -- drives
   // whether its reopen action reads as "Reopen checkout" (done, correcting
-  // or refunding) or "Check out" (a balance is still owed, finish the sale)
-  const detailPayment = detailGroup.length > 0 ? payments.find((p) => detailGroup.some((a) => p.apptIds?.includes(a.id))) : undefined
+  // or refunding) or "Check out" (a balance is still owed, finish the sale).
+  // Scoped to the appointment's own day (detailOriginDay), not just
+  // whatever the calendar happens to be showing -- ids reset to a1 every
+  // day, so without this a payment from some other day could wrongly pair
+  // with an unrelated appointment here
+  const detailPayment = detailGroup.length > 0
+    ? payments.find((p) => p.dateKey === (detailOriginDay ?? dateKey) && detailGroup.some((a) => p.apptIds?.includes(a.id)))
+    : undefined
   const detailBalanceDue = detailPayment ? balanceDue(detailPayment.total, paymentSources(detailPayment), detailPayment.refunds) : 0
   // what's actually still collected net of refunds -- a payment record
   // existing (hasInvoice) isn't the same as money still being held: once a
@@ -2617,7 +2640,7 @@ export function AppointmentBook() {
   const findDetailPayment = (originKey: string) => {
     const a = detailAppt
     if (!a) return null
-    const payment = payments.find((p) => detailGroup.some((g) => p.apptIds?.includes(g.id)))
+    const payment = payments.find((p) => p.dateKey === originKey && detailGroup.some((g) => p.apptIds?.includes(g.id)))
       ?? [...payments].reverse().find((p) => p.clientName === a.clientName && p.dateKey === originKey)
     if (!payment) return null
     const payDayAppts = payment.dateKey === dateKey ? appts : apptDays[payment.dateKey] ?? []
@@ -2645,7 +2668,7 @@ export function AppointmentBook() {
         // it's already resolved against the appointment's own day, whereas
         // `appts` may not have caught up to the goDay() above yet within this
         // same synchronous handler
-        openCheckout(a, detailParty)
+        openCheckout(a, detailParty, originKey)
         break
       case 'invoice': {
         const found = findDetailPayment(originKey)
@@ -3162,8 +3185,12 @@ export function AppointmentBook() {
     // never gets individually re-stamped by every later correction to that
     // ticket; gating on status here let one sibling look unpaid on the
     // calendar even though the payment covering it was fully settled
+    // scoped to this appointment's own day -- ids reset to a1 every day (the
+    // generator restarts the counter on each generateDay call), so without
+    // this a payment from some other day whose ticket happened to land on
+    // the same "a3" id would make an unrelated appointment here look paid too
     const isPaid = payments.some((p) =>
-      p.apptIds?.includes(a.id) && balanceDue(p.total, paymentSources(p), p.refunds) <= 0.004,
+      p.dateKey === dateKey && p.apptIds?.includes(a.id) && balanceDue(p.total, paymentSources(p), p.refunds) <= 0.004,
     )
     const isInService = a.status === 'in_service'
     const elapsed = isInService && isToday(date)
@@ -3340,7 +3367,7 @@ export function AppointmentBook() {
   // it's a shortcut straight to checking it out instead of just a count
   const openApptsToday: RegisterOpenAppt[] = useMemo(
     () => (dateKey === todayKey ? appts : apptDays[todayKey] ?? [])
-      .filter((a) => payable(a))
+      .filter((a) => payable(a, todayKey))
       .sort((a, b) => a.startMin - b.startMin)
       .map((a) => ({
         id: a.id,
@@ -4165,7 +4192,7 @@ export function AppointmentBook() {
           x={menu.x} y={menu.y}
           appt={appts.find((a) => a.id === menu.apptId)!}
           pairCount={appts.filter((a) => a.parallelGroup && a.parallelGroup === appts.find((x) => x.id === menu.apptId)?.parallelGroup).length}
-          hasPayment={payments.some((p) => p.apptIds?.includes(menu.apptId))}
+          hasPayment={payments.some((p) => p.dateKey === dateKey && p.apptIds?.includes(menu.apptId))}
           isToday={dateKey === todayKey}
           onAction={onMenuAction}
           onClose={() => setMenu(null)}
@@ -4277,8 +4304,9 @@ export function AppointmentBook() {
           onClose={() => setDetailId(null)}
           // "completed" only means the service is done, not that they paid — checkout
           // must stay open until a payment actually exists (mirrors payable(), used
-          // everywhere else checkout eligibility is decided)
-          canCheckout={detailGroup.some((a) => payable(a))}
+          // everywhere else checkout eligibility is decided). Scoped to the
+          // appointment's own day, same reason as detailPayment above
+          canCheckout={detailGroup.some((a) => payable(a, detailOriginDay ?? dateKey))}
           hasInvoice={detailPayment != null}
           invoiceBalanceDue={detailBalanceDue}
           invoiceNetCollected={detailNetCollected}
