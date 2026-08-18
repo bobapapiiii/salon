@@ -599,16 +599,39 @@ export function AppointmentBook() {
   // screen, so an old checkout reads the same as a new one instead of
   // waiting for the salon to happen to revisit that day. Idempotent (once
   // migrated, nothing here matches 'completed' + a payment anymore), so
-  // this settles after one pass and doesn't loop
+  // this settles after one pass and doesn't loop.
+  //
+  // matching MUST stay scoped to the appointment's own day -- ids only
+  // reset to a1 per day (the generator restarts the counter every
+  // generateDay call), so they're not unique across days. An earlier
+  // version of this matched payments against the whole ledger regardless
+  // of day, which could pair a real payment from one day to an unrelated
+  // same-id appointment on a completely different day -- e.g. tagging a
+  // still-requested booking as checked_out just because some other day
+  // happened to check out whatever appointment got the same "a3" id. The
+  // corrective branch below undoes exactly that: anything checked_out with
+  // no real same-day payment behind it gets its original status restored
+  // from the (deterministic) generator, rather than staying stuck reading
+  // as paid
   useEffect(() => {
     let anyChanged = false
     const migrated: Record<string, Appointment[]> = {}
     for (const [k, list] of Object.entries(apptDays)) {
       let dayChanged = false
+      const dayHasPayment = (id: string) => payments.some((p) => p.dateKey === k && p.apptIds?.includes(id))
+      let pristine: Appointment[] | null = null
       const nextList = list.map((a) => {
-        if (a.status === 'completed' && payments.some((p) => p.apptIds?.includes(a.id))) {
+        if (a.status === 'completed' && dayHasPayment(a.id)) {
           dayChanged = true
           return { ...a, status: 'checked_out' as const }
+        }
+        if (a.status === 'checked_out' && !dayHasPayment(a.id)) {
+          pristine ??= generateDay(k)
+          const orig = pristine.find((p) => p.id === a.id)
+          if (orig && orig.status !== a.status) {
+            dayChanged = true
+            return { ...a, status: orig.status }
+          }
         }
         return a
       })
