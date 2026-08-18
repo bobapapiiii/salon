@@ -78,35 +78,49 @@ export function InvoiceDialog({ payment, items, onClose }: {
           {payment.party && payment.party > 1 && <span className="text-ink-faint"> · party of {payment.party}</span>}
         </div>
 
-        {/* line items */}
+        {/* line items -- grouped under a per-client header whenever the
+            ticket covers more than one person (a party checkout), so it's
+            obvious at a glance which services were performed for whom.
+            Order: the ticket's own name first, then everyone else in the
+            order they first appear */}
         <div className="mt-2 border-t border-line/60 px-6 pt-2">
-          {items.map((a) => {
-            const svc = svcById[a.serviceId];
-            const price = (a.priceOverride ?? svc?.price ?? 0) + (a.addons ?? []).reduce((x, ad) => x + ad.price, 0);
-            return (
-              <div key={a.id} className="flex items-baseline justify-between gap-3 py-1.5 text-[13px]">
-                <div className="min-w-0">
-                  <p className="truncate font-semibold">
-                    {svc?.name ?? a.serviceId}
-                    {a.clientName !== payment.clientName && <span className="ml-1 text-[10px] text-ink-faint">({a.clientName})</span>}
-                  </p>
-                  <p className="text-[10.5px] text-ink-faint">
-                    {fmtTime(a.startMin)} · {a.durationMin}m · {techs.find((t) => t.id === a.techId)?.name ?? "Any"}
-                    {(a.addons ?? []).length > 0 && ` · +${a.addons!.map((x) => x.name).join(", +")}`}
-                  </p>
-                  {settings.checkout.serviceFields.some((f) => a.customFields?.[f.id]?.trim()) && (
-                    <p className="text-[10.5px] font-medium text-ink-soft">
-                      {settings.checkout.serviceFields
-                        .filter((f) => a.customFields?.[f.id]?.trim())
-                        .map((f) => `${f.label}: ${a.customFields![f.id].trim()}`)
-                        .join(" · ")}
-                    </p>
-                  )}
-                </div>
-                <span className="tnum shrink-0 font-semibold">{money(price)}</span>
-              </div>
+          {(() => {
+            const names = [payment.clientName, ...items.map((a) => a.clientName)].filter(
+              (n, i, arr) => arr.indexOf(n) === i && items.some((a) => a.clientName === n),
             );
-          })}
+            const grouped = names.length > 1;
+            return names.map((client) => (
+              <div key={client}>
+                {grouped && (
+                  <p className="mt-2.5 text-[10.5px] font-bold uppercase tracking-wide text-clay first:mt-0">{client}</p>
+                )}
+                {items.filter((a) => a.clientName === client).map((a) => {
+                  const svc = svcById[a.serviceId];
+                  const price = (a.priceOverride ?? svc?.price ?? 0) + (a.addons ?? []).reduce((x, ad) => x + ad.price, 0);
+                  return (
+                    <div key={a.id} className="flex items-baseline justify-between gap-3 py-1.5 text-[13px]">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold">{svc?.name ?? a.serviceId}</p>
+                        <p className="text-[10.5px] text-ink-faint">
+                          {fmtTime(a.startMin)} · {a.durationMin}m · {techs.find((t) => t.id === a.techId)?.name ?? "Any"}
+                          {(a.addons ?? []).length > 0 && ` · +${a.addons!.map((x) => x.name).join(", +")}`}
+                        </p>
+                        {settings.checkout.serviceFields.some((f) => a.customFields?.[f.id]?.trim()) && (
+                          <p className="text-[10.5px] font-medium text-ink-soft">
+                            {settings.checkout.serviceFields
+                              .filter((f) => a.customFields?.[f.id]?.trim())
+                              .map((f) => `${f.label}: ${a.customFields![f.id].trim()}`)
+                              .join(" · ")}
+                          </p>
+                        )}
+                      </div>
+                      <span className="tnum shrink-0 font-semibold">{money(price)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            ));
+          })()}
         </div>
 
         {/* totals */}

@@ -92,11 +92,15 @@ export interface CheckoutDraftState {
   custom?: Record<string, string>;
   /** per-provider tip overrides, techId to dollar text; missing rows split pro-rata */
   tipByTech?: Record<string, string>;
+  /** who this ticket's earned/redeemed points go to -- only meaningful when
+   *  more than one person on the ticket actually has an account; a guest
+   *  (name-only, no ClientRecord) can never hold points themselves */
+  pointsRecipient?: string | null;
 }
 
 const money = (v: number) => `$${v.toFixed(2)}`;
 
-export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, hostName, editable, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, loyaltyBalance, draft, onDraft, existing }: {
+export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, hostName, editable, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, loyaltyBalance, pointsRecipients, draft, onDraft, existing }: {
   title: string;
   subtitle: string;
   lines: PaymentLine[];
@@ -115,8 +119,14 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
   onRemoveLine?: (id: string) => void;
   onAddExtra?: (x: { serviceId: string; techId: string; person?: string }) => void;
   onRemoveExtra?: (id: string) => void;
-  /** loyalty: the client's point balance (omit for guests) */
+  /** loyalty: the point balance of whoever's currently picked to receive
+   *  them (null when nobody on the ticket has an account to hold them) */
   loyaltyBalance?: number | null;
+  /** everyone currently selected on this ticket who actually has an account
+   *  and could receive its points -- a guest never can. 0 means no one on
+   *  this ticket earns anything; 1 is implicit (no picker needed); 2+ shows
+   *  a picker so the front desk chooses */
+  pointsRecipients?: string[];
   /** controlled draft (persisted); POS uses the internal fallback */
   draft?: CheckoutDraftState;
   onDraft?: (patch: Partial<CheckoutDraftState>) => void;
@@ -606,6 +616,32 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
               </div>
             </div>
 
+            {/* group checkout: let the front desk choose who this ticket's
+                points go to -- only shown when there's an actual choice
+                (2+ selected people with a real account); a guest is never
+                an option since they have nowhere to hold points */}
+            {pointsRecipients && pointsRecipients.length > 1 && (
+              <>
+                <p className="mb-1.5 mt-4 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Give points to</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {pointsRecipients.map((name) => {
+                    const on = (D.pointsRecipient ?? pointsRecipients[0]) === name;
+                    return (
+                      <button
+                        key={name}
+                        onClick={() => setD({ pointsRecipient: name })}
+                        className={`rounded-full border px-3 py-1.5 text-[12px] font-semibold transition ${
+                          on ? "border-violet-500/50 bg-violet-500/10 text-violet-500" : "border-line bg-surface text-ink-soft hover:border-line-strong"
+                        }`}
+                      >
+                        {name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
             {/* redeem loyalty points, only what this client can redeem right now */}
             {redeemable.length > 0 && (
               <>
@@ -913,8 +949,13 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
               </div>
             )}
 
+            {/* no recipient means nobody selected has an account to earn
+                into (e.g. a solo guest ticket) -- say so instead of
+                implying points are earned and then silently vanish */}
             <p className="mt-3 text-center text-[11px] text-ink-faint">
-              Earns <b className="text-clay">{points.toLocaleString()} pts</b> on this sale
+              {loyaltyBalance != null
+                ? <>Earns <b className="text-clay">{points.toLocaleString()} pts</b> on this sale</>
+                : "No loyalty account on this ticket to earn points"}
             </p>
           </div>
 
@@ -1042,7 +1083,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
 }
 
 // ─── Appointment checkout, live ticket editing ───────────────────────────────
-export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, loyaltyBalance, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, draft, onDraft }: {
+export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, loyaltyBalance, pointsRecipients, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, draft, onDraft }: {
   clientName: string;
   items: Appointment[];
   dateLabel: string;
@@ -1053,6 +1094,9 @@ export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClo
   onTogglePerson?: (name: string) => void;
   onSelectAll?: () => void;
   loyaltyBalance?: number | null;
+  /** everyone currently selected who could receive this ticket's points --
+   *  2+ shows a picker, 0 or 1 is implicit and no picker is shown */
+  pointsRecipients?: string[];
   addedIds?: string[];
   onPatchLine?: (id: string, patch: Partial<Appointment>) => void;
   onRemoveLine?: (id: string) => void;
@@ -1096,6 +1140,7 @@ export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClo
       onAddExtra={onAddExtra}
       onRemoveExtra={onRemoveExtra}
       loyaltyBalance={loyaltyBalance}
+      pointsRecipients={pointsRecipients}
       draft={draft}
       onDraft={onDraft}
     />

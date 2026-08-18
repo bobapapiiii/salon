@@ -336,6 +336,10 @@ export function AppointmentBook() {
     note: string
     redeemId: string | null
     tipByTech?: Record<string, string>
+    /** who this ticket's earned/redeemed points go to -- only meaningful when
+     *  more than one person on the ticket actually has an account; a guest
+     *  (name-only, no ClientRecord) can never hold points themselves */
+    pointsRecipient?: string | null
   }
   const [checkoutDraft, setCheckoutDraft] = usePersistentState<CheckoutDraft | null>(sdata('checkout-draft-v2'), null)
   const [posOpen, setPosOpen] = useState(false)
@@ -428,7 +432,7 @@ export function AppointmentBook() {
   const turnawayTitle = canLogTurnaway
     ? turnawaySummary ?? "Log a turnaway, a client we couldn't fit in"
     : `Turnaways can only be logged for today${turnawaySummary ? ` · ${turnawaySummary}` : ''}`
-  const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; /** when it was taken, to the minute — what buckets a sale into a register shift */ at?: number; clientName: string; /** every distinct client on this ticket (host + any party members/guests), so each of them sees this checkout in their own visit history, not just the host */ clientNames?: string[]; itemCount: number; subtotal: number; tip: number; total: number; method: string; /** the actual tender(s) taken against this ticket; older records fall back to method/total via paymentSources() */ sources?: PaymentSource[]; /** total minus what the sources add up to, >0 while a partial payment is still owed */ balanceDue?: number; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[]; /** money given back on this ticket, from a specific payment source, in full or in part */ refunds?: RefundRecord[] }[]>(sdata('payments-v2'), [])
+  const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; /** when it was taken, to the minute — what buckets a sale into a register shift */ at?: number; clientName: string; /** every distinct client on this ticket (host + any party members/guests), so each of them sees this checkout in their own visit history, not just the host */ clientNames?: string[]; itemCount: number; subtotal: number; tip: number; total: number; method: string; /** the actual tender(s) taken against this ticket; older records fall back to method/total via paymentSources() */ sources?: PaymentSource[]; /** total minus what the sources add up to, >0 while a partial payment is still owed */ balanceDue?: number; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[]; /** money given back on this ticket, from a specific payment source, in full or in part */ refunds?: RefundRecord[]; /** who this ticket's points actually went to, if anyone -- a real ClientRecord, never a guest; kept on the payment so a later correction or refund reverses the same person even if clientName is a guest or the party's selection has since changed */ pointsRecipient?: string | null }[]>(sdata('payments-v2'), [])
   // online waitlist (self-serve) + walk-in queue (front desk)
   const [waitlist, setWaitlist] = usePersistentState<QueueEntry[]>(sdata('waitlist-v1'), () => [
     { id: 'w1', name: 'Ava R.', serviceId: 'p-gel', phone: '(555) 220-1188', preferredTechId: getStaff().techs.find((t) => t.teamId === 'pedi')?.id, days: [1, 3, 5], fromMin: 360, toMin: 600, notes: 'Prefers after 2 PM', createdMin: DEMO_NOW_MIN - 25 },
@@ -1938,6 +1942,19 @@ export function AppointmentBook() {
     return names.sort((a, b) => (a === checkoutName ? -1 : b === checkoutName ? 1 : 0))
   }, [checkoutGroup, appts, checkoutName])
 
+  // who currently selected on this ticket could actually receive points --
+  // a guest (name-only, no ClientRecord) never can. Only worth surfacing a
+  // picker when there's a real choice to make; one or zero and it's implicit
+  const checkoutPointsRecipients = useMemo(
+    () => checkoutPeople.filter((n) => checkoutSelected.has(n) && clients.some((c) => c.name === n)),
+    [checkoutPeople, checkoutSelected, clients],
+  )
+  // the draft's own pick, falling back if it's stale (e.g. that person got
+  // unchecked since) or this is a draft from before this feature existed
+  const checkoutPointsRecipient = checkoutDraft?.pointsRecipient && checkoutPointsRecipients.includes(checkoutDraft.pointsRecipient)
+    ? checkoutDraft.pointsRecipient
+    : checkoutPointsRecipients[0] ?? null
+
   const toggleCheckoutPerson = (name: string) =>
     setCheckoutSelected((s) => {
       // never empty the ticket — one person must stay on it
@@ -2046,12 +2063,20 @@ export function AppointmentBook() {
       setCheckoutSelected(new Set(resume.selected))
     } else {
       setCheckoutSelected(new Set(people.length > 0 ? people : [name]))
+      // default the points recipient to whoever actually has an account --
+      // the ticket's own name/host first if they qualify, else the first
+      // party member who does. A guest (no ClientRecord) is never eligible,
+      // and a solo guest ticket ends up with no recipient at all, which is
+      // correct: there's no account here for points to land on
+      const candidates = people.length > 0 ? people : [name]
+      const eligible = candidates.filter((n) => clients.some((c) => c.name === n))
       setCheckoutDraft({
         name, groupId: a.parallelGroup ?? null,
         originIds: a.parallelGroup ? [] : [a.id, ...overlapping.map((x) => x.id)],
         selected: people.length > 0 ? people : [name],
         removedIds: [], addedIds: [],
         tipPct: 18, tipCustom: '', method: 'Cash', note: '', redeemId: null, tipByTech: undefined,
+        pointsRecipient: eligible.includes(name) ? name : eligible[0] ?? null,
       })
     }
   }
@@ -2079,15 +2104,21 @@ export function AppointmentBook() {
         price: (a.priceOverride ?? svcById[a.serviceId]?.price ?? 0) + (a.addons ?? []).reduce((x, ad) => x + ad.price, 0),
       }))
       .filter((l) => l.techId !== '')
+    // whoever was actually picked to receive points, if anyone -- a guest
+    // (name-only, no ClientRecord) can never hold points themselves, so a
+    // solo guest ticket legitimately has no recipient at all
+    const pointsRecipient = checkoutPointsRecipient
     const newPayment = {
       id: `pay${Date.now()}`, at: Date.now(), dateKey, clientName: checkoutName!, clientNames: [...party], itemCount: ids.size,
-      party: party.size > 1 ? party.size : undefined, lines: payLines, apptIds: [...ids], ...p,
+      party: party.size > 1 ? party.size : undefined, lines: payLines, apptIds: [...ids], pointsRecipient, ...p,
     }
     setPayments((x) => [...x, newPayment])
     // every account holder on the ticket gets a visit
     setClients((cs) => cs.map((c) => (party.has(c.name) ? { ...c, visits: c.visits + 1 } : c)))
-    // loyalty: deduct redeemed points, then award what this ticket earned
-    const host = clients.find((c) => c.name === checkoutName)
+    // loyalty: deduct redeemed points, then award what this ticket earned --
+    // stamped on the payment above too, so a later correction or refund
+    // reverses the SAME person's balance even if the ticket's selection changes
+    const host = clients.find((c) => c.name === pointsRecipient)
     if (host) {
       setPointsByClient((m) => ({ ...m, [host.id]: Math.max(0, (m[host.id] ?? 0) - (p.redeemed?.points ?? 0) + p.points) }))
     }
@@ -2287,7 +2318,9 @@ export function AppointmentBook() {
     if (fullyRefunded) {
       const partyNames = payment.clientNames ?? [payment.clientName]
       setClients((cs) => cs.map((cl) => (partyNames.includes(cl.name) ? { ...cl, visits: Math.max(0, cl.visits - 1) } : cl)))
-      const host = clients.find((cl) => cl.name === payment.clientName)
+      // reverse the same person the points actually went to, not whoever
+      // the ticket happens to be named after (clientName can be a guest)
+      const host = clients.find((cl) => cl.name === (payment.pointsRecipient ?? payment.clientName))
       if (host) {
         setPointsByClient((m) => ({ ...m, [host.id]: Math.max(0, (m[host.id] ?? 0) + (payment.redeemed?.points ?? 0) - payment.points) }))
       }
@@ -4479,13 +4512,17 @@ export function AppointmentBook() {
           selected={checkoutSelected}
           onTogglePerson={toggleCheckoutPerson}
           onSelectAll={() => { const all = new Set(checkoutPeople); setCheckoutSelected(all); setCheckoutDraft((d) => d && { ...d, selected: [...all] }) }}
-          loyaltyBalance={(() => { const c = clients.find((x) => x.name === checkoutName); return c ? pointsByClient[c.id] ?? 0 : 0 })()}
+          // whoever's actually picked to receive points -- null when nobody
+          // selected has an account (e.g. a solo guest ticket), in which case
+          // the redeem/earn section has nothing to attach to and hides itself
+          loyaltyBalance={checkoutPointsRecipient ? (() => { const c = clients.find((x) => x.name === checkoutPointsRecipient); return c ? pointsByClient[c.id] ?? 0 : 0 })() : null}
+          pointsRecipients={checkoutPointsRecipients}
           addedIds={checkoutDraft?.addedIds ?? []}
           onPatchLine={patchCheckoutAppt}
           onRemoveLine={removeCheckoutLine}
           onAddExtra={addCheckoutExtra}
           onRemoveExtra={removeCheckoutExtra}
-          draft={checkoutDraft ? { tipPct: checkoutDraft.tipPct, tipCustom: checkoutDraft.tipCustom, method: checkoutDraft.method, sources: checkoutDraft.sources, note: checkoutDraft.note, redeemId: checkoutDraft.redeemId, tipByTech: checkoutDraft.tipByTech } : undefined}
+          draft={checkoutDraft ? { tipPct: checkoutDraft.tipPct, tipCustom: checkoutDraft.tipCustom, method: checkoutDraft.method, sources: checkoutDraft.sources, note: checkoutDraft.note, redeemId: checkoutDraft.redeemId, tipByTech: checkoutDraft.tipByTech, pointsRecipient: checkoutDraft.pointsRecipient } : undefined}
           onDraft={(patch) => setCheckoutDraft((d) => d && { ...d, ...patch })}
         />
       )}
