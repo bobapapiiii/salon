@@ -304,7 +304,7 @@ export function AppointmentDetail({
                       options={[
                         { value: 'first', label: 'First available' },
                         ...roles.flatMap((role) => techs.filter((t) => t.teamId === role.id).sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({
-                          value: t.id, label: t.name, avatarText: t.initials, group: role.name,
+                          value: t.id, label: t.name, group: role.name,
                         }))),
                       ]}
                       value={d.techId}

@@ -59,6 +59,7 @@ export function SearchSelect({
   const [coords, setCoords] = useState<{ top: number; left: number; openUp: boolean } | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   const selected = options.find((o) => o.value === value)
 
   const toggleOpen = () => {
@@ -84,10 +85,17 @@ export function SearchSelect({
   // the panel's position is measured once, on open -- rather than tracking
   // the trigger continuously, just close on scroll/resize like most
   // floating menus do, since the trigger may live inside a scrollable
-  // ancestor the portal is no longer nested in
+  // ancestor the portal is no longer nested in. Scrolling *inside* the
+  // panel itself (the option list) must NOT count -- that scroll event
+  // still reaches window in the capture phase same as any other, so
+  // without this check the list would slam shut the instant you tried to
+  // scroll through a long roster
   useEffect(() => {
     if (!open) return
-    const close = () => setOpen(false)
+    const close = (e: Event) => {
+      if (panelRef.current && e.target instanceof Node && panelRef.current.contains(e.target)) return
+      setOpen(false)
+    }
     window.addEventListener('scroll', close, true)
     window.addEventListener('resize', close)
     return () => {
@@ -124,6 +132,7 @@ export function SearchSelect({
       </button>
       {open && !disabled && coords && createPortal(
         <div
+          ref={panelRef}
           className="fixed z-[200] w-60 overflow-hidden rounded-lg border border-border bg-popover shadow-2xl"
           style={coords.openUp
             ? { bottom: window.innerHeight - coords.top, left: coords.left }
