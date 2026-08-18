@@ -209,7 +209,7 @@ export function BookingPanel({
   const categories = useCategoriesStore()
   // same order as the Settings service list, for anywhere services get listed
   const orderedSvcs = orderedServices(services, categories)
-  const { techs: allTechs } = useStaffStore()
+  const { roles, techs: allTechs } = useStaffStore()
   const techs = boardTechs(allTechs)
   const increment = useSettingsStore().booking.increment
   // a double-click on the Unassigned rail means "first available tech"
@@ -532,7 +532,9 @@ export function BookingPanel({
       <SearchSelect
         options={[
           ...(type !== 'requested' ? [{ value: 'first', label: 'First available' }] : []),
-          ...techs.filter((t) => t.skills.includes(svcId)).map((t) => ({ value: t.id, label: t.name, avatarText: t.initials })),
+          ...roles.flatMap((role) => techs.filter((t) => t.teamId === role.id && t.skills.includes(svcId)).sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({
+            value: t.id, label: t.name, group: role.name,
+          }))),
         ]}
         value={tech}
         disabled={type !== 'any' && type !== 'requested'}

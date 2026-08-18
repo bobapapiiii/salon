@@ -144,7 +144,7 @@ export function AvailabilityFinder({
   const categories = useCategoriesStore()
   // same order as the Settings service list
   const orderedSvcs = orderedServices(services, categories)
-  const { techs: allTechs } = useStaffStore()
+  const { roles, techs: allTechs } = useStaffStore()
   const techs = boardTechs(allTechs)
   const [guests, setGuests] = useState<FinderGuest[]>([{ id: newId('fg'), clientId: null, name: '', services: [], parallel: false }])
   const [time, setTime] = useState<number | null>(null)
@@ -285,7 +285,9 @@ export function AvailabilityFinder({
                     { value: '', label: 'Any tech' },
                     { value: 'pref-female', label: 'Female preferred' },
                     { value: 'pref-male', label: 'Male preferred' },
-                    ...qualified.map((t) => ({ value: t.id, label: t.name, avatarText: t.initials })),
+                    ...roles.flatMap((role) => qualified.filter((t) => t.teamId === role.id).sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({
+                      value: t.id, label: t.name, group: role.name,
+                    }))),
                   ]}
                   value={s.techChoice}
                   onChange={(v) => setTechChoice(g.id, s.serviceId, v)}
