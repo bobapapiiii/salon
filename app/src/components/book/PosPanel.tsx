@@ -6,8 +6,8 @@ import { useMemo, useState } from "react";
 import { Plus, Search, ShoppingBag, UserPlus, X } from "lucide-react";
 import type { ClientRecord } from "@/lib/booking-types";
 import { useStaffStore } from "@/lib/staff-store";
-import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
-import { catById } from '@/lib/categories-store'
+import { activeServices, orderedServices, serviceGroupLabel, svcById, useServicesStore } from '@/lib/services-store'
+import { catById, useCategoriesStore } from '@/lib/categories-store'
 import { PaymentFlow, type PaymentLine, type PaymentResult } from "./CheckoutDialog";
 import { SearchSelect } from "./SearchSelect";
 
@@ -31,6 +31,9 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   // live catalog -- so a service just added or removed in Settings shows
   // up in POS immediately instead of the stale baseline list
   const services = activeServices(useServicesStore())
+  const categories = useCategoriesStore()
+  // same order as the Settings service list
+  const orderedSvcs = orderedServices(services, categories)
   const { techs } = useStaffStore()
   const [step, setStep] = useState<"build" | "pay">("build")
   const [client, setClient] = useState<ClientRecord | null>(null)
@@ -193,7 +196,7 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: svc ? catById[svc.categoryId]?.line : "#5B54D6" }} />
                 <div className="min-w-0 flex-1 space-y-1">
                   <SearchSelect
-                    options={services.map((s) => ({ value: s.id, label: s.name, sublabel: `$${s.price}` }))}
+                    options={orderedSvcs.map((s) => ({ value: s.id, label: s.name, sublabel: `$${s.price}`, group: serviceGroupLabel(s, categories) }))}
                     value={r.serviceId}
                     onChange={(v) => patchRow(r.id, { serviceId: v, techId: "" })}
                     searchPlaceholder="Search services"

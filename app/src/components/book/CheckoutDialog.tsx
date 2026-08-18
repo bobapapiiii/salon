@@ -9,8 +9,8 @@ import type { Appointment } from "@/lib/booking-types";
 import { DAY_SLOTS, SLOT_MIN, fmtTime } from "@/lib/booking-types";
 import { getStaff } from "@/lib/staff-store";
 import { useSettingsStore } from "@/lib/settings-store";
-import { activeServices, svcById, useServicesStore } from "@/lib/services-store";
-import { catById } from "@/lib/categories-store";
+import { activeServices, orderedServices, serviceGroupLabel, svcById, useServicesStore } from "@/lib/services-store";
+import { catById, useCategoriesStore } from "@/lib/categories-store";
 import { paymentSources, refundedBySource, round2, techServiceTotals, techTipTotals, totalRefunded, type PaymentSource, type PaymentWithSources, type RefundRecord } from "@/lib/payments";
 import { SearchSelect } from "./SearchSelect";
 
@@ -176,6 +176,9 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
   // live catalog -- so a service just added or removed in Settings shows
   // up in "Add service" immediately instead of the stale baseline list
   const services = activeServices(useServicesStore());
+  const categories = useCategoriesStore();
+  // same order as the Settings service list
+  const orderedSvcs = orderedServices(services, categories);
   const [draftSvc, setDraftSvc] = useState(services[0]?.id ?? "");
   const [draftTech, setDraftTech] = useState("");
   const [draftPerson, setDraftPerson] = useState(hostName ?? "");
@@ -376,7 +379,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
           {isEditing ? (
             <div className="flex items-center gap-1.5">
               <SearchSelect
-                options={services.map((sv) => ({ value: sv.id, label: sv.name, sublabel: `$${sv.price}` }))}
+                options={orderedSvcs.map((sv) => ({ value: sv.id, label: sv.name, sublabel: `$${sv.price}`, group: serviceGroupLabel(sv, categories) }))}
                 value={l.serviceId ?? ""}
                 onChange={(v) => onPatchLine?.(l.id, { serviceId: v })}
                 searchPlaceholder="Search services"
@@ -583,7 +586,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                   )}
                   <div className="flex items-center gap-1.5">
                     <SearchSelect
-                      options={services.map((sv) => ({ value: sv.id, label: sv.name, sublabel: `$${sv.price}` }))}
+                      options={orderedSvcs.map((sv) => ({ value: sv.id, label: sv.name, sublabel: `$${sv.price}`, group: serviceGroupLabel(sv, categories) }))}
                       value={draftSvc}
                       onChange={(v) => { setDraftSvc(v); setDraftTech(""); }}
                       searchPlaceholder="Search services"

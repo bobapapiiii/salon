@@ -6,8 +6,8 @@ import { useSettingsStore } from '@/lib/settings-store'
 import type { Appointment, ClientRecord, ServiceAddon, TimeBlock } from '@/lib/booking-types'
 import { DAY_SLOTS, SLOT_MIN, fmtTime, overlaps } from '@/lib/booking-types'
 import { boardTechs, getStaff, useStaffStore } from '@/lib/staff-store'
-import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
-import { catById } from '@/lib/categories-store'
+import { activeServices, orderedServices, serviceGroupLabel, svcById, useServicesStore } from '@/lib/services-store'
+import { catById, useCategoriesStore } from '@/lib/categories-store'
 import { DatePickerPopover } from './LegendPopover'
 import { SearchSelect } from './SearchSelect'
 import type { RealVisit } from './ClientProfile'
@@ -206,6 +206,9 @@ export function BookingPanel({
   // live catalog -- so a service just added or removed in Settings shows
   // up in the service picker immediately instead of the stale baseline list
   const services = activeServices(useServicesStore())
+  const categories = useCategoriesStore()
+  // same order as the Settings service list, for anywhere services get listed
+  const orderedSvcs = orderedServices(services, categories)
   const { techs: allTechs } = useStaffStore()
   const techs = boardTechs(allTechs)
   const increment = useSettingsStore().booking.increment
@@ -623,7 +626,7 @@ export function BookingPanel({
           if (!tech) return null
           const matchIds = svcIds.filter((id) => p.categoryIds.includes(svcById[id]?.categoryId ?? ''))
           const applied = matchIds.length > 0 && matchIds.every((id) => techByService[`${gi}:${id}`] === p.techId)
-          const catServices = services.filter((s) => p.categoryIds.includes(s.categoryId))
+          const catServices = orderedSvcs.filter((s) => p.categoryIds.includes(s.categoryId))
           return (
             <div key={p.id} className="space-y-1.5 rounded-lg bg-surface px-2 py-1.5 text-[12px]">
               <div className="flex items-center gap-2">
@@ -644,7 +647,7 @@ export function BookingPanel({
               </div>
               {catServices.length > 0 && (
                 <SearchSelect
-                  options={catServices.map((s) => ({ value: s.id, label: s.name, sublabel: `$${s.price}` }))}
+                  options={catServices.map((s) => ({ value: s.id, label: s.name, sublabel: `$${s.price}`, group: serviceGroupLabel(s, categories) }))}
                   value=""
                   onChange={(svcId) => addPreferredService(gi, p.techId, svcId)}
                   placeholder="+ Add a service for them…"
@@ -875,24 +878,32 @@ export function BookingPanel({
                     <div className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
                       Services for {guests[activeGuest]?.name}
                     </div>
-                    {services.map((s) => {
+                    {orderedSvcs.map((s, i) => {
+                      const group = serviceGroupLabel(s, categories)
+                      const showHeader = group !== undefined && (i === 0 || group !== serviceGroupLabel(orderedSvcs[i - 1], categories))
                       const selected = (svcsByGuest[activeGuest] ?? []).includes(s.id)
                       return (
-                        <button
-                          key={s.id}
-                          onClick={() => toggleService(s.id)}
-                          className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm ${
-                            selected ? 'border-clay/60 bg-clay-tint/30' : 'border-transparent hover:border-line hover:bg-cream'
-                          }`}
-                        >
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate font-semibold text-ink">{s.name}</span>
-                            <span className="block text-[11px] text-ink-faint">${s.price} · {s.durationMin}min</span>
-                          </span>
-                          <span className={`flex h-5 w-5 items-center justify-center rounded-full border ${selected ? 'border-clay bg-clay text-white' : 'border-line'}`}>
-                            {selected ? <Check className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-                          </span>
-                        </button>
+                        <div key={s.id}>
+                          {showHeader && (
+                            <div className={`px-1 pb-1 text-[10px] font-bold uppercase tracking-wide text-ink-faint ${i === 0 ? '' : 'pt-2.5'}`}>
+                              {group}
+                            </div>
+                          )}
+                          <button
+                            onClick={() => toggleService(s.id)}
+                            className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm ${
+                              selected ? 'border-clay/60 bg-clay-tint/30' : 'border-transparent hover:border-line hover:bg-cream'
+                            }`}
+                          >
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate font-semibold text-ink">{s.name}</span>
+                              <span className="block text-[11px] text-ink-faint">${s.price} · {s.durationMin}min</span>
+                            </span>
+                            <span className={`flex h-5 w-5 items-center justify-center rounded-full border ${selected ? 'border-clay bg-clay text-white' : 'border-line'}`}>
+                              {selected ? <Check className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                            </span>
+                          </button>
+                        </div>
                       )
                     })}
                   </div>

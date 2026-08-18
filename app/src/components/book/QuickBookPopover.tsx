@@ -4,7 +4,8 @@ import type { Tech } from '@/lib/booking-types'
 import { fmtTime } from '@/lib/booking-types'
 import { CLIENTS } from '@/lib/mock-data'
 import { COMBO_ID } from '@/lib/mock-data'
-import { activeServices, useServicesStore } from '@/lib/services-store'
+import { activeServices, orderedServices, serviceGroupLabel, useServicesStore } from '@/lib/services-store'
+import { useCategoriesStore } from '@/lib/categories-store'
 import { SearchSelect } from './SearchSelect'
 
 export interface QuickBookRequest {
@@ -32,6 +33,9 @@ export function QuickBookPopover({ req, tech, onConfirm, onClose, error }: Props
   // live catalog -- so a service just added or removed in Settings shows
   // up here immediately instead of the stale baseline demo list
   const services = activeServices(useServicesStore())
+  const categories = useCategoriesStore()
+  // same order as the Settings service list
+  const orderedSvcs = orderedServices(services, categories)
   const [client, setClient] = useState('')
   const [serviceId, setServiceId] = useState(services[0]?.id ?? '')
   const [notes, setNotes] = useState('')
@@ -102,7 +106,7 @@ export function QuickBookPopover({ req, tech, onConfirm, onClose, error }: Props
             <SearchSelect
               options={[
                 { value: COMBO_ID, label: '✨ Mani + Pedi (same time, 2 techs)' },
-                ...services.map((s) => ({ value: s.id, label: s.name, sublabel: `${s.durationMin}m · $${s.price}`, group: 'Services' })),
+                ...orderedSvcs.map((s) => ({ value: s.id, label: s.name, sublabel: `${s.durationMin}m · $${s.price}`, group: serviceGroupLabel(s, categories) })),
               ]}
               value={serviceId}
               onChange={setServiceId}

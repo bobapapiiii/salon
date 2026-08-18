@@ -6,7 +6,8 @@ import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, fmtTime } from '@/lib/booking-types'
 import { useSettingsStore } from '@/lib/settings-store'
 import { boardTechs, useStaffStore } from '@/lib/staff-store'
-import { activeServices as activeCatalog, svcById, useServicesStore } from '@/lib/services-store'
+import { activeServices as activeCatalog, orderedServices, serviceGroupLabel, svcById, useServicesStore } from '@/lib/services-store'
+import { useCategoriesStore } from '@/lib/categories-store'
 import { allSlotsFor, layoutItems, spanOf, type SlotGroup } from './BookingPanel'
 import { DatePickerPopover } from './LegendPopover'
 import { SearchSelect } from './SearchSelect'
@@ -124,6 +125,9 @@ export function AppointmentDetail({
   // live catalog -- so a service just added or removed in Settings shows
   // up here immediately instead of the stale baseline list
   const services = activeCatalog(useServicesStore())
+  const categories = useCategoriesStore()
+  // same order + category/subcategory grouping as the Settings service list
+  const svcOptions = orderedServices(services, categories).map((s) => ({ value: s.id, label: s.name, group: serviceGroupLabel(s, categories) }))
   const { roles, techs: allTechs } = useStaffStore()
   const techs = boardTechs(allTechs)
   const [draft, setDraft] = useState<Appointment[]>(group.map((g) => ({ ...g })))
@@ -275,7 +279,7 @@ export function AppointmentDetail({
                 <div key={d.id} className={`rounded-xl border p-2.5 ${isRequested ? 'border-clay/30 bg-clay-tint/30' : 'border-line'}`}>
                   <div className="flex items-center gap-2">
                     <SearchSelect
-                      options={services.map((s) => ({ value: s.id, label: s.name }))}
+                      options={svcOptions}
                       value={d.serviceId}
                       onChange={(v) => {
                         const svc = svcById[v]

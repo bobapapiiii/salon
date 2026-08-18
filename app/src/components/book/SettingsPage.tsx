@@ -13,7 +13,7 @@ const todayKey = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
-import { activeServices, setServices, svcById, useServicesStore } from "../../lib/services-store";
+import { activeServices, orderedServices, serviceGroupLabel, setServices, svcById, useServicesStore } from "../../lib/services-store";
 import { addCategory, catById, setCategories, useCategoriesStore } from "../../lib/categories-store";
 import type { ServiceAddon } from "../../lib/booking-types";
 import { ALL_METHODS, setSettings, useSettingsStore, type RegisterConfig, type Redemption } from "../../lib/settings-store";
@@ -1910,6 +1910,7 @@ function RegistersSection() {
 function LoyaltySection() {
   const s = useSettingsStore();
   const services = useServicesStore();
+  const cats = useCategoriesStore();
   const l = s.loyalty;
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -2010,7 +2011,7 @@ function LoyaltySection() {
               )}
               {r.type === "freeService" && (
                 <SearchSelect
-                  options={activeServices(services).map((sv) => ({ value: sv.id, label: sv.name }))}
+                  options={orderedServices(activeServices(services), cats).map((sv) => ({ value: sv.id, label: sv.name, group: serviceGroupLabel(sv, cats) }))}
                   value={r.serviceId ?? ""}
                   onChange={(v) => patchR(r.id, { serviceId: v })}
                   placeholder="Pick a service"

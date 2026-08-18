@@ -3,8 +3,8 @@ import { Check, Clock, GripVertical, Inbox, Plus, Search, Send, UserPlus, Users,
 import type { Appointment, ClientRecord, Tech, TimeBlock } from '@/lib/booking-types'
 import { DAY_SLOTS, SLOT_MIN, fmtTime, overlaps } from '@/lib/booking-types'
 import { boardTechs, getStaff, useStaffStore } from '@/lib/staff-store'
-import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
-import { catById } from '@/lib/categories-store'
+import { activeServices, orderedServices, serviceGroupLabel, svcById, useServicesStore } from '@/lib/services-store'
+import { catById, useCategoriesStore } from '@/lib/categories-store'
 import type { ApprovedItem, QueueEntry, WalkInGroup, WalkInGuest } from './AppointmentBook'
 import { ConfirmDialog } from './ConfirmDialog'
 import { SearchSelect } from './SearchSelect'
@@ -186,6 +186,9 @@ function WaitlistForm({ clients, onAddClient, onAdd }: {
   // live catalog -- so a service just added or removed in Settings shows
   // up in the waitlist form immediately instead of the stale baseline list
   const services = activeServices(useServicesStore())
+  const categories = useCategoriesStore()
+  // same order as the Settings service list
+  const orderedSvcs = orderedServices(services, categories)
   const { techs: allTechs } = useStaffStore()
   const techs = boardTechs(allTechs)
   const [open, setOpen] = useState(false)
@@ -316,7 +319,7 @@ function WaitlistForm({ clients, onAddClient, onAdd }: {
 
       {/* service + preferred technician (only techs who can do it) */}
       <SearchSelect
-        options={services.map((s) => ({ value: s.id, label: s.name, sublabel: `${s.durationMin}m` }))}
+        options={orderedSvcs.map((s) => ({ value: s.id, label: s.name, sublabel: `${s.durationMin}m`, group: serviceGroupLabel(s, categories) }))}
         value={serviceId}
         onChange={(v) => { setServiceId(v); setTechId('') }}
         searchPlaceholder="Search services"
@@ -405,6 +408,9 @@ function WalkInBuilder({ clients, onAddClient, onAdd }: {
   // live catalog -- so a service just added or removed in Settings shows
   // up in the walk-in builder immediately instead of the stale baseline list
   const services = activeServices(useServicesStore())
+  const categories = useCategoriesStore()
+  // same order as the Settings service list
+  const orderedSvcs = orderedServices(services, categories)
   const [open, setOpen] = useState(false)
   const [guests, setGuests] = useState<WalkInGuest[]>([])
   const [activeIdx, setActiveIdx] = useState(0)
@@ -546,22 +552,30 @@ function WalkInBuilder({ clients, onAddClient, onAdd }: {
             {active.serviceIds.length === 0 && <span className="ml-1 text-rust">pick at least one</span>}
           </div>
           <div className="grid max-h-44 grid-cols-2 gap-1 overflow-y-auto">
-            {services.map((s) => {
+            {orderedSvcs.map((s, i) => {
               const on = active.serviceIds.includes(s.id)
               const cat = catById[s.categoryId]
+              const group = serviceGroupLabel(s, categories)
+              const showHeader = group !== undefined && (i === 0 || group !== serviceGroupLabel(orderedSvcs[i - 1], categories))
               return (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => toggleSvc(s.id)}
-                  className={`flex items-center gap-1.5 rounded-[6px] border px-1.5 py-1 text-left text-[11px] transition-colors ${
-                    on ? 'border-clay bg-clay-tint font-semibold text-clay' : 'border-line bg-surface text-ink-soft hover:border-line-strong'
-                  }`}
-                >
-                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: cat.line }} />
-                  <span className="truncate">{s.short}</span>
-                  {on && <Check className="ml-auto h-3 w-3 shrink-0" />}
-                </button>
+                <div key={s.id} className={showHeader ? 'col-span-2' : ''}>
+                  {showHeader && (
+                    <div className={`px-0.5 pb-0.5 text-[9.5px] font-bold uppercase tracking-wide text-ink-faint ${i === 0 ? '' : 'pt-1.5'}`}>
+                      {group}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => toggleSvc(s.id)}
+                    className={`flex w-full items-center gap-1.5 rounded-[6px] border px-1.5 py-1 text-left text-[11px] transition-colors ${
+                      on ? 'border-clay bg-clay-tint font-semibold text-clay' : 'border-line bg-surface text-ink-soft hover:border-line-strong'
+                    }`}
+                  >
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: cat.line }} />
+                    <span className="truncate">{s.short}</span>
+                    {on && <Check className="ml-auto h-3 w-3 shrink-0" />}
+                  </button>
+                </div>
               )
             })}
           </div>

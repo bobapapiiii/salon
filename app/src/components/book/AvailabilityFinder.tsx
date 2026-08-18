@@ -5,7 +5,8 @@ import {
 import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { fmtTime } from '@/lib/booking-types'
 import { boardTechs, useStaffStore } from '@/lib/staff-store'
-import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
+import { activeServices, orderedServices, serviceGroupLabel, svcById, useServicesStore } from '@/lib/services-store'
+import { useCategoriesStore } from '@/lib/categories-store'
 import { DatePickerPopover } from './LegendPopover'
 import { layoutItems, allSlotsFor, type BookedService, type SlotGroup } from './BookingPanel'
 import { SearchSelect } from './SearchSelect'
@@ -140,6 +141,9 @@ export function AvailabilityFinder({
   // live catalog -- so a service just added or removed in Settings shows
   // up here immediately instead of the stale baseline list
   const services = activeServices(useServicesStore())
+  const categories = useCategoriesStore()
+  // same order as the Settings service list
+  const orderedSvcs = orderedServices(services, categories)
   const { techs: allTechs } = useStaffStore()
   const techs = boardTechs(allTechs)
   const [guests, setGuests] = useState<FinderGuest[]>([{ id: newId('fg'), clientId: null, name: '', services: [], parallel: false }])
@@ -303,8 +307,8 @@ export function AvailabilityFinder({
 
       <div className={g.services.length > 0 ? 'mt-2' : ''}>
         <SearchSelect
-          options={services.filter((sv) => !g.services.some((s) => s.serviceId === sv.id)).map((sv) => ({
-            value: sv.id, label: sv.name, sublabel: `${sv.durationMin}m`,
+          options={orderedSvcs.filter((sv) => !g.services.some((s) => s.serviceId === sv.id)).map((sv) => ({
+            value: sv.id, label: sv.name, sublabel: `${sv.durationMin}m`, group: serviceGroupLabel(sv, categories),
           }))}
           value=""
           onChange={(v) => v && addService(g.id, v)}
