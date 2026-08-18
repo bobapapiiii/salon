@@ -7,6 +7,7 @@ import type { Appointment, ClientRecord, ServiceAddon, TimeBlock } from '@/lib/b
 import { DAY_SLOTS, SLOT_MIN, fmtTime, overlaps } from '@/lib/booking-types'
 import { boardTechs, getStaff, useStaffStore } from '@/lib/staff-store'
 import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
+import { catById } from '@/lib/categories-store'
 import { DatePickerPopover } from './LegendPopover'
 import type { RealVisit } from './ClientProfile'
 
@@ -564,39 +565,37 @@ export function BookingPanel({
     )
   }
 
-  // add every not-yet-picked service from a client's standing preference, and
-  // pre-fill the requested tech for each — same effect as choosing them by hand
-  const addPreference = (gi: number, pref: { techId: string; serviceIds: string[] }) => {
-    const already = new Set(svcsByGuest[gi] ?? [])
-    const toAdd = pref.serviceIds.filter((id) => !already.has(id) && svcById[id])
-    if (toAdd.length === 0) return
-    setSvcsByGuest((arr) => {
-      const n = [...arr]
-      n[gi] = [...(n[gi] ?? []), ...toAdd]
-      return n
-    })
+  // apply a client's standing preference to whichever of this guest's
+  // already-picked services fall in that category -- request this tech for
+  // those. Preferences are tracked at the category level (e.g. "pedicures"),
+  // not a specific service, so there's nothing exact to auto-add; the front
+  // desk still has to pick the actual service, this just sets who does it
+  const applyPreference = (gi: number, pref: { techId: string; categoryIds: string[] }) => {
+    const svcIds = svcsByGuest[gi] ?? []
+    const matches = svcIds.filter((id) => pref.categoryIds.includes(svcById[id]?.categoryId ?? ''))
+    if (matches.length === 0) return
     setTechByService((m) => {
       const n = { ...m }
-      toAdd.forEach((id) => { n[`${gi}:${id}`] = pref.techId })
+      matches.forEach((id) => { n[`${gi}:${id}`] = pref.techId })
       return n
     })
     setTypeByService((m) => {
       const n = { ...m }
-      toAdd.forEach((id) => { n[`${gi}:${id}`] = 'requested' })
+      matches.forEach((id) => { n[`${gi}:${id}`] = 'requested' })
       return n
     })
   }
 
-  // this guest's standing tech + service preferences, set on their client profile —
-  // lets the front desk one-click what this client always gets, instead of hunting
-  // for it in their history
+  // this guest's standing tech preferences, set on their client profile —
+  // reminds the front desk who this client wants for this type of service,
+  // and one-click applies it to whatever they've already added
   const preferenceBanner = (gi: number) => {
     const g = guests[gi]
     if (!g || g.isGuest || !g.clientId) return null
     const client = clients.find((c) => c.id === g.clientId)
-    const prefs = (client?.preferredTechs ?? []).filter((p) => p.serviceIds.length > 0)
+    const prefs = (client?.preferredTechs ?? []).filter((p) => p.categoryIds.length > 0)
     if (prefs.length === 0) return null
-    const already = new Set(svcsByGuest[gi] ?? [])
+    const svcIds = svcsByGuest[gi] ?? []
     return (
       <div className="mb-3 space-y-1.5 rounded-xl border border-clay/30 bg-clay-tint/20 p-2.5">
         <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-clay">
@@ -605,20 +604,22 @@ export function BookingPanel({
         {prefs.map((p) => {
           const tech = techs.find((t) => t.id === p.techId)
           if (!tech) return null
-          const allAdded = p.serviceIds.every((id) => already.has(id))
+          const matchIds = svcIds.filter((id) => p.categoryIds.includes(svcById[id]?.categoryId ?? ''))
+          const applied = matchIds.length > 0 && matchIds.every((id) => techByService[`${gi}:${id}`] === p.techId)
           return (
             <div key={p.id} className="flex items-center gap-2 rounded-lg bg-surface px-2 py-1.5 text-[12px]">
               <span className="min-w-0 flex-1 truncate text-ink-soft">
                 <b className="font-semibold text-ink">{tech.name}</b>
                 {' — '}
-                {p.serviceIds.map((id) => svcById[id]?.short ?? id).join(', ')}
+                {p.categoryIds.map((id) => catById[id]?.name ?? id).join(', ')}
               </span>
               <button
-                onClick={() => addPreference(gi, p)}
-                disabled={allAdded}
+                onClick={() => applyPreference(gi, p)}
+                disabled={matchIds.length === 0 || applied}
+                title={matchIds.length === 0 ? 'Add one of their services first, then apply this' : undefined}
                 className="shrink-0 rounded-full border border-clay/40 px-2 py-0.5 text-[10.5px] font-semibold text-clay transition-colors hover:bg-clay-tint disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
               >
-                {allAdded ? 'Added' : 'Add'}
+                {applied ? 'Applied' : 'Apply'}
               </button>
             </div>
           )

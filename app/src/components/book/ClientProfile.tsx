@@ -1,16 +1,84 @@
 import { useMemo, useState } from 'react'
 import {
-  CreditCard, Crown, Heart, Mail, MapPin, Pencil, Phone, Plus, Printer, Star, Trash2, X,
+  Check, ChevronDown, CreditCard, Crown, Heart, Mail, MapPin, Pencil, Phone, Plus, Printer, Search, Star, Trash2, X,
 } from 'lucide-react'
-import type { Appointment, ClientRecord, ClientTechPreference } from '@/lib/booking-types'
+import type { Appointment, ClientRecord, ClientTechPreference, Tech } from '@/lib/booking-types'
 import { fmtTime } from '@/lib/booking-types'
 import { getStaff, uid, useStaffStore } from '@/lib/staff-store'
 import { useSettingsStore } from '@/lib/settings-store'
 import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
-import { catById } from '@/lib/categories-store'
+import { catById, useCategoriesStore } from '@/lib/categories-store'
 import { ConfirmDialog } from './ConfirmDialog'
 
 const techById = (id: string) => getStaff().techs.find((t) => t.id === id)
+
+/** searchable technician picker -- an alphabetized, filter-as-you-type list
+ *  instead of a long unsorted native <select>, used to set who a client's
+ *  standing preference is for */
+function TechPicker({ techs, value, onSelect }: {
+  techs: Tech[]
+  value: string
+  onSelect: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const selected = techs.find((t) => t.id === value)
+  const matches = useMemo(() => {
+    const text = q.trim().toLowerCase()
+    return [...techs]
+      .filter((t) => !text || t.name.toLowerCase().includes(text))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [techs, q])
+  const field =
+    'w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring'
+  return (
+    <div className="relative min-w-0 flex-1">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`${field} flex items-center justify-between gap-2 text-left`}
+      >
+        <span className={`truncate ${selected ? '' : 'text-muted-foreground'}`}>{selected?.name ?? 'Choose a technician…'}</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-lg border border-border bg-popover shadow-2xl">
+          <div className="border-b border-border p-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                autoFocus
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
+                onBlur={() => setTimeout(() => setOpen(false), 150)}
+                placeholder="Search technicians"
+                className="w-full rounded-md border border-input bg-background py-1.5 pl-7 pr-2 text-[12.5px] outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+          </div>
+          <div className="max-h-56 overflow-y-auto p-1">
+            {matches.length === 0 && <p className="px-2 py-3 text-center text-[12px] text-muted-foreground">No techs match &ldquo;{q}&rdquo;</p>}
+            {matches.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onMouseDown={() => { onSelect(t.id); setOpen(false); setQ('') }}
+                className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] hover:bg-accent ${t.id === value ? 'font-semibold text-sky-600' : ''}`}
+              >
+                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary text-[9px] font-bold">
+                  {t.initials}
+                </span>
+                <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                {t.id === value && <Check className="h-3.5 w-3.5 shrink-0" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 export interface ClientNote {
   id: string
@@ -95,6 +163,7 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
   // live catalog -- so a service just added or removed in Settings is
   // reflected in the "preferred services" picker immediately
   const services = activeServices(useServicesStore())
+  const categories = useCategoriesStore()
   const { techs } = useStaffStore()
   const [tab, setTab] = useState<Tab>('overview')
   const [pendingNoteId, setPendingNoteId] = useState<string | null>(null)
@@ -130,13 +199,13 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
     'w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring'
   const label = 'mb-1 block text-[11px] font-medium text-muted-foreground'
 
-  const addPref = () => setPrefDraft((p) => [...p, { id: uid('pref'), techId: '', serviceIds: [] }])
+  const addPref = () => setPrefDraft((p) => [...p, { id: uid('pref'), techId: '', categoryIds: [] }])
   const removePref = (id: string) => setPrefDraft((p) => p.filter((x) => x.id !== id))
   const setPrefTech = (id: string, techId: string) =>
-    setPrefDraft((p) => p.map((x) => (x.id === id ? { ...x, techId, serviceIds: [] } : x)))
-  const togglePrefService = (id: string, serviceId: string) =>
+    setPrefDraft((p) => p.map((x) => (x.id === id ? { ...x, techId, categoryIds: [] } : x)))
+  const togglePrefCategory = (id: string, categoryId: string) =>
     setPrefDraft((p) => p.map((x) => (x.id === id
-      ? { ...x, serviceIds: x.serviceIds.includes(serviceId) ? x.serviceIds.filter((s) => s !== serviceId) : [...x.serviceIds, serviceId] }
+      ? { ...x, categoryIds: x.categoryIds.includes(categoryId) ? x.categoryIds.filter((c) => c !== categoryId) : [...x.categoryIds, categoryId] }
       : x)))
 
   const saveProfile = () => {
@@ -144,7 +213,7 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
       name: draft.name.trim() || client.name,
       phone: draft.phone.trim() || client.phone,
       // drop any entry where a tech was never picked
-      preferredTechs: prefDraft.filter((p) => p.techId && p.serviceIds.length > 0),
+      preferredTechs: prefDraft.filter((p) => p.techId && p.categoryIds.length > 0),
     })
     setSaved(true)
     window.setTimeout(() => setSaved(false), 2000)
@@ -313,39 +382,42 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
                 </div>
                 {prefDraft.length === 0 && (
                   <p className="text-sm text-muted-foreground">
-                    No preferences set. Add the techs {client.name.split(' ')[0]} likes and which services they do for them — this
-                    shows up automatically when booking their next appointment.
+                    No preferences set. Add the techs {client.name.split(' ')[0]} likes and what type of service they do for them —
+                    this shows up automatically when booking their next appointment.
                   </p>
                 )}
                 <div className="space-y-3">
                   {prefDraft.map((p) => {
                     const tech = techs.find((t) => t.id === p.techId)
-                    const offered = tech ? services.filter((s) => tech.skills.includes(s.id)) : []
+                    // categories/subcategories this tech offers services in --
+                    // tracked at that level, not the exact service, front desk
+                    // just needs "this client wants JJ for pedicures"
+                    const offeredCatIds = tech
+                      ? new Set(services.filter((s) => tech.skills.includes(s.id)).map((s) => s.categoryId))
+                      : new Set<string>()
+                    const offeredCats = categories.filter((c) => offeredCatIds.has(c.id))
                     return (
                       <div key={p.id} className="rounded-md border border-border/70 p-3">
                         <div className="flex items-center gap-2">
-                          <select className={field} value={p.techId} onChange={(e) => setPrefTech(p.id, e.target.value)}>
-                            <option value="">Choose a technician…</option>
-                            {techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                          </select>
+                          <TechPicker techs={techs} value={p.techId} onSelect={(techId) => setPrefTech(p.id, techId)} />
                           <button onClick={() => removePref(p.id)} className="shrink-0 text-muted-foreground hover:text-red-500" title="Remove preference">
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                         {tech && (
                           <div className="mt-2 flex flex-wrap gap-1.5">
-                            {offered.map((s) => {
-                              const selected = p.serviceIds.includes(s.id)
+                            {offeredCats.map((c) => {
+                              const selected = p.categoryIds.includes(c.id)
                               return (
                                 <button
-                                  key={s.id}
+                                  key={c.id}
                                   type="button"
-                                  onClick={() => togglePrefService(p.id, s.id)}
+                                  onClick={() => togglePrefCategory(p.id, c.id)}
                                   className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
                                     selected ? 'border-sky-500 bg-sky-500/10 text-sky-600' : 'border-border text-muted-foreground hover:border-sky-300'
                                   }`}
                                 >
-                                  {s.name}
+                                  {c.name}
                                 </button>
                               )
                             })}

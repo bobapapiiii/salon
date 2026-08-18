@@ -98,8 +98,10 @@ export const TECHS: Tech[] = (() => {
 })()
 
 // ── clients (searchable in quick-book) ──────────────────────────────────────
-/** a plausible standing preference or two — a real tech, and services that
- *  tech actually offers, so the demo data holds up when it's surfaced later */
+/** a plausible standing preference or two — a real tech, and a category or
+ *  two that tech actually offers services in, so the demo data holds up when
+ *  it's surfaced later. Tracked at the category level, not a specific
+ *  service -- front desk just needs "this client wants JJ for pedicures." */
 function seedPreferredTechs(i: number): ClientTechPreference[] | undefined {
   const count = rand() > 0.85 ? 2 : rand() > 0.35 ? 1 : 0
   if (count === 0) return undefined
@@ -109,13 +111,15 @@ function seedPreferredTechs(i: number): ClientTechPreference[] | undefined {
     let tech = pick(TECHS)
     for (let guard = 0; used.has(tech.id) && guard < 10; guard++) tech = pick(TECHS)
     used.add(tech.id)
-    const pool = [...tech.skills]
-    const serviceIds: string[] = []
-    const take = int(1, Math.min(3, pool.length))
-    for (let k = 0; k < take && pool.length > 0; k++) {
-      serviceIds.push(pool.splice(Math.floor(rand() * pool.length), 1)[0])
+    const catPool = [...new Set(
+      tech.skills.map((id) => SERVICES.find((s) => s.id === id)?.categoryId).filter((x): x is string => !!x),
+    )]
+    const categoryIds: string[] = []
+    const take = int(1, Math.min(2, catPool.length))
+    for (let k = 0; k < take && catPool.length > 0; k++) {
+      categoryIds.push(catPool.splice(Math.floor(rand() * catPool.length), 1)[0])
     }
-    out.push({ id: `pref-${i}-${p}`, techId: tech.id, serviceIds })
+    out.push({ id: `pref-${i}-${p}`, techId: tech.id, categoryIds })
   }
   return out
 }

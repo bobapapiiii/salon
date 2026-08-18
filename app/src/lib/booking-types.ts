@@ -186,13 +186,16 @@ export interface Appointment {
 
 export const logEntry = (text: string) => ({ at: Date.now(), text })
 
-/** a client's standing preference: this tech does these services for them.
- *  A client can have several — one tech for nails, another for pedicures, etc.
- *  Surfaced when booking for them (and, once it exists, on online booking). */
+/** a client's standing preference: this tech does this type of service for
+ *  them. Tracked at the category/subcategory level, not a specific service,
+ *  front desk only needs to know "this client wants JJ for pedicures," not
+ *  which exact pedicure. A client can have several — one tech for nails,
+ *  another for pedicures, etc. Surfaced when booking for them (and, once it
+ *  exists, on online booking). */
 export interface ClientTechPreference {
   id: string
   techId: string
-  serviceIds: string[]
+  categoryIds: string[]
 }
 
 export interface ClientRecord {
