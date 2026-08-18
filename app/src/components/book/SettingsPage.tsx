@@ -1031,10 +1031,12 @@ function NumberField({ value, onCommit, min = 0, step, className }: {
 function ServicesSection() {
   const services = useServicesStore();
   const cats = useCategoriesStore();
+  const { roles } = useStaffStore();
   const [apptDays] = usePersistentState<Record<string, Appointment[]>>(sdata("appts-v2"), {});
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteCatId, setDeleteCatId] = useState<string | null>(null);
   const [addonsFor, setAddonsFor] = useState<string | null>(null);
+  const [onlineFor, setOnlineFor] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [dragCatId, setDragCatId] = useState<string | null>(null);
@@ -1048,6 +1050,16 @@ function ServicesSection() {
 
   const patch = (id: string, p: Partial<Service>) =>
     setServices((list) => list.map((s) => (s.id === id ? { ...s, ...p } : s)));
+
+  /** hide (or unhide) a job role from the online booking page for one
+   *  service -- purely a client-facing filter, the front desk can still
+   *  book that role for it in-salon regardless */
+  const toggleRoleOnline = (svcId: string, roleId: string) => {
+    const sv = services.find((s) => s.id === svcId);
+    const excluded = sv?.onlineExcludedRoleIds ?? [];
+    const next = excluded.includes(roleId) ? excluded.filter((id) => id !== roleId) : [...excluded, roleId];
+    patch(svcId, { onlineExcludedRoleIds: next });
+  };
 
   const addService = (categoryId: string) =>
     setServices((list) => [
@@ -1164,6 +1176,12 @@ function ServicesSection() {
     const inUse = usedIds.has(sv.id);
     const addons = sv.addons ?? [];
     const addonsOpen = addonsFor === sv.id;
+    // only offer roles that can actually perform this service -- excluding
+    // a role that can't do it anyway wouldn't mean anything
+    const eligibleRoles = roles.filter((r) => r.serviceIds.includes(sv.id));
+    const excludedRoleIds = sv.onlineExcludedRoleIds ?? [];
+    const hiddenCount = eligibleRoles.filter((r) => excludedRoleIds.includes(r.id)).length;
+    const onlineOpen = onlineFor === sv.id;
     const dropBefore = dragId && dragId !== sv.id && overId === sv.id;
     return (
       <div
@@ -1251,6 +1269,15 @@ function ServicesSection() {
           >
             {addons.length > 0 ? `${addons.length} add-on${addons.length > 1 ? "s" : ""}` : "+ add-on"}
           </button>
+          <button
+            onClick={() => setOnlineFor(onlineOpen ? null : sv.id)}
+            title="Which job roles this service is hidden from on the online booking page -- they can still be booked for it in-salon"
+            className={`w-[104px] shrink-0 overflow-hidden text-ellipsis whitespace-nowrap rounded-md px-1.5 py-1 text-left text-[10.5px] font-bold transition ${
+              hiddenCount > 0 ? "bg-amber-500/10 text-amber-600" : "text-slate-400 hover:text-slate-600"
+            }`}
+          >
+            {hiddenCount > 0 ? `${hiddenCount} role${hiddenCount > 1 ? "s" : ""} hidden` : "Online: all roles"}
+          </button>
           <span title={active ? "Active, bookable" : "Inactive, hidden from menus"}>
             <Toggle on={active} onClick={() => patch(sv.id, { active: !active } as Partial<Service>)} />
           </span>
@@ -1304,6 +1331,27 @@ function ServicesSection() {
             >
               <Plus className="h-3 w-3" /> Add add-on
             </button>
+          </div>
+        )}
+        {onlineOpen && (
+          <div className="ml-6 mt-1 space-y-1 rounded-lg border border-[#EDE7EE] bg-[#FAF8FA] p-2">
+            <p className="px-1 pb-0.5 text-[11px] text-slate-400">
+              Turn off a role to hide {sv.name} from it on the online booking page. It's still fully bookable for that role in-salon.
+            </p>
+            {eligibleRoles.length === 0 && (
+              <p className="px-1 py-1 text-[11px] text-slate-400">No job role is set up to perform this service yet.</p>
+            )}
+            {eligibleRoles.map((r) => {
+              const onlineForRole = !excludedRoleIds.includes(r.id);
+              return (
+                <div key={r.id} className="flex items-center justify-between gap-2 rounded-md px-1.5 py-1">
+                  <span className="text-[11.5px] font-medium text-slate-700">{r.name}</span>
+                  <span title={onlineForRole ? "Bookable online" : "Hidden from online booking, in-salon only"}>
+                    <Toggle on={onlineForRole} onClick={() => toggleRoleOnline(sv.id, r.id)} />
+                  </span>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -1360,6 +1408,7 @@ function ServicesSection() {
         <span className="w-[86px] shrink-0">Duration</span>
         <span className="w-16 shrink-0">Price</span>
         <span className="w-[72px] shrink-0">Add-ons</span>
+        <span className="w-[104px] shrink-0">Online booking</span>
         <span className="w-9 shrink-0">Active</span>
         <span className="h-3.5 w-3.5 shrink-0" />
       </div>

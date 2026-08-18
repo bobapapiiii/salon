@@ -135,6 +135,10 @@ export interface Service {
   active?: boolean
   /** optional add-ons offered with this service */
   addons?: ServiceAddon[]
+  /** job roles who can perform this service but shouldn't be offered it on
+   *  the online booking page -- the front desk can still book any of them
+   *  for it in-salon, this only hides it from clients booking online */
+  onlineExcludedRoleIds?: string[]
 }
 
 export interface Appointment {
