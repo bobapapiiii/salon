@@ -463,6 +463,12 @@ export function AppointmentBook() {
   const [registerOpen, setRegisterOpen] = useState(false)
   const [registerSessions, setRegisterSessions] = usePersistentState<RegisterSession[]>(sdata('register-v1'), [])
   const anyRegisterOpen = registerSessions.some((s) => s.closedAt == null)
+  // a register left open from a day that's already passed -- unlike simply
+  // having no register open at all (a soft nudge, see openCheckout below),
+  // this is a hard stop: yesterday's drawer was never reconciled, so nothing
+  // new should ring in against it (or against today, uncounted) until it's
+  // actually closed out
+  const staleRegisterOpen = registerSessions.some((s) => s.closedAt == null && s.dateKey !== todayKey)
   const registers = useSettingsStore().registers
   const activeRegisters = registers.filter((r) => r.active)
   // which register today's shift runs on, asked once a day (see RegisterDayPrompt
@@ -1872,6 +1878,18 @@ export function AppointmentBook() {
       return n
     })
 
+  // a real block, unlike the "no register open at all" nudge below -- a
+  // drawer left open from a day that's already passed has to be reconciled
+  // before anything new rings in, so this stops the action outright and
+  // sends the salon straight to Manage Register to close it out. Returns
+  // true when it blocked, so callers can bail out of their own handler
+  const blockIfStaleRegister = () => {
+    if (!staleRegisterOpen) return false
+    showFlash('⚠ A previous day\'s register is still open — close it before taking payment')
+    setRegisterOpen(true)
+    return true
+  }
+
   const openCheckout = (a: Appointment, groupOverride?: Appointment[]) => {
     setDetailId(null)
     setBookingOpen(false) // right-side panels are exclusive, never stack
@@ -2245,6 +2263,7 @@ export function AppointmentBook() {
           (x.clientName === a.clientName || (a.guestOf && x.guestOf === a.guestOf) || (a.parallelGroup && x.parallelGroup === a.parallelGroup)) &&
           payable(x))
         if (!payableNow) { showFlash('Already checked out, right-click and choose View invoice / Print'); break }
+        if (blockIfStaleRegister()) break
         openCheckout(a)
         break
       }
@@ -2505,6 +2524,7 @@ export function AppointmentBook() {
         // footer already disables the button for any other day, this is the
         // backstop in case the action still fires)
         if (originKey !== todayKey) { showFlash('Checkout is only available for today\'s appointments'); break }
+        if (blockIfStaleRegister()) break
         // pass detailParty (the whole party, not just this client) explicitly —
         // it's already resolved against the appointment's own day, whereas
         // `appts` may not have caught up to the goDay() above yet within this
@@ -2523,6 +2543,11 @@ export function AppointmentBook() {
         // here touches the payment until a refund is actually submitted
         const found = findDetailPayment(originKey)
         if (!found) { showFlash('No payment recorded for this appointment'); break }
+        // only block collecting a balance still owed -- correcting or
+        // refunding an already-settled ticket doesn't take new payment, so
+        // it stays allowed even with a stale register open
+        const stillOwed = balanceDue(found.payment.total, paymentSources(found.payment), found.payment.refunds) > 0.004
+        if (stillOwed && blockIfStaleRegister()) break
         openReopen(found)
         break
       }
@@ -3260,6 +3285,7 @@ export function AppointmentBook() {
         catFilter={catFilter} onCatFilter={setCatFilter}
         onBook={openBooking}
         onPos={() => {
+          if (blockIfStaleRegister()) return
           setBookingOpen(false)
           setFinderOpen(false)
           closeCheckout()
