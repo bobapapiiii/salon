@@ -5,6 +5,7 @@ import { fmtTime } from '@/lib/booking-types'
 import { CLIENTS } from '@/lib/mock-data'
 import { COMBO_ID } from '@/lib/mock-data'
 import { activeServices, useServicesStore } from '@/lib/services-store'
+import { SearchSelect } from './SearchSelect'
 
 export interface QuickBookRequest {
   techId: string
@@ -98,20 +99,16 @@ export function QuickBookPopover({ req, tech, onConfirm, onClose, error }: Props
 
           <div>
             <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Service</label>
-            <select
+            <SearchSelect
+              options={[
+                { value: COMBO_ID, label: '✨ Mani + Pedi (same time, 2 techs)' },
+                ...services.map((s) => ({ value: s.id, label: s.name, sublabel: `${s.durationMin}m · $${s.price}`, group: 'Services' })),
+              ]}
               value={serviceId}
-              onChange={(e) => setServiceId(e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
-            >
-              <option value={COMBO_ID}>✨ Mani + Pedi (same time, 2 techs)</option>
-              <optgroup label="Services">
-                {services.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} · {s.durationMin}m · ${s.price}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
+              onChange={setServiceId}
+              searchPlaceholder="Search services"
+              className="w-full"
+            />
             {serviceId === COMBO_ID && (
               <p className="mt-1 text-[11px] text-emerald-400">
                 Books {tech.name} for hands + auto-assigns a free pedi specialist.

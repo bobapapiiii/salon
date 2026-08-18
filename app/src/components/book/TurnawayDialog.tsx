@@ -15,6 +15,7 @@ import { PhoneOff, Check, X, Plus } from "lucide-react";
 import { useCategoriesStore } from "@/lib/categories-store";
 import { useStaffStore, boardTechs } from "@/lib/staff-store";
 import type { ServiceCategory } from "@/lib/booking-types";
+import { SearchSelect } from "./SearchSelect";
 
 export interface TurnawayGuest {
   name?: string;
@@ -184,10 +185,13 @@ export function TurnawayDialog({ onSave, onClose }: {
           <div className="mt-3.5 space-y-1.5">
             <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Phone / tech / notes, if you have them</p>
             <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone (optional)" className={field} autoFocus />
-            <select value={requestedTechId} onChange={(e) => setRequestedTechId(e.target.value)} className={field}>
-              <option value="">Any tech</option>
-              {techs.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
+            <SearchSelect
+              options={[{ value: '', label: 'Any tech' }, ...techs.map((t) => ({ value: t.id, label: t.name, avatarText: t.initials }))]}
+              value={requestedTechId}
+              onChange={setRequestedTechId}
+              searchPlaceholder="Search technicians"
+              className="w-full"
+            />
             <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Notes (optional)" rows={2} className={`${field} resize-none`} />
           </div>
         ) : (

@@ -12,6 +12,7 @@ import { useSettingsStore } from "@/lib/settings-store";
 import { activeServices, svcById, useServicesStore } from "@/lib/services-store";
 import { catById } from "@/lib/categories-store";
 import { paymentSources, refundedBySource, round2, techServiceTotals, techTipTotals, totalRefunded, type PaymentSource, type PaymentWithSources, type RefundRecord } from "@/lib/payments";
+import { SearchSelect } from "./SearchSelect";
 
 export { paymentSources, type PaymentSource, type PaymentWithSources } from "@/lib/payments";
 
@@ -374,22 +375,20 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
         <div className="min-w-0 flex-1">
           {isEditing ? (
             <div className="flex items-center gap-1.5">
-              <select
-                value={l.serviceId}
-                onChange={(e) => onPatchLine?.(l.id, { serviceId: e.target.value })}
-                title="Service"
-                className="h-[30px] min-w-0 flex-1 rounded-[8px] border border-input bg-background px-2 text-[12px] font-semibold outline-none focus:border-clay"
-              >
-                {services.map((sv) => <option key={sv.id} value={sv.id}>{sv.name} · ${sv.price}</option>)}
-              </select>
-              <select
+              <SearchSelect
+                options={services.map((sv) => ({ value: sv.id, label: sv.name, sublabel: `$${sv.price}` }))}
+                value={l.serviceId ?? ""}
+                onChange={(v) => onPatchLine?.(l.id, { serviceId: v })}
+                searchPlaceholder="Search services"
+                className="min-w-0 flex-1"
+              />
+              <SearchSelect
+                options={qualified.map((t) => ({ value: t.id, label: t.name, avatarText: t.initials }))}
                 value={l.techId ?? ""}
-                onChange={(e) => onPatchLine?.(l.id, { techId: e.target.value })}
-                title="Technician"
-                className="h-[30px] w-[96px] shrink-0 rounded-[8px] border border-input bg-background px-1.5 text-[11px] outline-none focus:border-clay"
-              >
-                {qualified.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
+                onChange={(v) => onPatchLine?.(l.id, { techId: v })}
+                searchPlaceholder="Search technicians"
+                className="w-[96px] shrink-0"
+              />
             </div>
           ) : (
             <p className="truncate text-[13px] font-semibold text-ink">
@@ -583,22 +582,20 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                     </div>
                   )}
                   <div className="flex items-center gap-1.5">
-                    <select
+                    <SearchSelect
+                      options={services.map((sv) => ({ value: sv.id, label: sv.name, sublabel: `$${sv.price}` }))}
                       value={draftSvc}
-                      onChange={(e) => { setDraftSvc(e.target.value); setDraftTech(""); }}
-                      className="min-w-0 flex-1 rounded-[8px] border border-input bg-background px-2 py-1.5 text-[12px] outline-none"
-                    >
-                      {services.map((sv) => <option key={sv.id} value={sv.id}>{sv.name} · ${sv.price}</option>)}
-                    </select>
-                    <select
+                      onChange={(v) => { setDraftSvc(v); setDraftTech(""); }}
+                      searchPlaceholder="Search services"
+                      className="min-w-0 flex-1"
+                    />
+                    <SearchSelect
+                      options={getStaff().techs.filter((t) => t.skills.includes(draftSvc)).map((t) => ({ value: t.id, label: t.name, avatarText: t.initials }))}
                       value={draftTech}
-                      onChange={(e) => setDraftTech(e.target.value)}
-                      className="min-w-0 flex-1 rounded-[8px] border border-input bg-background px-2 py-1.5 text-[12px] outline-none"
-                    >
-                      {getStaff().techs.filter((t) => t.skills.includes(draftSvc)).map((t) => (
-                        <option key={t.id} value={t.id}>{t.name}</option>
-                      ))}
-                    </select>
+                      onChange={setDraftTech}
+                      searchPlaceholder="Search technicians"
+                      className="min-w-0 flex-1"
+                    />
                     <button
                       onClick={() => {
                         const techId = draftTech || getStaff().techs.find((t) => t.skills.includes(draftSvc))?.id || "";
@@ -868,14 +865,13 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                               </button>
                             )}
                             {refundTechOptions.length > 1 && (
-                              <select
+                              <SearchSelect
+                                options={refundTechOptions.map((t) => ({ value: t.techId, label: t.name, sublabel: money(t.value) }))}
                                 value={refundTechId}
-                                onChange={(e) => setRefundTechId(e.target.value)}
-                                title="Technician"
-                                className="h-6 min-w-0 flex-1 rounded-[6px] border border-input bg-background px-1.5 text-[11px] font-semibold outline-none focus:border-clay"
-                              >
-                                {refundTechOptions.map((t) => <option key={t.techId} value={t.techId}>{t.name} · {money(t.value)}</option>)}
-                              </select>
+                                onChange={setRefundTechId}
+                                searchPlaceholder="Search technicians"
+                                className="min-w-0 flex-1"
+                              />
                             )}
                           </div>
                         )}

@@ -7,7 +7,8 @@ import { fmtTime } from '@/lib/booking-types'
 import { boardTechs, useStaffStore } from '@/lib/staff-store'
 import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
 import { DatePickerPopover } from './LegendPopover'
-import { Sel, layoutItems, allSlotsFor, type BookedService, type SlotGroup } from './BookingPanel'
+import { layoutItems, allSlotsFor, type BookedService, type SlotGroup } from './BookingPanel'
+import { SearchSelect } from './SearchSelect'
 
 /** small local date helpers, duplicated from AppointmentBook/BookingPanel to avoid a circular import */
 function dayKeyOf(d: Date) {
@@ -275,12 +276,18 @@ export function AvailabilityFinder({
                   {svc?.name ?? s.serviceId}
                   <span className="ml-1 font-normal text-ink-faint">${svc?.price} · {svc?.durationMin}m</span>
                 </span>
-                <Sel value={s.techChoice} onChange={(v) => setTechChoice(g.id, s.serviceId, v)} title="Technician" className="w-[136px] shrink-0">
-                  <option value="">Any tech</option>
-                  <option value="pref-female">Female preferred</option>
-                  <option value="pref-male">Male preferred</option>
-                  {qualified.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                </Sel>
+                <SearchSelect
+                  options={[
+                    { value: '', label: 'Any tech' },
+                    { value: 'pref-female', label: 'Female preferred' },
+                    { value: 'pref-male', label: 'Male preferred' },
+                    ...qualified.map((t) => ({ value: t.id, label: t.name, avatarText: t.initials })),
+                  ]}
+                  value={s.techChoice}
+                  onChange={(v) => setTechChoice(g.id, s.serviceId, v)}
+                  searchPlaceholder="Search technicians"
+                  className="w-[136px] shrink-0"
+                />
                 <button
                   onClick={() => removeService(g.id, s.serviceId)}
                   title="Remove service"
@@ -295,12 +302,16 @@ export function AvailabilityFinder({
       )}
 
       <div className={g.services.length > 0 ? 'mt-2' : ''}>
-        <Sel value="" onChange={(v) => v && addService(g.id, v)} title="Add a service" className="w-full">
-          <option value="">+ Add a service…</option>
-          {services.filter((sv) => !g.services.some((s) => s.serviceId === sv.id)).map((sv) => (
-            <option key={sv.id} value={sv.id}>{sv.name} · {sv.durationMin}m</option>
-          ))}
-        </Sel>
+        <SearchSelect
+          options={services.filter((sv) => !g.services.some((s) => s.serviceId === sv.id)).map((sv) => ({
+            value: sv.id, label: sv.name, sublabel: `${sv.durationMin}m`,
+          }))}
+          value=""
+          onChange={(v) => v && addService(g.id, v)}
+          placeholder="+ Add a service…"
+          searchPlaceholder="Search services"
+          className="w-full"
+        />
       </div>
 
       {g.services.length >= 2 && (

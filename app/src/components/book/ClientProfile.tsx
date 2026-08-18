@@ -1,84 +1,17 @@
 import { useMemo, useState } from 'react'
 import {
-  Check, ChevronDown, CreditCard, Crown, Heart, Mail, MapPin, Pencil, Phone, Plus, Printer, Search, Star, Trash2, X,
+  CreditCard, Crown, Heart, Mail, MapPin, Pencil, Phone, Plus, Printer, Star, Trash2, X,
 } from 'lucide-react'
-import type { Appointment, ClientRecord, ClientTechPreference, Tech } from '@/lib/booking-types'
+import type { Appointment, ClientRecord, ClientTechPreference } from '@/lib/booking-types'
 import { fmtTime } from '@/lib/booking-types'
 import { getStaff, uid, useStaffStore } from '@/lib/staff-store'
 import { useSettingsStore } from '@/lib/settings-store'
 import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
 import { catById, useCategoriesStore } from '@/lib/categories-store'
 import { ConfirmDialog } from './ConfirmDialog'
+import { SearchSelect } from './SearchSelect'
 
 const techById = (id: string) => getStaff().techs.find((t) => t.id === id)
-
-/** searchable technician picker -- an alphabetized, filter-as-you-type list
- *  instead of a long unsorted native <select>, used to set who a client's
- *  standing preference is for */
-function TechPicker({ techs, value, onSelect }: {
-  techs: Tech[]
-  value: string
-  onSelect: (id: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const [q, setQ] = useState('')
-  const selected = techs.find((t) => t.id === value)
-  const matches = useMemo(() => {
-    const text = q.trim().toLowerCase()
-    return [...techs]
-      .filter((t) => !text || t.name.toLowerCase().includes(text))
-      .sort((a, b) => a.name.localeCompare(b.name))
-  }, [techs, q])
-  const field =
-    'w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring'
-  return (
-    <div className="relative min-w-0 flex-1">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className={`${field} flex items-center justify-between gap-2 text-left`}
-      >
-        <span className={`truncate ${selected ? '' : 'text-muted-foreground'}`}>{selected?.name ?? 'Choose a technician…'}</span>
-        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-      </button>
-      {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-64 overflow-hidden rounded-lg border border-border bg-popover shadow-2xl">
-          <div className="border-b border-border p-2">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <input
-                autoFocus
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
-                onBlur={() => setTimeout(() => setOpen(false), 150)}
-                placeholder="Search technicians"
-                className="w-full rounded-md border border-input bg-background py-1.5 pl-7 pr-2 text-[12.5px] outline-none focus:ring-1 focus:ring-ring"
-              />
-            </div>
-          </div>
-          <div className="max-h-56 overflow-y-auto p-1">
-            {matches.length === 0 && <p className="px-2 py-3 text-center text-[12px] text-muted-foreground">No techs match &ldquo;{q}&rdquo;</p>}
-            {matches.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onMouseDown={() => { onSelect(t.id); setOpen(false); setQ('') }}
-                className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12.5px] hover:bg-accent ${t.id === value ? 'font-semibold text-sky-600' : ''}`}
-              >
-                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-secondary text-[9px] font-bold">
-                  {t.initials}
-                </span>
-                <span className="min-w-0 flex-1 truncate">{t.name}</span>
-                {t.id === value && <Check className="h-3.5 w-3.5 shrink-0" />}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 
 export interface ClientNote {
   id: string
@@ -399,7 +332,14 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
                     return (
                       <div key={p.id} className="rounded-md border border-border/70 p-3">
                         <div className="flex items-center gap-2">
-                          <TechPicker techs={techs} value={p.techId} onSelect={(techId) => setPrefTech(p.id, techId)} />
+                          <SearchSelect
+                            options={[...techs].sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({ value: t.id, label: t.name, avatarText: t.initials }))}
+                            value={p.techId}
+                            onChange={(techId) => setPrefTech(p.id, techId)}
+                            placeholder="Choose a technician…"
+                            searchPlaceholder="Search technicians"
+                            className="flex-1"
+                          />
                           <button onClick={() => removePref(p.id)} className="shrink-0 text-muted-foreground hover:text-red-500" title="Remove preference">
                             <Trash2 className="h-4 w-4" />
                           </button>

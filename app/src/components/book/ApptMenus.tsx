@@ -6,6 +6,7 @@ import type { Appointment } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, SLOT_MIN, fmtTime } from '@/lib/booking-types'
 import { boardTechs, useStaffStore } from '@/lib/staff-store'
 import { activeServices, useServicesStore } from '@/lib/services-store'
+import { SearchSelect } from './SearchSelect'
 
 // ── right-click context menu ───────────────────────────────────────────────
 
@@ -177,32 +178,28 @@ export function EditAppointmentDialog({ appt, error, onSave, onClose }: EditProp
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Service</label>
-              <select
+              <SearchSelect
+                options={services.map((s) => ({ value: s.id, label: s.name }))}
                 value={draft.serviceId}
-                onChange={(e) => {
-                  const svc = services.find((s) => s.id === e.target.value)!
+                onChange={(v) => {
+                  const svc = services.find((s) => s.id === v)!
                   setDraft((d) => ({ ...d, serviceId: svc.id, durationMin: svc.durationMin }))
                 }}
-                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none"
-              >
-                {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
+                searchPlaceholder="Search services"
+                className="w-full"
+              />
             </div>
             <div>
               <label className="mb-1 block text-[11px] font-medium text-muted-foreground">Technician</label>
-              <select
+              <SearchSelect
+                options={roles.flatMap((role) => techs.filter((t) => t.teamId === role.id).sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({
+                  value: t.id, label: t.name, avatarText: t.initials, group: role.name,
+                })))}
                 value={draft.techId}
-                onChange={(e) => set('techId', e.target.value)}
-                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none"
-              >
-                {roles.map((role) => (
-                  <optgroup key={role.id} label={role.name}>
-                    {techs.filter((t) => t.teamId === role.id).sort((a, b) => a.name.localeCompare(b.name)).map((t) => (
-                      <option key={t.id} value={t.id}>{t.name}</option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+                onChange={(v) => set('techId', v)}
+                searchPlaceholder="Search technicians"
+                className="w-full"
+              />
             </div>
           </div>
 

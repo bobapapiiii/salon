@@ -9,6 +9,7 @@ import { useStaffStore } from "@/lib/staff-store";
 import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
 import { catById } from '@/lib/categories-store'
 import { PaymentFlow, type PaymentLine, type PaymentResult } from "./CheckoutDialog";
+import { SearchSelect } from "./SearchSelect";
 
 
 const field =
@@ -191,13 +192,20 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
               <div key={r.id} className="flex items-center gap-1.5 rounded-[10px] border border-line p-2">
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: svc ? catById[svc.categoryId]?.line : "#5B54D6" }} />
                 <div className="min-w-0 flex-1 space-y-1">
-                  <select value={r.serviceId} onChange={(e) => patchRow(r.id, { serviceId: e.target.value, techId: "" })} className={field}>
-                    {services.map((s) => <option key={s.id} value={s.id}>{s.name} · ${s.price}</option>)}
-                  </select>
-                  <select value={r.techId} onChange={(e) => patchRow(r.id, { techId: e.target.value })} className={field}>
-                    <option value="">No tech credited</option>
-                    {qualified.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
+                  <SearchSelect
+                    options={services.map((s) => ({ value: s.id, label: s.name, sublabel: `$${s.price}` }))}
+                    value={r.serviceId}
+                    onChange={(v) => patchRow(r.id, { serviceId: v, techId: "" })}
+                    searchPlaceholder="Search services"
+                    className="w-full"
+                  />
+                  <SearchSelect
+                    options={[{ value: "", label: "No tech credited" }, ...qualified.map((t) => ({ value: t.id, label: t.name, avatarText: t.initials }))]}
+                    value={r.techId}
+                    onChange={(v) => patchRow(r.id, { techId: v })}
+                    searchPlaceholder="Search technicians"
+                    className="w-full"
+                  />
                 </div>
                 <span className="tnum w-12 shrink-0 text-right text-[12.5px] font-semibold">{money(svc?.price ?? 0)}</span>
                 <button

@@ -22,6 +22,7 @@ import type { Appointment, Service, TechDocument, TechTimeOff, WeeklyDay } from 
 import { DAY_SLOTS, SLOT_MIN, fmtTime } from "../../lib/booking-types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ReportsSection } from "./ReportsSection";
+import { SearchSelect } from "./SearchSelect";
 
 // ── shared bits ──────────────────────────────────────────────────────────────
 const inputCls =
@@ -2008,14 +2009,14 @@ function LoyaltySection() {
                 </span>
               )}
               {r.type === "freeService" && (
-                <select
+                <SearchSelect
+                  options={activeServices(services).map((sv) => ({ value: sv.id, label: sv.name }))}
                   value={r.serviceId ?? ""}
-                  onChange={(e) => patchR(r.id, { serviceId: e.target.value })}
-                  className="min-w-0 flex-1 rounded-md border border-[#E3DDE3] bg-white px-1.5 py-1 text-[11.5px] outline-none focus:border-[#5B54D6]"
-                >
-                  <option value="">Pick a service</option>
-                  {activeServices(services).map((sv) => <option key={sv.id} value={sv.id}>{sv.name}</option>)}
-                </select>
+                  onChange={(v) => patchR(r.id, { serviceId: v })}
+                  placeholder="Pick a service"
+                  searchPlaceholder="Search services"
+                  className="min-w-0 flex-1"
+                />
               )}
               <span className="rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] font-bold text-violet-500">{typeLabel(r)}</span>
               <Toggle on={r.active} onClick={() => patchR(r.id, { active: !r.active })} />

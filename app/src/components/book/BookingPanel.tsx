@@ -9,6 +9,7 @@ import { boardTechs, getStaff, useStaffStore } from '@/lib/staff-store'
 import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
 import { catById } from '@/lib/categories-store'
 import { DatePickerPopover } from './LegendPopover'
+import { SearchSelect } from './SearchSelect'
 import type { RealVisit } from './ClientProfile'
 
 const DAY_MIN = DAY_SLOTS * SLOT_MIN
@@ -525,19 +526,18 @@ export function BookingPanel({
         <option value="issue">Issue</option>
       </Sel>,
       null,
-      <Sel
+      <SearchSelect
+        options={[
+          ...(type !== 'requested' ? [{ value: 'first', label: 'First available' }] : []),
+          ...techs.filter((t) => t.skills.includes(svcId)).map((t) => ({ value: t.id, label: t.name, avatarText: t.initials })),
+        ]}
         value={tech}
         disabled={type !== 'any' && type !== 'requested'}
         onChange={(v) => setTechByService((m) => ({ ...m, [key]: v }))}
-        title="Technician"
+        placeholder={type === 'requested' ? 'Choose technician…' : 'First available'}
+        searchPlaceholder="Search technicians"
         className="min-w-0 w-full"
-      >
-        {type === 'requested' && tech === 'first' && <option value="first" disabled>Choose technician…</option>}
-        {type !== 'requested' && <option value="first">First available</option>}
-        {techs.filter((t) => t.skills.includes(svcId)).map((t) => (
-          <option key={t.id} value={t.id}>{t.name}</option>
-        ))}
-      </Sel>,
+      />,
     )
   }
 
@@ -567,9 +567,8 @@ export function BookingPanel({
 
   // apply a client's standing preference to whichever of this guest's
   // already-picked services fall in that category -- request this tech for
-  // those. Preferences are tracked at the category level (e.g. "pedicures"),
-  // not a specific service, so there's nothing exact to auto-add; the front
-  // desk still has to pick the actual service, this just sets who does it
+  // those (covers a service added through the regular picker before this
+  // preference was noticed)
   const applyPreference = (gi: number, pref: { techId: string; categoryIds: string[] }) => {
     const svcIds = svcsByGuest[gi] ?? []
     const matches = svcIds.filter((id) => pref.categoryIds.includes(svcById[id]?.categoryId ?? ''))
@@ -586,9 +585,27 @@ export function BookingPanel({
     })
   }
 
+  // add a specific service to this guest's ticket, with the preferred tech
+  // pre-assigned and requested -- the shortcut for "pick exactly which
+  // pedicure, JJ does it" once the front desk knows the actual service
+  const addPreferredService = (gi: number, techId: string, svcId: string) => {
+    setSvcsByGuest((arr) => {
+      const n = arr.map((x) => [...x])
+      const list = n[gi] ?? []
+      n[gi] = list.includes(svcId) ? list : [...list, svcId]
+      return n
+    })
+    setTechByService((m) => ({ ...m, [`${gi}:${svcId}`]: techId }))
+    setTypeByService((m) => ({ ...m, [`${gi}:${svcId}`]: 'requested' }))
+  }
+
   // this guest's standing tech preferences, set on their client profile —
-  // reminds the front desk who this client wants for this type of service,
-  // and one-click applies it to whatever they've already added
+  // reminds the front desk who this client wants for this type of service.
+  // Preferences are tracked at the category level (e.g. "pedicures"), not an
+  // exact service, so this offers a shortcut to add one of that category's
+  // services directly (tech pre-assigned), and to sync the tech onto
+  // whatever's already picked -- it's purely additive, choosing a service in
+  // a different category entirely, from the regular picker, still works fine
   const preferenceBanner = (gi: number) => {
     const g = guests[gi]
     if (!g || g.isGuest || !g.clientId) return null
@@ -597,7 +614,7 @@ export function BookingPanel({
     if (prefs.length === 0) return null
     const svcIds = svcsByGuest[gi] ?? []
     return (
-      <div className="mb-3 space-y-1.5 rounded-xl border border-clay/30 bg-clay-tint/20 p-2.5">
+      <div className="mb-3 space-y-2 rounded-xl border border-clay/30 bg-clay-tint/20 p-2.5">
         <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-clay">
           <Heart className="h-3 w-3 shrink-0" style={{ fill: 'currentColor' }} /> {g.name.split(' ')[0]}&rsquo;s usual
         </div>
@@ -606,21 +623,35 @@ export function BookingPanel({
           if (!tech) return null
           const matchIds = svcIds.filter((id) => p.categoryIds.includes(svcById[id]?.categoryId ?? ''))
           const applied = matchIds.length > 0 && matchIds.every((id) => techByService[`${gi}:${id}`] === p.techId)
+          const catServices = services.filter((s) => p.categoryIds.includes(s.categoryId))
           return (
-            <div key={p.id} className="flex items-center gap-2 rounded-lg bg-surface px-2 py-1.5 text-[12px]">
-              <span className="min-w-0 flex-1 truncate text-ink-soft">
-                <b className="font-semibold text-ink">{tech.name}</b>
-                {' — '}
-                {p.categoryIds.map((id) => catById[id]?.name ?? id).join(', ')}
-              </span>
-              <button
-                onClick={() => applyPreference(gi, p)}
-                disabled={matchIds.length === 0 || applied}
-                title={matchIds.length === 0 ? 'Add one of their services first, then apply this' : undefined}
-                className="shrink-0 rounded-full border border-clay/40 px-2 py-0.5 text-[10.5px] font-semibold text-clay transition-colors hover:bg-clay-tint disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
-              >
-                {applied ? 'Applied' : 'Apply'}
-              </button>
+            <div key={p.id} className="space-y-1.5 rounded-lg bg-surface px-2 py-1.5 text-[12px]">
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-ink-soft">
+                  <b className="font-semibold text-ink">{tech.name}</b>
+                  {' — '}
+                  {p.categoryIds.map((id) => catById[id]?.name ?? id).join(', ')}
+                </span>
+                {matchIds.length > 0 && (
+                  <button
+                    onClick={() => applyPreference(gi, p)}
+                    disabled={applied}
+                    className="shrink-0 rounded-full border border-clay/40 px-2 py-0.5 text-[10.5px] font-semibold text-clay transition-colors hover:bg-clay-tint disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+                  >
+                    {applied ? 'Applied' : 'Apply to picked'}
+                  </button>
+                )}
+              </div>
+              {catServices.length > 0 && (
+                <SearchSelect
+                  options={catServices.map((s) => ({ value: s.id, label: s.name, sublabel: `$${s.price}` }))}
+                  value=""
+                  onChange={(svcId) => addPreferredService(gi, p.techId, svcId)}
+                  placeholder="+ Add a service for them…"
+                  searchPlaceholder="Search services"
+                  className="w-full"
+                />
+              )}
             </div>
           )
         })}

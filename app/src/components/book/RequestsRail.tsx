@@ -7,6 +7,7 @@ import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
 import { catById } from '@/lib/categories-store'
 import type { ApprovedItem, QueueEntry, WalkInGroup, WalkInGuest } from './AppointmentBook'
 import { ConfirmDialog } from './ConfirmDialog'
+import { SearchSelect } from './SearchSelect'
 
 const DAY_MIN = DAY_SLOTS * SLOT_MIN
 const techById = () => Object.fromEntries(getStaff().techs.map((t) => [t.id, t]))
@@ -314,13 +315,20 @@ function WaitlistForm({ clients, onAddClient, onAdd }: {
       )}
 
       {/* service + preferred technician (only techs who can do it) */}
-      <select value={serviceId} onChange={(e) => { setServiceId(e.target.value); setTechId('') }} className={field}>
-        {services.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.durationMin}m</option>)}
-      </select>
-      <select value={techId} onChange={(e) => setTechId(e.target.value)} className={field}>
-        <option value="">Any technician</option>
-        {qualified.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-      </select>
+      <SearchSelect
+        options={services.map((s) => ({ value: s.id, label: s.name, sublabel: `${s.durationMin}m` }))}
+        value={serviceId}
+        onChange={(v) => { setServiceId(v); setTechId('') }}
+        searchPlaceholder="Search services"
+        className="w-full"
+      />
+      <SearchSelect
+        options={[{ value: '', label: 'Any technician' }, ...qualified.map((t) => ({ value: t.id, label: t.name, avatarText: t.initials }))]}
+        value={techId}
+        onChange={setTechId}
+        searchPlaceholder="Search technicians"
+        className="w-full"
+      />
 
       {/* available days, none picked means any day */}
       <div>

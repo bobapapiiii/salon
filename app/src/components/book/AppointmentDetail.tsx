@@ -9,6 +9,7 @@ import { boardTechs, useStaffStore } from '@/lib/staff-store'
 import { activeServices as activeCatalog, svcById, useServicesStore } from '@/lib/services-store'
 import { allSlotsFor, layoutItems, spanOf, type SlotGroup } from './BookingPanel'
 import { DatePickerPopover } from './LegendPopover'
+import { SearchSelect } from './SearchSelect'
 
 const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
 
@@ -273,16 +274,16 @@ export function AppointmentDetail({
               return (
                 <div key={d.id} className={`rounded-xl border p-2.5 ${isRequested ? 'border-clay/30 bg-clay-tint/30' : 'border-line'}`}>
                   <div className="flex items-center gap-2">
-                    <select
+                    <SearchSelect
+                      options={services.map((s) => ({ value: s.id, label: s.name }))}
                       value={d.serviceId}
-                      onChange={(e) => {
-                        const svc = svcById[e.target.value]
+                      onChange={(v) => {
+                        const svc = svcById[v]
                         setSvc(d.id, { serviceId: svc.id, durationMin: svc.durationMin })
                       }}
-                      className="min-w-0 flex-1 rounded-[8px] border border-input bg-background px-2 py-1 text-sm outline-none"
-                    >
-                      {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
+                      searchPlaceholder="Search services"
+                      className="min-w-0 flex-1"
+                    />
                     <span className="tnum shrink-0 text-sm font-bold text-ink">${svcById[d.serviceId].price}</span>
                     {draft.length - removed.length > 1 && (
                       <button onClick={() => setRemoved((r) => [...r, d.id])} className="shrink-0 text-ink-faint hover:text-rust">
@@ -299,17 +300,17 @@ export function AppointmentDetail({
                       className="rounded-[8px] border border-input bg-background px-1.5 py-1 text-xs outline-none">
                       {DURATIONS.map((x) => <option key={x} value={x}>{x}m</option>)}
                     </select>
-                    <select value={d.techId} onChange={(e) => setSvc(d.id, { techId: e.target.value })}
-                      className="rounded-[8px] border border-input bg-background px-1.5 py-1 text-xs outline-none">
-                      <option value="first">First available</option>
-                      {roles.map((role) => (
-                        <optgroup key={role.id} label={role.name}>
-                          {techs.filter((t) => t.teamId === role.id).sort((a, b) => a.name.localeCompare(b.name)).map((t) => (
-                            <option key={t.id} value={t.id}>{t.name}</option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
+                    <SearchSelect
+                      options={[
+                        { value: 'first', label: 'First available' },
+                        ...roles.flatMap((role) => techs.filter((t) => t.teamId === role.id).sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({
+                          value: t.id, label: t.name, avatarText: t.initials, group: role.name,
+                        }))),
+                      ]}
+                      value={d.techId}
+                      onChange={(v) => setSvc(d.id, { techId: v })}
+                      searchPlaceholder="Search technicians"
+                    />
                   </div>
                   <div className="mt-1.5 flex items-center gap-2">
                     <span className="flex shrink-0 items-center gap-1 text-[10.5px] font-bold uppercase tracking-wide text-ink-faint">
