@@ -116,7 +116,6 @@ export function SettingsPage({ open, section, onSection, onClose, focusTechId }:
   const [selTechId, setSelTechId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [moveToId, setMoveToId] = useState("");
-  const [savedFlash, setSavedFlash] = useState(false);
 
   // clone the staff draft when the page opens
   if (open && roles === null) {
@@ -161,62 +160,17 @@ export function SettingsPage({ open, section, onSection, onClose, focusTechId }:
   const selRole = roles.find((r) => r.id === selRoleId) ?? roles[0];
   const selTech = techs.find((t) => t.id === selTechId) ?? techs[0];
 
-  // ── roles draft actions ──
-  const patchRole = (id: string, patch: Partial<JobRole>) => setRoles(roles.map((r) => (r.id === id ? { ...r, ...patch } : r)));
-  const toggleSvc = (roleId: string, svcId: string) => {
-    const r = roles.find((x) => x.id === roleId);
-    if (!r) return;
-    const has = r.serviceIds.includes(svcId);
-    patchRole(roleId, { serviceIds: has ? r.serviceIds.filter((x) => x !== svcId) : [...r.serviceIds, svcId] });
-  };
-  const addRole = () => {
-    const r: JobRole = { id: uid("role"), name: "New role", serviceIds: [] };
-    setRoles([...roles, r]);
-    setSelRoleId(r.id);
-  };
-  const deleteRole = (id: string) => {
-    if (roles.length <= 1) return;
-    setMoveToId(roles.find((r) => r.id !== id)?.id ?? "");
-    setConfirmDeleteId(id);
-  };
-  const confirmDeleteRole = () => {
-    if (!confirmDeleteId) return;
-    if ((techCountByRole.get(confirmDeleteId) ?? 0) > 0) {
-      if (!moveToId) return;
-      setTechs(techs.map((t) => (t.teamId === confirmDeleteId ? { ...t, teamId: moveToId } : t)));
-    }
-    const next = roles.filter((r) => r.id !== confirmDeleteId);
-    setRoles(next);
-    if (selRoleId === confirmDeleteId) setSelRoleId(next[0]?.id ?? null);
-    setConfirmDeleteId(null);
-  };
-
-  // ── tech draft actions ──
-  const patchTech = (id: string, patch: Partial<DraftTech>) => setTechs(techs.map((t) => (t.id === id ? { ...t, ...patch } : t)));
-  const addTech = () => {
-    const roleId = selRole?.id ?? roles[0]?.id;
-    if (!roleId) return;
-    const t: DraftTech = {
-      id: uid("tech"), name: "", teamId: roleId, phone: "", email: "", hireDate: "",
-      commissionPct: 60, active: true, loginEnabled: false, pin: "", isNew: true,
-      firstName: "", lastName: "", nickname: "", gender: "", birthday: "", endDate: "",
-      bookableOnline: true, photoUrl: "", showPhotoOnCalendar: false, description: "",
-      weekly: {}, address: "", city: "", state: "", zip: "", country: "United States", documents: [], timeOff: [],
-      serviceOverrides: {},
-      extraSkills: [],
-      archived: false,
-    };
-    setTechs([...techs, t]);
-    setSelTechId(t.id);
-  };
-
-  const saveStaff = () => {
-    const finalRoles = roles.map((r) => ({ ...r, name: r.name.trim() || "Untitled role" }));
+  /** Commit the roles/techs draft to the shared staff store. Takes explicit
+   *  next arrays (not the closure's roles/techs state) so every draft action
+   *  below can call it in the same tick it computes its own next array --
+   *  this section autosaves on every edit, same as the rest of Settings. */
+  const commitStaff = (nextRoles: JobRole[], nextTechs: DraftTech[]) => {
+    const finalRoles = nextRoles.map((r) => ({ ...r, name: r.name.trim() || "Untitled role" }));
     const roleIds = new Set(finalRoles.map((r) => r.id));
     const fallback = finalRoles[0]?.id ?? "";
     setStaff((s) => {
       const existing = new Map(s.techs.map((t) => [t.id, t]));
-      const nextTechs: Tech[] = techs
+      const finalTechs: Tech[] = nextTechs
         .filter((t) => `${t.firstName.trim()} ${t.lastName.trim()}`.trim() !== "" || t.name.trim() !== "")
         .map((t) => {
           const teamId = roleIds.has(t.teamId) ? t.teamId : fallback;
@@ -230,7 +184,7 @@ export function SettingsPage({ open, section, onSection, onClose, focusTechId }:
             commissionPct: t.commissionPct,
             active: t.active,
             loginEnabled: t.loginEnabled,
-            pin: t.loginEnabled ? t.pin || newPin() : undefined,
+            pin: t.loginEnabled ? (t.pin || prev?.pin || newPin()) : undefined,
             firstName: t.firstName.trim() || undefined,
             lastName: t.lastName.trim() || undefined,
             nickname: t.nickname.trim() || undefined,
@@ -259,10 +213,72 @@ export function SettingsPage({ open, section, onSection, onClose, focusTechId }:
             teamId, skills: [], ...details,
           };
         });
-      return { roles: finalRoles, techs: nextTechs };
+      return { roles: finalRoles, techs: finalTechs };
     });
-    setSavedFlash(true);
-    window.setTimeout(() => setSavedFlash(false), 2000);
+  };
+
+  // ── roles draft actions ──
+  const patchRole = (id: string, patch: Partial<JobRole>) => {
+    const next = roles.map((r) => (r.id === id ? { ...r, ...patch } : r));
+    setRoles(next);
+    commitStaff(next, techs);
+  };
+  const toggleSvc = (roleId: string, svcId: string) => {
+    const r = roles.find((x) => x.id === roleId);
+    if (!r) return;
+    const has = r.serviceIds.includes(svcId);
+    patchRole(roleId, { serviceIds: has ? r.serviceIds.filter((x) => x !== svcId) : [...r.serviceIds, svcId] });
+  };
+  const addRole = () => {
+    const r: JobRole = { id: uid("role"), name: "New role", serviceIds: [] };
+    const next = [...roles, r];
+    setRoles(next);
+    commitStaff(next, techs);
+    setSelRoleId(r.id);
+  };
+  const deleteRole = (id: string) => {
+    if (roles.length <= 1) return;
+    setMoveToId(roles.find((r) => r.id !== id)?.id ?? "");
+    setConfirmDeleteId(id);
+  };
+  const confirmDeleteRole = () => {
+    if (!confirmDeleteId) return;
+    let nextTechs = techs;
+    if ((techCountByRole.get(confirmDeleteId) ?? 0) > 0) {
+      if (!moveToId) return;
+      nextTechs = techs.map((t) => (t.teamId === confirmDeleteId ? { ...t, teamId: moveToId } : t));
+      setTechs(nextTechs);
+    }
+    const nextRoles = roles.filter((r) => r.id !== confirmDeleteId);
+    setRoles(nextRoles);
+    commitStaff(nextRoles, nextTechs);
+    if (selRoleId === confirmDeleteId) setSelRoleId(nextRoles[0]?.id ?? null);
+    setConfirmDeleteId(null);
+  };
+
+  // ── tech draft actions ──
+  const patchTech = (id: string, patch: Partial<DraftTech>) => {
+    const next = techs.map((t) => (t.id === id ? { ...t, ...patch } : t));
+    setTechs(next);
+    commitStaff(roles, next);
+  };
+  const addTech = () => {
+    const roleId = selRole?.id ?? roles[0]?.id;
+    if (!roleId) return;
+    const t: DraftTech = {
+      id: uid("tech"), name: "", teamId: roleId, phone: "", email: "", hireDate: "",
+      commissionPct: 60, active: true, loginEnabled: false, pin: "", isNew: true,
+      firstName: "", lastName: "", nickname: "", gender: "", birthday: "", endDate: "",
+      bookableOnline: true, photoUrl: "", showPhotoOnCalendar: false, description: "",
+      weekly: {}, address: "", city: "", state: "", zip: "", country: "United States", documents: [], timeOff: [],
+      serviceOverrides: {},
+      extraSkills: [],
+      archived: false,
+    };
+    // not committed yet -- a blank-named tech is filtered out of the store
+    // until it has a name, same as before
+    setTechs([...techs, t]);
+    setSelTechId(t.id);
   };
 
   const close = () => {
@@ -299,18 +315,6 @@ export function SettingsPage({ open, section, onSection, onClose, focusTechId }:
             </button>
           ))}
         </nav>
-        {(section === "roles" || section === "techs") && (
-          <div className="border-t border-[#EDE7EE] p-3">
-            <button
-              onClick={saveStaff}
-              className={`flex w-full items-center justify-center gap-1.5 rounded-xl py-2.5 text-[13px] font-semibold text-white transition ${
-                savedFlash ? "bg-emerald-600" : "bg-[#5B54D6] hover:bg-[#4C46C4]"
-              }`}
-            >
-              {savedFlash ? (<><Check className="h-3.5 w-3.5" /> Saved</>) : "Save team changes"}
-            </button>
-          </div>
-        )}
       </div>
 
       {/* content */}
@@ -331,6 +335,7 @@ export function SettingsPage({ open, section, onSection, onClose, focusTechId }:
               onDeleteTech={(id) => {
                 const next = techs.filter((t) => t.id !== id);
                 setTechs(next);
+                commitStaff(roles, next);
                 if (selTechId === id) setSelTechId(next.find((t) => !t.archived)?.id ?? next[0]?.id ?? null);
               }}
             />
