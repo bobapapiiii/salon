@@ -1878,13 +1878,35 @@ export function AppointmentBook() {
       return n
     })
 
+  // a rough total for the ticket clicking "check out" on `a` would open --
+  // mirrors openCheckout's own grouping (parallelGroup, or same-client
+  // appointments that genuinely overlap in time) just enough to tell
+  // whether this is a real charge before deciding whether to block it, e.g.
+  // a complimentary/no-charge service shouldn't be stopped by the register
+  // below since nothing is actually changing hands
+  // `source` defaults to the live `appts` for the calendar's current day, but
+  // callers whose appointment might live on a day `appts` hasn't caught up to
+  // yet (e.g. the edit panel's own day, mid-navigation) pass their own
+  // reliably-resolved list instead
+  const estimateTicketTotal = (a: Appointment, source: Appointment[] = appts) => {
+    const group = a.parallelGroup
+      ? source.filter((x) => x.parallelGroup === a.parallelGroup && payable(x))
+      : [a, ...source.filter((x) =>
+          x.id !== a.id && x.clientName === a.clientName && payable(x) &&
+          a.startMin < x.startMin + x.durationMin && x.startMin < a.startMin + a.durationMin)]
+    return group.reduce((s, x) => s + (x.priceOverride ?? svcById[x.serviceId]?.price ?? 0) + (x.addons ?? []).reduce((t, ad) => t + ad.price, 0), 0)
+  }
+
   // a real block, unlike the "no register open at all" nudge below -- a
   // drawer left open from a day that's already passed has to be reconciled
   // before anything new rings in, so this stops the action outright and
   // sends the salon straight to Manage Register to close it out. Returns
-  // true when it blocked, so callers can bail out of their own handler
-  const blockIfStaleRegister = () => {
+  // true when it blocked, so callers can bail out of their own handler.
+  // Skipped entirely for a $0 ticket -- there's no payment to take, so
+  // there's nothing for the register to gate
+  const blockIfStaleRegister = (a?: Appointment, source?: Appointment[]) => {
     if (!staleRegisterOpen) return false
+    if (a && estimateTicketTotal(a, source) <= 0.004) return false
     showFlash('⚠ A previous day\'s register is still open — close it before taking payment')
     setRegisterOpen(true)
     return true
@@ -2285,7 +2307,7 @@ export function AppointmentBook() {
           (x.clientName === a.clientName || (a.guestOf && x.guestOf === a.guestOf) || (a.parallelGroup && x.parallelGroup === a.parallelGroup)) &&
           payable(x))
         if (!payableNow) { showFlash('Already checked out, right-click and choose View invoice / Print'); break }
-        if (blockIfStaleRegister()) break
+        if (blockIfStaleRegister(a)) break
         openCheckout(a)
         break
       }
@@ -2546,7 +2568,10 @@ export function AppointmentBook() {
         // footer already disables the button for any other day, this is the
         // backstop in case the action still fires)
         if (originKey !== todayKey) { showFlash('Checkout is only available for today\'s appointments'); break }
-        if (blockIfStaleRegister()) break
+        // pass detailBoard too -- it's resolved against this appointment's own
+        // day already, whereas `appts` (the estimate's default) may not have
+        // caught up yet if the day rail had browsed the calendar elsewhere
+        if (blockIfStaleRegister(a, detailBoard)) break
         // pass detailParty (the whole party, not just this client) explicitly —
         // it's already resolved against the appointment's own day, whereas
         // `appts` may not have caught up to the goDay() above yet within this

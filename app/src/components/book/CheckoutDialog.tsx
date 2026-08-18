@@ -967,11 +967,9 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                       : "Done"
                 : overAssigned
                   ? "Fix payment amounts to continue"
-                  : total <= 0.004
-                    ? "Close, nothing due"
-                    : balanceDue > 0.004
-                      ? `Charge ${money(collected)} now · ${money(balanceDue)} due`
-                      : `Charge ${money(collected)} · ${methodLabel}`}
+                  : balanceDue > 0.004
+                    ? `Charge ${money(collected)} now · ${money(balanceDue)} due`
+                    : `Charge ${money(collected)} · ${methodLabel}`}
             </button>
           </div>
         </>
