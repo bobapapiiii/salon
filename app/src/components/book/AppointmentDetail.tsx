@@ -87,6 +87,7 @@ const STATUS_LABELS: Record<Appointment['status'], string> = {
   checked_in: 'Checked in',
   in_service: 'In service',
   completed: 'Completed',
+  checked_out: 'Checked out',
   no_show: 'No-show',
 }
 
@@ -97,7 +98,10 @@ const STATUS_DOT: Record<Appointment['status'], string> = {
   confirmed: '#3E9B4F',
   checked_in: '#D9A50B',
   in_service: '#D9A50B',
-  completed: '#DC4444',
+  // done, not yet paid -- same "still needs action" yellow as checked-in/in-service
+  completed: '#D9A50B',
+  // done AND paid -- the calendar's own "checked out" red (see AppointmentBook's STATUS_STYLE)
+  checked_out: '#DC4444',
   no_show: '#B3402F',
 }
 

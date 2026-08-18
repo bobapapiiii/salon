@@ -6,7 +6,8 @@ export type ApptStatus =
   | 'confirmed'
   | 'checked_in'
   | 'in_service'
-  | 'completed'
+  | 'completed' // service done, not yet paid -- "Mark completed" sets this
+  | 'checked_out' // service done AND paid -- checkout (or reopen) sets this
   | 'no_show'
 
 export interface Team {

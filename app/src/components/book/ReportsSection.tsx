@@ -288,7 +288,8 @@ const STATUS_META: Record<string, { label: string; color: string }> = {
   confirmed: { label: "Confirmed", color: "#2FA883" },
   checked_in: { label: "Checked in", color: "#6B4FC4" },
   in_service: { label: "In service", color: "#6B4FC4" },
-  completed: { label: "Checked out", color: "#64748B" },
+  completed: { label: "Completed", color: "#6B4FC4" },
+  checked_out: { label: "Checked out", color: "#64748B" },
   no_show: { label: "No-show", color: "#B3402F" },
 };
 const apptPrice = (a: Appointment) =>
@@ -323,7 +324,10 @@ export function ReportsSection() {
     for (const k of days) for (const a of apptDays[k] ?? []) out.push(a);
     return out;
   }, [apptDays, days]);
-  const completed = useMemo(() => appts.filter((a) => a.status === "completed"), [appts]);
+  // "completed" here means done, whether that's the not-yet-paid status or
+  // checkout's own checked_out -- both represent a service that actually
+  // happened, which is what these reports are counting
+  const completed = useMemo(() => appts.filter((a) => a.status === "completed" || a.status === "checked_out"), [appts]);
 
   // ── core money math ────────────────────────────────────────────────────────
   const sums = useMemo(() => {
@@ -748,7 +752,7 @@ export function ReportsSection() {
   //    with this tech (to anyone, within 60 days)? all-time, not range-bound ──
   const retentionByTech = useMemo(() => {
     const allEntries: { dateKey: string; appt: Appointment }[] = [];
-    for (const k of Object.keys(apptDays)) for (const a of apptDays[k] ?? []) if (a.status === "completed") allEntries.push({ dateKey: k, appt: a });
+    for (const k of Object.keys(apptDays)) for (const a of apptDays[k] ?? []) if (a.status === "completed" || a.status === "checked_out") allEntries.push({ dateKey: k, appt: a });
     allEntries.sort((a, b) => a.dateKey.localeCompare(b.dateKey));
     const firstByClient = new Map<string, { dateKey: string; techId: string }>();
     const visitsByClient = new Map<string, string[]>();
@@ -825,7 +829,7 @@ export function ReportsSection() {
   <div class="grand"><span>Total collected</span><span>${money2(closeSums.total)}</span></div>
 </div>
 <table><thead><tr><th>Appointments</th><th style="text-align:right">Count</th></tr></thead><tbody>
-  <tr><td>Completed</td><td style="text-align:right">${closeStatusCounts.get("completed") ?? 0}</td></tr>
+  <tr><td>Completed</td><td style="text-align:right">${(closeStatusCounts.get("completed") ?? 0) + (closeStatusCounts.get("checked_out") ?? 0)}</td></tr>
   <tr><td>No-shows</td><td style="text-align:right">${closeStatusCounts.get("no_show") ?? 0}</td></tr>
   <tr><td>Cancelled</td><td style="text-align:right">${closeCancellations.length}</td></tr>
   <tr><td>Total on the book today</td><td style="text-align:right">${closeAppts.length}</td></tr>
@@ -1779,7 +1783,7 @@ export function ReportsSection() {
                 const rows = [
                   { label: "Booked", n: totalBooked, color: "#D99B26" },
                   { label: "Checked in or later", n: appts.filter((a) => a.checkedInMin != null).length, color: "#6B4FC4" },
-                  { label: "Completed", n: statusCounts.get("completed") ?? 0, color: "#64748B" },
+                  { label: "Completed", n: (statusCounts.get("completed") ?? 0) + (statusCounts.get("checked_out") ?? 0), color: "#64748B" },
                   { label: "No-show", n: statusCounts.get("no_show") ?? 0, color: "#B3402F" },
                   { label: "Cancelled", n: cancellationsInRange.length, color: "#B3402F" },
                 ];
@@ -2055,7 +2059,7 @@ export function ReportsSection() {
                 <div className={card}>
                   <h3 className="mb-2.5 text-[13px] font-bold text-slate-800">Today's appointments</h3>
                   {[
-                    { label: "Completed", n: closeStatusCounts.get("completed") ?? 0 },
+                    { label: "Completed", n: (closeStatusCounts.get("completed") ?? 0) + (closeStatusCounts.get("checked_out") ?? 0) },
                     { label: "No-shows", n: closeStatusCounts.get("no_show") ?? 0 },
                     { label: "Cancelled", n: closeCancellations.length },
                     { label: "Total on the book", n: closeAppts.length },

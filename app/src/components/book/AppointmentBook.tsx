@@ -53,6 +53,7 @@ const STATUS_LOG: Record<string, string> = {
   checked_in: `Checked in at ${fmtTime(DEMO_NOW_MIN)}`,
   in_service: `Service started at ${fmtTime(DEMO_NOW_MIN)}`,
   completed: `Service completed at ${fmtTime(DEMO_NOW_MIN)}`,
+  checked_out: `Checked out at ${fmtTime(DEMO_NOW_MIN)}`,
 }
 
 type Column = { kind: 'tech'; tech: Tech } | { kind: 'collapsed'; teamId: string }
@@ -227,33 +228,36 @@ const UNASSIGNED_TECH: Tech = { id: 'unassigned', name: 'Unassigned', initials: 
 const techOf = (id: string): Tech => getStaff().techs.find((t) => t.id === id) ?? UNASSIGNED_TECH
 
 /* status palette for "Color by Status" mode — Zenoti-style
-   orange booked · green confirmed · yellow checked in · red checked out · purple time elapsed */
+   orange booked · green confirmed · yellow checked in/completed · red checked out · purple time elapsed */
 const STATUS_STYLE: Record<string, { fill: string; line: string; text: string }> = {
   booked: { fill: '#FDE8C8', line: '#D97706', text: '#7C4A03' },
   requested: { fill: '#FDE8C8', line: '#D97706', text: '#7C4A03' },
   confirmed: { fill: '#D5F0DA', line: '#3E9B4F', text: '#1E5B29' },
   checked_in: { fill: '#FCF3C5', line: '#D9A50B', text: '#6B5204' },
   in_service: { fill: '#FCF3C5', line: '#D9A50B', text: '#6B5204' },
-  completed: { fill: '#FBD5D5', line: '#DC4444', text: '#7A1F1F' },
+  // done, not yet paid -- same "still needs action" yellow as checked-in/in-service
+  completed: { fill: '#FCF3C5', line: '#D9A50B', text: '#6B5204' },
+  // done AND paid -- checkout's terminal state
+  checked_out: { fill: '#FBD5D5', line: '#DC4444', text: '#7A1F1F' },
   no_show: { fill: '#F5DFDB', line: '#B3402F', text: '#7A2418' },
   late: { fill: '#E6DEFB', line: '#8B5CF6', text: '#4C2D95' },
 }
 
 // one-time migration for days generated/edited before check-in/start/complete
-// timestamps existed: a status of checked_in/in_service/completed implies the
-// client already passed through the earlier stages too, so back-fill
-// plausible timestamps instead of leaving the hover card blank for them
+// timestamps existed: a status of checked_in/in_service/completed/checked_out
+// implies the client already passed through the earlier stages too, so
+// back-fill plausible timestamps instead of leaving the hover card blank for them
 function backfillStageTimestamps(list: Appointment[]): Appointment[] {
   let changed = false
   const next = list.map((a) => {
     const patch: Partial<Appointment> = {}
-    if ((a.status === 'checked_in' || a.status === 'in_service' || a.status === 'completed') && a.checkedInMin == null) {
+    if ((a.status === 'checked_in' || a.status === 'in_service' || a.status === 'completed' || a.status === 'checked_out') && a.checkedInMin == null) {
       patch.checkedInMin = Math.max(0, a.startMin - 5)
     }
-    if ((a.status === 'in_service' || a.status === 'completed') && a.startedMin == null) {
+    if ((a.status === 'in_service' || a.status === 'completed' || a.status === 'checked_out') && a.startedMin == null) {
       patch.startedMin = a.startMin
     }
-    if (a.status === 'completed' && a.completedMin == null) {
+    if ((a.status === 'completed' || a.status === 'checked_out') && a.completedMin == null) {
       patch.completedMin = a.startMin + Math.max(5, a.durationMin - 3)
     }
     if (Object.keys(patch).length === 0) return a
@@ -1249,7 +1253,7 @@ export function AppointmentBook() {
   // qualified tech at the same time; requested and checked-out ones stay
   const moveTechAppointments = (techId: string) => {
     const movable = appts.filter((a) =>
-      a.techId === techId && !a.techRequested && a.status !== 'completed' && a.status !== 'in_service')
+      a.techId === techId && !a.techRequested && a.status !== 'completed' && a.status !== 'checked_out' && a.status !== 'in_service')
     if (movable.length === 0) { showFlash('Nothing to move, only requested or finished bookings'); return }
     const moved = new Map<string, Appointment>()
     let stuck = 0
@@ -1366,7 +1370,10 @@ export function AppointmentBook() {
     )
     const appt: Appointment = {
       id: `a${Date.now()}-rx`, techId, clientName: person, serviceId: x.serviceId,
-      startMin: start, durationMin: st.durationMin, status: 'completed' as const,
+      // added onto an already-paid ticket's reopen session -- checked_out,
+      // not just completed, matching what completeReopen stamps it to once
+      // this correction is actually submitted
+      startMin: start, durationMin: st.durationMin, status: 'checked_out' as const,
       completedMin: DEMO_NOW_MIN,
       guestOf: personIsAccount ? undefined : hostClient?.id,
       priceOverride: st.price !== svc.price ? st.price : undefined,
@@ -1838,10 +1845,12 @@ export function AppointmentBook() {
 
   // ── checkout ──────────────────────────────────────────────────────────────
   // one ticket per client visit, or the whole party for linked groups.
-  // 'completed' status alone doesn't mean paid — "Mark completed" sets it the
-  // moment the service is done, before checkout ever runs, and checkout ALSO
-  // sets it once payment goes through. The payments ledger is the only
-  // reliable record of what's actually been paid for.
+  // 'completed' status means the service is done but NOT paid — "Mark
+  // completed" sets it the moment the service finishes, before checkout ever
+  // runs. Checkout (and reopen) sets 'checked_out' once payment actually
+  // goes through. Even so, the payments ledger stays the only reliable
+  // record of what's actually been paid for -- status alone (however it got
+  // there, including a manual edit from the panel's dropdown) shouldn't be trusted on its own.
   const payable = (a: Appointment) =>
     a.status !== 'no_show' && a.status !== 'requested' && !payments.some((p) => p.apptIds?.includes(a.id))
   const checkoutItems = useMemo(() => {
@@ -1995,7 +2004,7 @@ export function AppointmentBook() {
     // everything else (service, tech, time, price, adds) is already live on the book
     commit(appts.map((a) => (ids.has(a.id)
       ? {
-          ...a, status: 'completed' as const,
+          ...a, status: 'checked_out' as const,
           log: [...(a.log ?? []), logEntry(`Checked out, $${p.total.toFixed(2)} (${p.method})`)],
         }
       : a)))
@@ -2139,7 +2148,7 @@ export function AppointmentBook() {
     const ids = p.apptIds ?? []
     const idSet = new Set(ids)
     const stamp = (list: Appointment[]) => list.map((a) => (idSet.has(a.id)
-      ? { ...a, status: 'completed' as const, log: [...(a.log ?? []), logEntry(`Ticket corrected, $${p.total.toFixed(2)}`)] }
+      ? { ...a, status: 'checked_out' as const, log: [...(a.log ?? []), logEntry(`Ticket corrected, $${p.total.toFixed(2)}`)] }
       : a))
     if (ids.length > 0) {
       if (payment.dateKey === dateKey) commit(stamp(appts))
@@ -2268,7 +2277,7 @@ export function AppointmentBook() {
           status,
           checkedInMin: status === 'checked_in' ? DEMO_NOW_MIN : status === 'confirmed' || status === 'booked' ? undefined : x.checkedInMin,
           startedMin: status === 'in_service' ? DEMO_NOW_MIN : status === 'checked_in' ? undefined : x.startedMin,
-          completedMin: status === 'completed' ? DEMO_NOW_MIN : x.completedMin,
+          completedMin: status === 'completed' || status === 'checked_out' ? DEMO_NOW_MIN : x.completedMin,
           log: [...(x.log ?? []), logEntry(STATUS_LOG[status] ?? `Status set to ${status}`)],
         }
       : x)))
@@ -2440,7 +2449,7 @@ export function AppointmentBook() {
         ...u,
         checkedInMin: u.status === 'checked_in' ? DEMO_NOW_MIN : u.status === 'confirmed' || u.status === 'booked' ? undefined : u.checkedInMin,
         startedMin: u.status === 'in_service' ? DEMO_NOW_MIN : u.status === 'checked_in' ? undefined : u.startedMin,
-        completedMin: u.status === 'completed' ? DEMO_NOW_MIN : u.completedMin,
+        completedMin: u.status === 'completed' || u.status === 'checked_out' ? DEMO_NOW_MIN : u.completedMin,
         log: [...(u.log ?? []), logEntry(STATUS_LOG[u.status] ?? `Status set to ${u.status}`)],
       }
     })

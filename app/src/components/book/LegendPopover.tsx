@@ -35,7 +35,8 @@ const STATUS_ROWS: { id: string; label: string; bg: string; border: string; icon
   { id: 'confirmed', label: 'Confirmed', bg: '#D5F0DA', border: '1px solid #3E9B4F' },
   { id: 'checked_in', label: 'Checked in', bg: '#FCF3C5', border: '1px solid #D9A50B', icon: 'check' },
   { id: 'in_service', label: 'In progress', bg: '#FCF3C5', border: '1px solid #D9A50B', icon: 'hatch' },
-  { id: 'completed', label: 'Checked out', bg: '#FBD5D5', border: '1px solid #DC4444' },
+  { id: 'completed', label: 'Done, awaiting payment', bg: '#FCF3C5', border: '1px solid #D9A50B' },
+  { id: 'checked_out', label: 'Checked out', bg: '#FBD5D5', border: '1px solid #DC4444' },
   { id: 'late', label: 'Time elapsed, not checked in', bg: '#E6DEFB', border: '1px solid #8B5CF6' },
   { id: 'no_show', label: 'No-show', bg: '#F5DFDB', border: '1.5px solid #B3402F' },
 ]
@@ -85,7 +86,7 @@ export function LegendPopover({ anchor, colorMode, onColorMode, onClose }: {
         {STATUS_ROWS.map((s) => (
           <div key={s.id} className="flex items-center gap-2.5">
             <span
-              className={`relative flex h-6 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[4px] ${s.id === 'completed' ? 'opacity-55' : ''}`}
+              className={`relative flex h-6 w-10 shrink-0 items-center justify-center overflow-hidden rounded-[4px] ${s.id === 'checked_out' ? 'opacity-55' : ''}`}
               style={{ background: s.bg, border: s.border }}
             >
               {s.icon === 'check' && (

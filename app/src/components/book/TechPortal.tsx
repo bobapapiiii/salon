@@ -29,6 +29,7 @@ const STATUS_STYLE: Record<string, { label: string; cls: string }> = {
   checked_in: { label: "Checked in", cls: "bg-violet-100 text-violet-700" },
   in_service: { label: "In service", cls: "bg-violet-100 text-violet-700" },
   completed: { label: "Completed", cls: "bg-slate-100 text-slate-500" },
+  checked_out: { label: "Checked out", cls: "bg-slate-200 text-slate-600" },
   no_show: { label: "No-show", cls: "bg-rose-100 text-rose-600" },
 };
 

@@ -96,7 +96,7 @@ export function ApptContextMenu({ x, y, appt, pairCount, hasPayment, isToday, on
         {appt.status === 'in_service' && item('complete', 'Mark completed', <CheckCircle2 className="h-3.5 w-3.5" />)}
         {appt.status === 'in_service' && item('backtocheckin', 'Back to checked in', <Undo2 className="h-3.5 w-3.5" />)}
         {appt.status === 'checked_in' && item('backtoconfirmed', 'Back to confirmed', <Undo2 className="h-3.5 w-3.5" />)}
-        {appt.status === 'completed' && hasPayment && item('invoice', 'View invoice / Print', <Receipt className="h-3.5 w-3.5" />)}
+        {(appt.status === 'completed' || appt.status === 'checked_out') && hasPayment && item('invoice', 'View invoice / Print', <Receipt className="h-3.5 w-3.5" />)}
         {(appt.status === 'booked' || appt.status === 'confirmed' || appt.status === 'checked_in' || appt.status === 'completed' || appt.status === 'in_service') &&
           item('checkout', 'Check out', <CreditCard className="h-3.5 w-3.5" />, false, !isToday, 'Checkout is only available for today\'s appointments')}
         {(appt.status === 'booked' || appt.status === 'confirmed' || appt.status === 'checked_in') && (
@@ -237,6 +237,7 @@ export function EditAppointmentDialog({ appt, error, onSave, onClose }: EditProp
                 <option value="checked_in">Checked in</option>
                 <option value="in_service">In service</option>
                 <option value="completed">Completed</option>
+                <option value="checked_out">Checked out</option>
                 <option value="no_show">No-show</option>
               </select>
             </div>
