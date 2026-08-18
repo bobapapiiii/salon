@@ -7,7 +7,6 @@ import type {
   Team,
   Tech,
 } from './booking-types'
-import { SLOT_MIN } from './booking-types'
 
 // ── seeded rng so the book looks identical on every load ───────────────────
 function mulberry32(seed: number) {
@@ -160,7 +159,6 @@ export function generateDay(seedKey = '2026-07-24'): Appointment[] {
   const int = (lo: number, hi: number) => lo + Math.floor(rand() * (hi - lo + 1))
   const appts: Appointment[] = []
   let id = 1
-  let pg = 1
   const newClient = () => pick(CLIENTS).name
 
   // a status of checked_in/in_service/completed implies the client actually
@@ -180,75 +178,32 @@ export function generateDay(seedKey = '2026-07-24'): Appointment[] {
     return out
   }
 
-  for (const tech of TECHS) {
-    // ~20% of the day booked (demo mode: lots of open spots), 1-2 small blocks
-    const blocks = int(1, 2)
-    let cursor = int(0, 90)
-    for (let b = 0; b < blocks; b++) {
-      const blockLen = int(1, 2)
-      for (let k = 0; k < blockLen; k++) {
-        const svcId = pick(tech.skills)
-        const svc = SERVICES.find((s) => s.id === svcId)!
-        const startMin = Math.min(cursor, 720 - svc.durationMin - 15)
-        if (startMin < 0 || rand() < 0.12) { cursor += 30; continue } // gaps
-        const snapped = Math.round(startMin / SLOT_MIN) * SLOT_MIN
-        const isRequested = rand() < 0.05
-        const status = isRequested ? 'requested' : pick(STATUSES)
-        appts.push({
-          id: `a${id++}`,
-          techId: tech.id,
-          clientName: newClient(),
-          serviceId: svc.id,
-          startMin: snapped,
-          durationMin: svc.durationMin,
-          status,
-          ...statusTimestamps(status, snapped, svc.durationMin),
-          notes: rand() < 0.18 ? pick(NOTES) : undefined,
-          bookingSource: isRequested ? 'online' : rand() < 0.15 ? 'walk_in' : 'front_desk',
-        })
-        cursor = snapped + svc.durationMin + pick([0, 30, 60])
-      }
-      cursor += int(180, 360)
-    }
-  }
-
-  // ── same-time parallel pairs: mani with one tech + pedi with another ──────
-  const pediTechs = TECHS.filter((t) => t.teamId === 'pedi')
-  const maniTechs = TECHS.filter((t) => t.teamId === 'nail')
-  const hasConflict = (techId: string, s: number, e: number) =>
-    appts.some((a) => a.techId === techId && s < a.startMin + a.durationMin && a.startMin < e)
-
-  let pairs = 0
-  let attempts = 0
-  while (pairs < 6 && attempts < 400) {
-    attempts++
-    const pt = pick(pediTechs)
-    const mt = pick(maniTechs)
-    const startMin = int(0, 9) * 60 + pick([0, 15, 30, 45])
-    const dur = 60
-    if (hasConflict(pt.id, startMin, startMin + dur) || hasConflict(mt.id, startMin, startMin + dur)) continue
-    const client = newClient()
-    const group = `pg${pg++}`
-    const maniStatus = pick(['confirmed', 'checked_in', 'in_service'] as const)
-    const pediStatus = pick(['confirmed', 'checked_in', 'in_service'] as const)
-    appts.push(
-      { id: `a${id++}`, techId: mt.id, clientName: client, serviceId: 'm-gel', startMin, durationMin: dur, status: maniStatus, ...statusTimestamps(maniStatus, startMin, dur), parallelGroup: group, notes: rand() < 0.4 ? 'Doing hands while pedi runs' : undefined, bookingSource: 'front_desk' },
-      { id: `a${id++}`, techId: pt.id, clientName: client, serviceId: 'p-gel', startMin, durationMin: dur, status: pediStatus, ...statusTimestamps(pediStatus, startMin, dur), parallelGroup: group, bookingSource: 'front_desk' },
-    )
-    pairs++
-  }
-
-  // a few pending online requests to show the approval queue styling
-  for (let i = 0; i < 3; i++) {
-    const tech = pick(TECHS)
+  // demo mode: just a light handful of appointments a day (2-3), enough to
+  // exercise the board without wading through a full day's worth of noise --
+  // useful for things like testing opening/closing the register in isolation.
+  // Bump this if the demo ever needs a busier-looking day again.
+  const dayCount = int(2, 3)
+  const usedTechs = new Set<string>()
+  for (let i = 0; i < dayCount; i++) {
+    let tech = pick(TECHS)
+    for (let guard = 0; usedTechs.has(tech.id) && guard < 30; guard++) tech = pick(TECHS)
+    usedTechs.add(tech.id)
     const svcId = pick(tech.skills)
     const svc = SERVICES.find((s) => s.id === svcId)!
-    const startMin = Math.min(int(4, 17) * 60 + pick([0, 30]), 720 - svc.durationMin - 15)
-    if (startMin < 0 || hasConflict(tech.id, startMin, startMin + svc.durationMin)) continue
+    const startMin = Math.min(int(0, 9) * 60 + pick([0, 15, 30, 45]), 720 - svc.durationMin - 15)
+    const isRequested = rand() < 0.15
+    const status = isRequested ? 'requested' : pick(STATUSES)
     appts.push({
-      id: `a${id++}`, techId: tech.id, clientName: newClient(), serviceId: svc.id,
-      startMin, durationMin: svc.durationMin, status: 'requested',
-      notes: 'Online request, awaiting approval', bookingSource: 'online',
+      id: `a${id++}`,
+      techId: tech.id,
+      clientName: newClient(),
+      serviceId: svc.id,
+      startMin,
+      durationMin: svc.durationMin,
+      status,
+      ...statusTimestamps(status, startMin, svc.durationMin),
+      notes: rand() < 0.18 ? pick(NOTES) : undefined,
+      bookingSource: isRequested ? 'online' : rand() < 0.15 ? 'walk_in' : 'front_desk',
     })
   }
 
