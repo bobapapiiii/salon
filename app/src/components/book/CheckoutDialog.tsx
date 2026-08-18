@@ -954,7 +954,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
             )}
             <button
               onClick={() => (existing ? submitExisting() : setStep("receipt"))}
-              disabled={!allocBalanced || (existing ? refundNeeded > 0.004 : overAssigned || collected <= 0)}
+              disabled={!allocBalanced || (existing ? refundNeeded > 0.004 : overAssigned || (collected <= 0 && total > 0.004))}
               className="w-full rounded-xl bg-clay py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-clay-deep disabled:opacity-40"
             >
               {existing
@@ -967,9 +967,11 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                       : "Done"
                 : overAssigned
                   ? "Fix payment amounts to continue"
-                  : balanceDue > 0.004
-                    ? `Charge ${money(collected)} now · ${money(balanceDue)} due`
-                    : `Charge ${money(collected)} · ${methodLabel}`}
+                  : total <= 0.004
+                    ? "Close, nothing due"
+                    : balanceDue > 0.004
+                      ? `Charge ${money(collected)} now · ${money(balanceDue)} due`
+                      : `Charge ${money(collected)} · ${methodLabel}`}
             </button>
           </div>
         </>
