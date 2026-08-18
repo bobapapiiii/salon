@@ -65,6 +65,11 @@ interface Props {
    *  this is positive the ticket isn't really "done" yet, so the reopen
    *  action reads as finishing checkout rather than reopening a closed one */
   invoiceBalanceDue: number
+  /** what's actually still collected on the invoice, net of refunds -- a
+   *  payment record existing (hasInvoice) isn't the same as money still
+   *  being held: once a ticket's been refunded back to zero, nothing's
+   *  actually paid for anymore */
+  invoiceNetCollected: number
 }
 
 /** small local date helpers, duplicated from AppointmentBook to avoid a circular import */
@@ -108,7 +113,7 @@ const REQUEST_HEART_COLOR: Record<string, string | undefined> = {
 export function AppointmentDetail({
   appt, group, partySize, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks,
   findMakeRoomPlan, onRequestMakeRoom, onSave, onAction, onRebook, onViewProfile, onShowVisits, onClose,
-  canCheckout, hasInvoice, invoiceBalanceDue,
+  canCheckout, hasInvoice, invoiceBalanceDue, invoiceNetCollected,
 }: Props) {
   const increment = useSettingsStore().booking.increment
   const TIME_OPTIONS = Array.from({ length: (CLOSE_MIN - OPEN_MIN) / increment }, (_, i) => i * increment)
@@ -380,11 +385,13 @@ export function AppointmentDetail({
             <button onClick={() => onAction('log')} title="Show appointment log" className={actionBtn}>
               <ScrollText className="h-3.5 w-3.5" /> View log
             </button>
-            {/* once a payment already covers this booking there's nothing left
-                to cancel -- the ledger, not appt.status, is what actually
-                says "paid", so this keys off hasInvoice the same way the
-                checkout/reopen footer buttons below do */}
-            {!hasInvoice && (
+            {/* once money is actually being held on this booking there's
+                nothing left to cancel -- keyed off what's currently
+                collected (net of refunds), not just whether a payment
+                record exists, so a fully-refunded ticket brings cancel
+                back even though hasInvoice (used below for reopen/view
+                invoice) stays true */}
+            {!(hasInvoice && invoiceNetCollected > 0.004) && (
               <button
                 onClick={() => onAction('cancel')}
                 title="Cancel this appointment"

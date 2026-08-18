@@ -31,7 +31,7 @@ import { catById } from '@/lib/categories-store'
 import { CheckoutDialog, paymentSources, type CheckoutSourceDraft, type PaymentResult, type PaymentSource } from './CheckoutDialog'
 import { InvoiceDialog } from './InvoiceDialog'
 import { ReopenCheckoutDialog, balanceDue, totalRefunded, type RefundRecord } from './RefundDialog'
-import { reduceTechLines, reduceTechTip, round2 } from '@/lib/payments'
+import { reduceTechLines, reduceTechTip, round2, netCollected } from '@/lib/payments'
 import { PosPanel } from './PosPanel'
 import { STATUS_META, TechSchedulePanel, type DaySchedule } from './TechSchedulePanel'
 import { BlockEditor, type BlockDraft } from './BlockEditor'
@@ -2376,6 +2376,11 @@ export function AppointmentBook() {
   // or refunding) or "Check out" (a balance is still owed, finish the sale)
   const detailPayment = detailGroup.length > 0 ? payments.find((p) => detailGroup.some((a) => p.apptIds?.includes(a.id))) : undefined
   const detailBalanceDue = detailPayment ? balanceDue(detailPayment.total, paymentSources(detailPayment), detailPayment.refunds) : 0
+  // what's actually still collected net of refunds -- a payment record
+  // existing (hasInvoice) isn't the same as money still being held: once a
+  // ticket's been refunded back to zero, nothing's actually paid for
+  // anymore, so cancel should read as available again
+  const detailNetCollected = detailPayment ? netCollected(paymentSources(detailPayment), detailPayment.refunds) : 0
 
   const saveDetail = (updated: Appointment[], removedIds: string[], moveToDayKey?: string) => {
     // the edit panel's day rail actually navigates the live calendar as the
@@ -4216,6 +4221,7 @@ export function AppointmentBook() {
           canCheckout={detailGroup.some((a) => payable(a))}
           hasInvoice={detailPayment != null}
           invoiceBalanceDue={detailBalanceDue}
+          invoiceNetCollected={detailNetCollected}
         />
       )}
 
