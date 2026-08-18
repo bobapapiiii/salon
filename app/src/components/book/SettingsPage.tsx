@@ -18,7 +18,7 @@ import { addCategory, catById, setCategories, useCategoriesStore } from "../../l
 import type { ServiceAddon } from "../../lib/booking-types";
 import { ALL_METHODS, setSettings, useSettingsStore, type RegisterConfig, type Redemption } from "../../lib/settings-store";
 import { sdata, usePersistentState } from "../../lib/persist";
-import type { Appointment, Service, TechDocument, TechTimeOff, WeeklyDay } from "../../lib/booking-types";
+import type { Appointment, Service, ServiceCategory, TechDocument, TechTimeOff, WeeklyDay } from "../../lib/booking-types";
 import { DAY_SLOTS, SLOT_MIN, fmtTime } from "../../lib/booking-types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ReportsSection } from "./ReportsSection";
@@ -1037,6 +1037,7 @@ function ServicesSection() {
   const [deleteCatId, setDeleteCatId] = useState<string | null>(null);
   const [addonsFor, setAddonsFor] = useState<string | null>(null);
   const [onlineFor, setOnlineFor] = useState<string | null>(null);
+  const [onlineCatFor, setOnlineCatFor] = useState<string | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [dragCatId, setDragCatId] = useState<string | null>(null);
@@ -1059,6 +1060,65 @@ function ServicesSection() {
     const excluded = sv?.onlineExcludedRoleIds ?? [];
     const next = excluded.includes(roleId) ? excluded.filter((id) => id !== roleId) : [...excluded, roleId];
     patch(svcId, { onlineExcludedRoleIds: next });
+  };
+
+  /** same idea, one category (or subcategory) at a time -- hides every
+   *  service in it from that role online in one move instead of toggling
+   *  each service individually */
+  const toggleCategoryRoleOnline = (catId: string, roleId: string) => {
+    const c = cats.find((x) => x.id === catId);
+    const excluded = c?.onlineExcludedRoleIds ?? [];
+    const next = excluded.includes(roleId) ? excluded.filter((id) => id !== roleId) : [...excluded, roleId];
+    setCategories((list) => list.map((x) => (x.id === catId ? { ...x, onlineExcludedRoleIds: next } : x)));
+  };
+
+  /** roles who can perform at least one service among `svcIds` -- the only
+   *  ones it makes sense to offer an online-visibility toggle for */
+  const catEligibleRoles = (svcIds: Set<string>) => roles.filter((r) => r.serviceIds.some((id) => svcIds.has(id)));
+
+  const renderCatOnlineButton = (target: ServiceCategory, svcIds: Set<string>) => {
+    const eligibleRoles = catEligibleRoles(svcIds);
+    const excludedRoleIds = target.onlineExcludedRoleIds ?? [];
+    const hiddenCount = eligibleRoles.filter((r) => excludedRoleIds.includes(r.id)).length;
+    const open = onlineCatFor === target.id;
+    return (
+      <button
+        onClick={() => setOnlineCatFor(open ? null : target.id)}
+        title="Which job roles this category is hidden from on the online booking page -- they can still be booked for it in-salon"
+        className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-bold transition ${
+          hiddenCount > 0 ? "bg-amber-500/10 text-amber-600" : "text-slate-400 hover:text-slate-600"
+        }`}
+      >
+        {hiddenCount > 0 ? `${hiddenCount} role${hiddenCount > 1 ? "s" : ""} hidden online` : "Online: all roles"}
+      </button>
+    );
+  };
+
+  const renderCatOnlinePanel = (target: ServiceCategory, svcIds: Set<string>) => {
+    if (onlineCatFor !== target.id) return null;
+    const eligibleRoles = catEligibleRoles(svcIds);
+    const excludedRoleIds = target.onlineExcludedRoleIds ?? [];
+    return (
+      <div className="mb-2.5 space-y-1 rounded-lg border border-[#EDE7EE] bg-[#FAF8FA] p-2">
+        <p className="px-1 pb-0.5 text-[11px] text-slate-400">
+          Turn off a role to hide every service in {target.name} from it on the online booking page. Still fully bookable for that role in-salon.
+        </p>
+        {eligibleRoles.length === 0 && (
+          <p className="px-1 py-1 text-[11px] text-slate-400">No job role is set up to perform anything in this category yet.</p>
+        )}
+        {eligibleRoles.map((r) => {
+          const onlineForRole = !excludedRoleIds.includes(r.id);
+          return (
+            <div key={r.id} className="flex items-center justify-between gap-2 rounded-md px-1.5 py-1">
+              <span className="text-[11.5px] font-medium text-slate-700">{r.name}</span>
+              <span title={onlineForRole ? "Bookable online" : "Hidden from online booking, in-salon only"}>
+                <Toggle on={onlineForRole} onClick={() => toggleCategoryRoleOnline(target.id, r.id)} />
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    );
   };
 
   const addService = (categoryId: string) =>
@@ -1416,6 +1476,12 @@ function ServicesSection() {
         {topCats.map((cat) => {
           const svcs = services.filter((s) => s.categoryId === cat.id);
           const subCats = cats.filter((c) => c.parentId === cat.id && !c.archived);
+          // the category's own services plus every subcategory's, since a
+          // top-level category's online exclusion cascades down to them too
+          const catAllSvcIds = new Set([
+            ...svcs.map((s) => s.id),
+            ...subCats.flatMap((sc) => services.filter((s) => s.categoryId === sc.id).map((s) => s.id)),
+          ]);
           return (
             <div key={cat.id} className={card}>
               <div className="mb-2.5 flex items-center gap-2">
@@ -1439,6 +1505,7 @@ function ServicesSection() {
                   className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-[13px] font-bold text-slate-800 outline-none transition focus:border-[#5B54D6] focus:bg-white"
                 />
                 <span className="text-[10.5px] text-slate-400">{svcs.length} services</span>
+                {renderCatOnlineButton(cat, catAllSvcIds)}
                 <button
                   onClick={() => setDeleteCatId(cat.id)}
                   title="Delete or archive category"
@@ -1453,6 +1520,7 @@ function ServicesSection() {
                   <Plus className="h-3 w-3" /> Add service
                 </button>
               </div>
+              {renderCatOnlinePanel(cat, catAllSvcIds)}
               <div className="space-y-1.5">
                 {svcs.map((sv) => renderServiceRow(sv))}
                 {renderTrailingDrop(cat.id, svcs.length === 0)}
@@ -1531,6 +1599,7 @@ function ServicesSection() {
                         className="min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-[12px] font-bold text-slate-700 outline-none transition focus:border-[#5B54D6] focus:bg-white"
                       />
                       <span className="text-[10.5px] text-slate-400">{subSvcs.length} services</span>
+                      {renderCatOnlineButton(sub, new Set(subSvcs.map((s) => s.id)))}
                       <button
                         onClick={() => setDeleteCatId(sub.id)}
                         title="Delete or archive subcategory"
@@ -1545,6 +1614,7 @@ function ServicesSection() {
                         <Plus className="h-3 w-3" /> Add service
                       </button>
                     </div>
+                    {renderCatOnlinePanel(sub, new Set(subSvcs.map((s) => s.id)))}
                     <div className="space-y-1.5">
                       {subSvcs.map((sv) => renderServiceRow(sv))}
                       {renderTrailingDrop(sub.id, subSvcs.length === 0)}

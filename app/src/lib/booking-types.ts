@@ -112,6 +112,11 @@ export interface ServiceCategory {
    *  list, but never removed, so any appointment that already references
    *  it -- past or upcoming -- still resolves its name, color, etc. */
   archived?: boolean
+  /** job roles hidden from online booking for every service in this
+   *  category (and, for a top-level category, its subcategories too) --
+   *  same idea as Service.onlineExcludedRoleIds, just applied to the whole
+   *  category at once. In-salon booking is unaffected either way. */
+  onlineExcludedRoleIds?: string[]
 }
 
 /** an add-on a service can offer, adds time and money */

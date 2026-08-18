@@ -4,7 +4,7 @@
 // derived from that role. Role order here drives the calendar column groups.
 import { useSyncExternalStore } from "react";
 import { TECHS } from "./mock-data";
-import type { Service, Tech } from "./booking-types";
+import type { Service, ServiceCategory, Tech } from "./booking-types";
 import { sdata } from "./persist";
 
 export interface JobRole {
@@ -154,11 +154,20 @@ export const roleColor = (roles: JobRole[], roleId: string) =>
  *  who's excluded here can still be booked for the service by staff, this
  *  only controls what clients see online. Precedence, most to least
  *  specific: a per-tech override (set in that tech's own service table)
- *  always wins; otherwise the service's own list of online-excluded job
- *  roles sets the default for everyone in that role; otherwise bookable. */
-export function isOnlineBookable(tech: Tech, service: Service): boolean {
+ *  always wins over everything below; short of that, the tech's role just
+ *  needs to be excluded on the service itself, its category, or (for a
+ *  service in a subcategory) that subcategory's parent category, for it to
+ *  be hidden online -- otherwise it's bookable. */
+export function isOnlineBookable(tech: Tech, service: Service, categories: ServiceCategory[]): boolean {
   if (tech.bookableOnline === false) return false;
   const override = tech.serviceOverrides?.[service.id]?.online;
   if (override !== undefined) return override;
-  return !service.onlineExcludedRoleIds?.includes(tech.teamId);
+  if (service.onlineExcludedRoleIds?.includes(tech.teamId)) return false;
+  const cat = categories.find((c) => c.id === service.categoryId);
+  if (cat?.onlineExcludedRoleIds?.includes(tech.teamId)) return false;
+  if (cat?.parentId) {
+    const parent = categories.find((c) => c.id === cat.parentId);
+    if (parent?.onlineExcludedRoleIds?.includes(tech.teamId)) return false;
+  }
+  return true;
 }
