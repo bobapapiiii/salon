@@ -7,10 +7,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Banknote, Check, CreditCard, Plus, Printer, Receipt, Smartphone, X } from "lucide-react";
 import type { Appointment } from "@/lib/booking-types";
 import { DAY_SLOTS, SLOT_MIN, fmtTime } from "@/lib/booking-types";
-import { SERVICES } from "@/lib/mock-data";
 import { getStaff } from "@/lib/staff-store";
 import { useSettingsStore } from "@/lib/settings-store";
-import { svcById } from "@/lib/services-store";
+import { activeServices, svcById, useServicesStore } from "@/lib/services-store";
 import { catById } from "@/lib/categories-store";
 import { paymentSources, refundedBySource, round2, techServiceTotals, techTipTotals, totalRefunded, type PaymentSource, type PaymentWithSources, type RefundRecord } from "@/lib/payments";
 
@@ -173,7 +172,10 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
   const D = draft ?? local;
   const setD = (patch: Partial<CheckoutDraftState>) => (onDraft ? onDraft(patch) : setLocal((x) => ({ ...x, ...patch })));
 
-  const [draftSvc, setDraftSvc] = useState(SERVICES[0].id);
+  // live catalog -- so a service just added or removed in Settings shows
+  // up in "Add service" immediately instead of the stale baseline list
+  const services = activeServices(useServicesStore());
+  const [draftSvc, setDraftSvc] = useState(services[0]?.id ?? "");
   const [draftTech, setDraftTech] = useState("");
   const [draftPerson, setDraftPerson] = useState(hostName ?? "");
   const [addOpen, setAddOpen] = useState(false);
@@ -378,7 +380,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                 title="Service"
                 className="h-[30px] min-w-0 flex-1 rounded-[8px] border border-input bg-background px-2 text-[12px] font-semibold outline-none focus:border-clay"
               >
-                {SERVICES.map((sv) => <option key={sv.id} value={sv.id}>{sv.name} · ${sv.price}</option>)}
+                {services.map((sv) => <option key={sv.id} value={sv.id}>{sv.name} · ${sv.price}</option>)}
               </select>
               <select
                 value={l.techId ?? ""}
@@ -586,7 +588,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                       onChange={(e) => { setDraftSvc(e.target.value); setDraftTech(""); }}
                       className="min-w-0 flex-1 rounded-[8px] border border-input bg-background px-2 py-1.5 text-[12px] outline-none"
                     >
-                      {SERVICES.map((sv) => <option key={sv.id} value={sv.id}>{sv.name} · ${sv.price}</option>)}
+                      {services.map((sv) => <option key={sv.id} value={sv.id}>{sv.name} · ${sv.price}</option>)}
                     </select>
                     <select
                       value={draftTech}

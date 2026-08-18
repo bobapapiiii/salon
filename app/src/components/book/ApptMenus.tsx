@@ -4,8 +4,8 @@ import {
 } from 'lucide-react'
 import type { Appointment } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, SLOT_MIN, fmtTime } from '@/lib/booking-types'
-import { SERVICES } from '@/lib/mock-data'
 import { boardTechs, useStaffStore } from '@/lib/staff-store'
+import { activeServices, useServicesStore } from '@/lib/services-store'
 
 // ── right-click context menu ───────────────────────────────────────────────
 
@@ -135,6 +135,9 @@ const TIME_OPTIONS = Array.from(
 const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
 
 export function EditAppointmentDialog({ appt, error, onSave, onClose }: EditProps) {
+  // live catalog -- so a service just added or removed in Settings shows
+  // up here immediately instead of the stale baseline list
+  const services = activeServices(useServicesStore())
   const { roles, techs: allTechs } = useStaffStore()
   const techs = boardTechs(allTechs)
   const [draft, setDraft] = useState<Appointment>(appt)
@@ -177,12 +180,12 @@ export function EditAppointmentDialog({ appt, error, onSave, onClose }: EditProp
               <select
                 value={draft.serviceId}
                 onChange={(e) => {
-                  const svc = SERVICES.find((s) => s.id === e.target.value)!
+                  const svc = services.find((s) => s.id === e.target.value)!
                   setDraft((d) => ({ ...d, serviceId: svc.id, durationMin: svc.durationMin }))
                 }}
                 className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm outline-none"
               >
-                {SERVICES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
             <div>

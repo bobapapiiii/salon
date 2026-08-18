@@ -7,7 +7,7 @@ import type { Appointment, ClientRecord, ServiceAddon, TimeBlock } from '@/lib/b
 import { DAY_SLOTS, SLOT_MIN, fmtTime, overlaps } from '@/lib/booking-types'
 import { SERVICES } from '@/lib/mock-data'
 import { boardTechs, getStaff, useStaffStore } from '@/lib/staff-store'
-import { svcById } from '@/lib/services-store'
+import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
 import { DatePickerPopover } from './LegendPopover'
 
 const DAY_MIN = DAY_SLOTS * SLOT_MIN
@@ -198,6 +198,9 @@ export function BookingPanel({
   appts, blocks, clients, onAddClient, prefillTime, prefillTechId, dateKey, onPreviewDay,
   findMakeRoomPlan, onRequestMakeRoom, onBook, onViewProfile, onClose,
 }: Props) {
+  // live catalog -- so a service just added or removed in Settings shows
+  // up in the service picker immediately instead of the stale baseline list
+  const services = activeServices(useServicesStore())
   const { techs: allTechs } = useStaffStore()
   const techs = boardTechs(allTechs)
   const increment = useSettingsStore().booking.increment
@@ -843,7 +846,7 @@ export function BookingPanel({
                     <div className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
                       Services for {guests[activeGuest]?.name}
                     </div>
-                    {SERVICES.map((s) => {
+                    {services.map((s) => {
                       const selected = (svcsByGuest[activeGuest] ?? []).includes(s.id)
                       return (
                         <button

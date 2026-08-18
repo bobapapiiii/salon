@@ -5,9 +5,8 @@
 import { useMemo, useState } from "react";
 import { Plus, Search, ShoppingBag, UserPlus, X } from "lucide-react";
 import type { ClientRecord } from "@/lib/booking-types";
-import { SERVICES } from "@/lib/mock-data";
 import { useStaffStore } from "@/lib/staff-store";
-import { svcById } from '@/lib/services-store'
+import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
 import { catById } from '@/lib/categories-store'
 import { PaymentFlow, type PaymentLine, type PaymentResult } from "./CheckoutDialog";
 
@@ -28,13 +27,16 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   onComplete: (r: PaymentResult & { clientName: string; itemCount: number; lines: { techId: string; price: number }[] }) => void;
   onClose: () => void;
 }) {
+  // live catalog -- so a service just added or removed in Settings shows
+  // up in POS immediately instead of the stale baseline list
+  const services = activeServices(useServicesStore())
   const { techs } = useStaffStore()
   const [step, setStep] = useState<"build" | "pay">("build")
   const [client, setClient] = useState<ClientRecord | null>(null)
   const [q, setQ] = useState("")
   const [searching, setSearching] = useState(false)
   const [newPhone, setNewPhone] = useState("")
-  const [rows, setRows] = useState<SaleRow[]>([{ id: "r1", serviceId: SERVICES[0].id, techId: "" }])
+  const [rows, setRows] = useState<SaleRow[]>([{ id: "r1", serviceId: services[0]?.id ?? "", techId: "" }])
 
   const matches = useMemo(() => {
     if (!q.trim()) return []
@@ -62,7 +64,7 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
     setNewPhone("")
   }
 
-  const addRow = () => setRows((r) => [...r, { id: `r${Date.now()}`, serviceId: SERVICES[0].id, techId: "" }])
+  const addRow = () => setRows((r) => [...r, { id: `r${Date.now()}`, serviceId: services[0]?.id ?? "", techId: "" }])
   const patchRow = (id: string, patch: Partial<SaleRow>) => setRows((r) => r.map((x) => (x.id === id ? { ...x, ...patch } : x)))
   const removeRow = (id: string) => setRows((r) => r.filter((x) => x.id !== id))
 
@@ -190,7 +192,7 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: svc ? catById[svc.categoryId]?.line : "#5B54D6" }} />
                 <div className="min-w-0 flex-1 space-y-1">
                   <select value={r.serviceId} onChange={(e) => patchRow(r.id, { serviceId: e.target.value, techId: "" })} className={field}>
-                    {SERVICES.map((s) => <option key={s.id} value={s.id}>{s.name} · ${s.price}</option>)}
+                    {services.map((s) => <option key={s.id} value={s.id}>{s.name} · ${s.price}</option>)}
                   </select>
                   <select value={r.techId} onChange={(e) => patchRow(r.id, { techId: e.target.value })} className={field}>
                     <option value="">No tech credited</option>

@@ -5,9 +5,8 @@ import {
 import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, fmtTime } from '@/lib/booking-types'
 import { useSettingsStore } from '@/lib/settings-store'
-import { SERVICES } from '@/lib/mock-data'
 import { boardTechs, useStaffStore } from '@/lib/staff-store'
-import { svcById } from '@/lib/services-store'
+import { activeServices as activeCatalog, svcById, useServicesStore } from '@/lib/services-store'
 import { allSlotsFor, layoutItems, spanOf, type SlotGroup } from './BookingPanel'
 import { DatePickerPopover } from './LegendPopover'
 
@@ -121,6 +120,9 @@ export function AppointmentDetail({
 }: Props) {
   const increment = useSettingsStore().booking.increment
   const TIME_OPTIONS = Array.from({ length: (CLOSE_MIN - OPEN_MIN) / increment }, (_, i) => i * increment)
+  // live catalog -- so a service just added or removed in Settings shows
+  // up here immediately instead of the stale baseline list
+  const services = activeCatalog(useServicesStore())
   const { roles, techs: allTechs } = useStaffStore()
   const techs = boardTechs(allTechs)
   const [draft, setDraft] = useState<Appointment[]>(group.map((g) => ({ ...g })))
@@ -279,7 +281,7 @@ export function AppointmentDetail({
                       }}
                       className="min-w-0 flex-1 rounded-[8px] border border-input bg-background px-2 py-1 text-sm outline-none"
                     >
-                      {SERVICES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      {services.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                     <span className="tnum shrink-0 text-sm font-bold text-ink">${svcById[d.serviceId].price}</span>
                     {draft.length - removed.length > 1 && (

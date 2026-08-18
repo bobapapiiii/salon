@@ -2,9 +2,8 @@ import { useMemo, useState } from 'react'
 import { Check, Clock, GripVertical, Inbox, Plus, Search, Send, UserPlus, Users, X } from 'lucide-react'
 import type { Appointment, ClientRecord, Tech, TimeBlock } from '@/lib/booking-types'
 import { DAY_SLOTS, SLOT_MIN, fmtTime, overlaps } from '@/lib/booking-types'
-import { SERVICES } from '@/lib/mock-data'
 import { boardTechs, getStaff, useStaffStore } from '@/lib/staff-store'
-import { svcById } from '@/lib/services-store'
+import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
 import { catById } from '@/lib/categories-store'
 import type { ApprovedItem, QueueEntry, WalkInGroup, WalkInGuest } from './AppointmentBook'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -183,6 +182,9 @@ function WaitlistForm({ clients, onAddClient, onAdd }: {
   onAddClient: (c: ClientRecord) => void
   onAdd: (entry: Omit<QueueEntry, 'id' | 'createdMin'>) => void
 }) {
+  // live catalog -- so a service just added or removed in Settings shows
+  // up in the waitlist form immediately instead of the stale baseline list
+  const services = activeServices(useServicesStore())
   const { techs: allTechs } = useStaffStore()
   const techs = boardTechs(allTechs)
   const [open, setOpen] = useState(false)
@@ -190,7 +192,7 @@ function WaitlistForm({ clients, onAddClient, onAdd }: {
   const [q, setQ] = useState('')
   const [searching, setSearching] = useState(false)
   const [newPhone, setNewPhone] = useState('')
-  const [serviceId, setServiceId] = useState(SERVICES[0].id)
+  const [serviceId, setServiceId] = useState(services[0]?.id ?? '')
   const [techId, setTechId] = useState('')
   const [days, setDays] = useState<number[]>([])
   const [fromMin, setFromMin] = useState(0)
@@ -224,7 +226,7 @@ function WaitlistForm({ clients, onAddClient, onAdd }: {
   const toggleDay = (d: number) => setDays((x) => (x.includes(d) ? x.filter((v) => v !== d) : [...x, d]))
 
   const reset = () => {
-    setGuest(null); setQ(''); setNewPhone(''); setServiceId(SERVICES[0].id)
+    setGuest(null); setQ(''); setNewPhone(''); setServiceId(services[0]?.id ?? '')
     setTechId(''); setDays([]); setFromMin(0); setToMin(FULL_DAY)
   }
 
@@ -313,7 +315,7 @@ function WaitlistForm({ clients, onAddClient, onAdd }: {
 
       {/* service + preferred technician (only techs who can do it) */}
       <select value={serviceId} onChange={(e) => { setServiceId(e.target.value); setTechId('') }} className={field}>
-        {SERVICES.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.durationMin}m</option>)}
+        {services.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.durationMin}m</option>)}
       </select>
       <select value={techId} onChange={(e) => setTechId(e.target.value)} className={field}>
         <option value="">Any technician</option>
@@ -392,6 +394,9 @@ function WalkInBuilder({ clients, onAddClient, onAdd }: {
   onAddClient: (c: ClientRecord) => void
   onAdd: (guests: WalkInGuest[]) => void
 }) {
+  // live catalog -- so a service just added or removed in Settings shows
+  // up in the walk-in builder immediately instead of the stale baseline list
+  const services = activeServices(useServicesStore())
   const [open, setOpen] = useState(false)
   const [guests, setGuests] = useState<WalkInGuest[]>([])
   const [activeIdx, setActiveIdx] = useState(0)
@@ -533,7 +538,7 @@ function WalkInBuilder({ clients, onAddClient, onAdd }: {
             {active.serviceIds.length === 0 && <span className="ml-1 text-rust">pick at least one</span>}
           </div>
           <div className="grid max-h-44 grid-cols-2 gap-1 overflow-y-auto">
-            {SERVICES.map((s) => {
+            {services.map((s) => {
               const on = active.serviceIds.includes(s.id)
               const cat = catById[s.categoryId]
               return (

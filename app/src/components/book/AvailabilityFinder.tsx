@@ -4,9 +4,8 @@ import {
 } from 'lucide-react'
 import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { fmtTime } from '@/lib/booking-types'
-import { SERVICES } from '@/lib/mock-data'
 import { boardTechs, useStaffStore } from '@/lib/staff-store'
-import { svcById } from '@/lib/services-store'
+import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
 import { DatePickerPopover } from './LegendPopover'
 import { Sel, layoutItems, allSlotsFor, type BookedService, type SlotGroup } from './BookingPanel'
 
@@ -137,6 +136,9 @@ function ClientPicker({ clients, exclude, onPick, onCreate }: {
 export function AvailabilityFinder({
   appts, blocks, clients, onAddClient, dateKey, onPreviewDay, findMakeRoomPlan, onRequestMakeRoom, onBook, onViewProfile, onClose,
 }: Props) {
+  // live catalog -- so a service just added or removed in Settings shows
+  // up here immediately instead of the stale baseline list
+  const services = activeServices(useServicesStore())
   const { techs: allTechs } = useStaffStore()
   const techs = boardTechs(allTechs)
   const [guests, setGuests] = useState<FinderGuest[]>([{ id: newId('fg'), clientId: null, name: '', services: [], parallel: false }])
@@ -295,7 +297,7 @@ export function AvailabilityFinder({
       <div className={g.services.length > 0 ? 'mt-2' : ''}>
         <Sel value="" onChange={(v) => v && addService(g.id, v)} title="Add a service" className="w-full">
           <option value="">+ Add a service…</option>
-          {SERVICES.filter((sv) => !g.services.some((s) => s.serviceId === sv.id)).map((sv) => (
+          {services.filter((sv) => !g.services.some((s) => s.serviceId === sv.id)).map((sv) => (
             <option key={sv.id} value={sv.id}>{sv.name} · {sv.durationMin}m</option>
           ))}
         </Sel>

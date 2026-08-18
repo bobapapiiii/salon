@@ -7,7 +7,7 @@ import { fmtTime } from '@/lib/booking-types'
 import { SERVICES } from '@/lib/mock-data'
 import { getStaff, uid, useStaffStore } from '@/lib/staff-store'
 import { useSettingsStore } from '@/lib/settings-store'
-import { svcById } from '@/lib/services-store'
+import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
 import { catById } from '@/lib/categories-store'
 import { ConfirmDialog } from './ConfirmDialog'
 
@@ -139,6 +139,9 @@ const STATUS_STYLE: Record<string, string> = {
 }
 
 export function ClientProfile({ client, appts, guestVisits = [], realVisits = [], onViewInvoice, pointsBalance = 0, loyaltyHistory = [], notes, onAddNote, onDeleteNote, onSaveProfile, onClose }: Props) {
+  // live catalog -- so a service just added or removed in Settings is
+  // reflected in the "preferred services" picker immediately
+  const services = activeServices(useServicesStore())
   const { techs } = useStaffStore()
   const [tab, setTab] = useState<Tab>('overview')
   const [pendingNoteId, setPendingNoteId] = useState<string | null>(null)
@@ -361,7 +364,7 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
                 <div className="space-y-3">
                   {prefDraft.map((p) => {
                     const tech = techs.find((t) => t.id === p.techId)
-                    const offered = tech ? SERVICES.filter((s) => tech.skills.includes(s.id)) : []
+                    const offered = tech ? services.filter((s) => tech.skills.includes(s.id)) : []
                     return (
                       <div key={p.id} className="rounded-md border border-border/70 p-3">
                         <div className="flex items-center gap-2">

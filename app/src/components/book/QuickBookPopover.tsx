@@ -2,8 +2,9 @@ import { useMemo, useState } from 'react'
 import { X } from 'lucide-react'
 import type { Tech } from '@/lib/booking-types'
 import { fmtTime } from '@/lib/booking-types'
-import { CLIENTS, SERVICES } from '@/lib/mock-data'
+import { CLIENTS } from '@/lib/mock-data'
 import { COMBO_ID } from '@/lib/mock-data'
+import { activeServices, useServicesStore } from '@/lib/services-store'
 
 export interface QuickBookRequest {
   techId: string
@@ -27,8 +28,11 @@ interface Props {
 }
 
 export function QuickBookPopover({ req, tech, onConfirm, onClose, error }: Props) {
+  // live catalog -- so a service just added or removed in Settings shows
+  // up here immediately instead of the stale baseline demo list
+  const services = activeServices(useServicesStore())
   const [client, setClient] = useState('')
-  const [serviceId, setServiceId] = useState(SERVICES[0].id)
+  const [serviceId, setServiceId] = useState(services[0]?.id ?? '')
   const [notes, setNotes] = useState('')
   const [showClients, setShowClients] = useState(false)
 
@@ -38,7 +42,7 @@ export function QuickBookPopover({ req, tech, onConfirm, onClose, error }: Props
     return CLIENTS.filter((c) => c.name.toLowerCase().includes(s)).slice(0, 5)
   }, [client])
 
-  const svc = SERVICES.find((s) => s.id === serviceId)
+  const svc = services.find((s) => s.id === serviceId)
   const lacksSkill = svc && !tech.skills.includes(svc.id)
 
   // keep popover on screen
@@ -101,7 +105,7 @@ export function QuickBookPopover({ req, tech, onConfirm, onClose, error }: Props
             >
               <option value={COMBO_ID}>✨ Mani + Pedi (same time, 2 techs)</option>
               <optgroup label="Services">
-                {SERVICES.map((s) => (
+                {services.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name} · {s.durationMin}m · ${s.price}
                   </option>
