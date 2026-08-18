@@ -4,12 +4,30 @@
 // matches. Every technician and service picker in the app uses this so
 // choosing from a long roster or catalog is always searchable and (within
 // each group) alphabetized, instead of scrolling a long native <select>.
-import { useMemo, useRef, useState } from 'react'
+//
+// The open panel renders through a portal into document.body, positioned
+// with `fixed` coordinates measured off the trigger. It used to render
+// in-place (`absolute`, anchored to the trigger's own wrapper), which
+// caused two different flavors of the same problem depending on what kind
+// of container it opened inside: a scrollable ancestor (e.g. a details
+// panel's narrow section) clips a `position: absolute` child to its own
+// box, so the right side of a wide panel silently vanished behind
+// whatever sat next to that section; and inside a plain non-scrolling
+// container, the panel could still end up layered *under* a later sibling
+// that happened to paint on top of it. Escaping to a portal sidesteps
+// both: nothing can clip or out-stack it, because it isn't a descendant
+// of any of that layout anymore.
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Check, ChevronDown, Search } from 'lucide-react'
 
 /** the dropdown panel's fixed width (matches the w-60 class below), used to
  *  decide whether it needs to open right-aligned instead of left-aligned */
 const PANEL_W = 240
+/** rough ceiling on the panel's rendered height (search box + option list),
+ *  used only to decide whether it should open above the trigger instead of
+ *  below when there isn't room underneath */
+const PANEL_MAX_H = 280
 
 export interface SearchSelectOption {
   value: string
@@ -36,11 +54,9 @@ export function SearchSelect({
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
-  // right-align the panel instead of left-align when the trigger sits close
-  // enough to the right edge of the screen that a left-anchored panel would
-  // overflow the viewport -- purely cosmetic, so the panel itself doesn't
-  // render half off-screen
-  const [alignRight, setAlignRight] = useState(false)
+  // where the portalled panel lands, in viewport coordinates -- measured
+  // fresh off the trigger each time it opens
+  const [coords, setCoords] = useState<{ top: number; left: number; openUp: boolean } | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const selected = options.find((o) => o.value === value)
@@ -48,18 +64,37 @@ export function SearchSelect({
   const toggleOpen = () => {
     if (!open) {
       const rect = wrapRef.current?.getBoundingClientRect()
-      setAlignRight(!!rect && rect.left + PANEL_W > window.innerWidth - 8)
+      if (rect) {
+        const left = Math.min(
+          rect.left + PANEL_W > window.innerWidth - 8 ? rect.right - PANEL_W : rect.left,
+          window.innerWidth - PANEL_W - 8,
+        )
+        const openUp = rect.bottom + PANEL_MAX_H > window.innerHeight - 8 && rect.top > PANEL_MAX_H
+        setCoords({ top: openUp ? rect.top - 4 : rect.bottom + 4, left: Math.max(8, left), openUp })
+      }
       // focus the search box next tick, but tell the browser not to scroll
-      // anything into view for it. A plain autoFocus makes the browser walk
+      // anything into view for it -- a plain autoFocus makes the browser walk
       // up the DOM scrolling every scrollable ancestor until the input is
-      // fully visible -- and this panel is often wider than whatever narrow
-      // column or card it opens inside (a details panel's ~440px section, a
-      // centered modal, a grid cell), so that "helpful" scroll is what
-      // actually shoves the calendar/table sideways behind it
+      // fully visible, which is its own way of shoving the page sideways
       requestAnimationFrame(() => searchRef.current?.focus({ preventScroll: true }))
     }
     setOpen((o) => !o)
   }
+
+  // the panel's position is measured once, on open -- rather than tracking
+  // the trigger continuously, just close on scroll/resize like most
+  // floating menus do, since the trigger may live inside a scrollable
+  // ancestor the portal is no longer nested in
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('resize', close)
+    return () => {
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('resize', close)
+    }
+  }, [open])
 
   const groups = useMemo(() => {
     const text = q.trim().toLowerCase()
@@ -87,8 +122,13 @@ export function SearchSelect({
         <span className={`truncate ${selected ? '' : 'text-muted-foreground'}`}>{selected?.label ?? placeholder}</span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       </button>
-      {open && !disabled && (
-        <div className={`absolute top-full z-30 mt-1 w-60 overflow-hidden rounded-lg border border-border bg-popover shadow-2xl ${alignRight ? 'right-0' : 'left-0'}`}>
+      {open && !disabled && coords && createPortal(
+        <div
+          className="fixed z-[200] w-60 overflow-hidden rounded-lg border border-border bg-popover shadow-2xl"
+          style={coords.openUp
+            ? { bottom: window.innerHeight - coords.top, left: coords.left }
+            : { top: coords.top, left: coords.left }}
+        >
           <div className="border-b border-border p-1.5">
             <div className="relative">
               <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -136,7 +176,8 @@ export function SearchSelect({
               </div>
             ))}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
