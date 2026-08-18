@@ -38,17 +38,25 @@ export function SearchSelect({
   const [q, setQ] = useState('')
   // right-align the panel instead of left-align when the trigger sits close
   // enough to the right edge of the screen that a left-anchored panel would
-  // overflow the viewport -- otherwise the browser scrolls whatever
-  // ancestor is scrollable to bring the autofocused search box into view,
-  // which visibly shoves the calendar/table sideways behind a narrow panel
+  // overflow the viewport -- purely cosmetic, so the panel itself doesn't
+  // render half off-screen
   const [alignRight, setAlignRight] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
   const selected = options.find((o) => o.value === value)
 
   const toggleOpen = () => {
     if (!open) {
       const rect = wrapRef.current?.getBoundingClientRect()
       setAlignRight(!!rect && rect.left + PANEL_W > window.innerWidth - 8)
+      // focus the search box next tick, but tell the browser not to scroll
+      // anything into view for it. A plain autoFocus makes the browser walk
+      // up the DOM scrolling every scrollable ancestor until the input is
+      // fully visible -- and this panel is often wider than whatever narrow
+      // column or card it opens inside (a details panel's ~440px section, a
+      // centered modal, a grid cell), so that "helpful" scroll is what
+      // actually shoves the calendar/table sideways behind it
+      requestAnimationFrame(() => searchRef.current?.focus({ preventScroll: true }))
     }
     setOpen((o) => !o)
   }
@@ -85,7 +93,7 @@ export function SearchSelect({
             <div className="relative">
               <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
-                autoFocus
+                ref={searchRef}
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 onKeyDown={(e) => e.key === 'Escape' && setOpen(false)}
