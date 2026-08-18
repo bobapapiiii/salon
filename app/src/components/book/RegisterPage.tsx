@@ -9,7 +9,7 @@
 // drawer only through the close count in this build.
 import { useEffect, useMemo, useState } from 'react'
 import {
-  AlertTriangle, Banknote, Check, ChevronDown, Lock, LockOpen, Scale, X,
+  AlertTriangle, Banknote, Check, ChevronDown, ChevronRight, CreditCard, Lock, LockOpen, Scale, X,
 } from 'lucide-react'
 import type { RegisterConfig } from '@/lib/settings-store'
 import { paymentSources, type PaymentSource } from './CheckoutDialog'
@@ -62,6 +62,24 @@ export interface RegisterPayment {
 /** every payment carries a time, one way or another — new records stamp `at`,
  *  older ones still have the `pay${Date.now()}` id they were created with */
 export const paymentAt = (p: RegisterPayment): number => p.at ?? (Number(p.id.replace(/\D/g, '')) || 0)
+
+/** one line in the "still needs checkout" list -- already resolved to display
+ *  strings so this page doesn't need the service catalog or staff roster */
+export interface RegisterOpenAppt {
+  id: string
+  clientName: string
+  serviceLabel: string
+  techName: string
+  timeLabel: string
+}
+
+/** one line in the "balance still due" list */
+export interface RegisterBalanceDueItem {
+  id: string
+  clientName: string
+  amount: number
+  total: number
+}
 
 /** payments taken while this session was (or still is) open */
 export function sessionPayments(s: RegisterSession, payments: RegisterPayment[]): RegisterPayment[] {
@@ -237,18 +255,22 @@ interface Props {
   userName: string
   /** today's business day key, the day a new session is stamped with */
   todayKey: string
-  /** today's appointments still needing checkout — closing is blocked while this is above 0 */
-  openTicketsToday: number
-  /** today's tickets left with a balance due after a partial payment — closing is blocked while this is above 0 too */
-  balanceDueToday: number
+  /** today's appointments still needing checkout — closing is blocked while this list isn't empty */
+  openAppts: RegisterOpenAppt[]
+  /** today's tickets left with a balance due after a partial payment — closing is blocked while this list isn't empty too */
+  balanceDuePayments: RegisterBalanceDueItem[]
+  /** jump straight to checking out this appointment (closes this page to do it) */
+  onResolveAppt: (id: string) => void
+  /** jump straight to collecting what's still owed on this ticket (closes this page to do it) */
+  onResolvePayment: (id: string) => void
   onOpenRegister: (s: RegisterSession) => void
   onCloseRegister: (id: string, patch: Partial<RegisterSession>) => void
   onClose: () => void
 }
 
 export function RegisterPage({
-  open, registers, defaultRegisterId, sessions, payments, userName, todayKey, openTicketsToday, balanceDueToday,
-  onOpenRegister, onCloseRegister, onClose,
+  open, registers, defaultRegisterId, sessions, payments, userName, todayKey, openAppts, balanceDuePayments,
+  onResolveAppt, onResolvePayment, onOpenRegister, onCloseRegister, onClose,
 }: Props) {
   // active registers show in the picker; an inactive one still shows if it
   // was somehow left open, so it's never stuck un-closeable behind the toggle
@@ -508,21 +530,65 @@ export function RegisterPage({
               </div>
 
               {/* close, blocked until every appointment today has been checked
-                  out and every partial payment today has been settled */}
+                  out and every partial payment today has been settled -- the
+                  warning lists exactly which ones, each a shortcut straight
+                  to resolving it, instead of just a count to go hunt down */}
               {!closing ? (
-                openTicketsToday > 0 || balanceDueToday > 0 ? (
-                  <div className="flex items-start gap-2 rounded-xl border border-amberw/40 bg-amberw-tint/50 px-3.5 py-2.5 text-[12px] text-ink">
-                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amberw" />
-                    <span>
-                      {openTicketsToday > 0 && (
-                        <>{openTicketsToday} appointment{openTicketsToday === 1 ? '' : 's'} today still {openTicketsToday === 1 ? 'needs' : 'need'} to be checked out</>
-                      )}
-                      {openTicketsToday > 0 && balanceDueToday > 0 && <> and </>}
-                      {balanceDueToday > 0 && (
-                        <>{balanceDueToday} ticket{balanceDueToday === 1 ? '' : 's'} today still {balanceDueToday === 1 ? 'has' : 'have'} a balance due</>
-                      )}
-                      {' '}before any register can close.
-                    </span>
+                openAppts.length > 0 || balanceDuePayments.length > 0 ? (
+                  <div className="rounded-xl border border-amberw/40 bg-amberw-tint/50 p-3.5">
+                    <div className="flex items-start gap-2 text-[12px] text-ink">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amberw" />
+                      <span>
+                        {openAppts.length > 0 && (
+                          <>{openAppts.length} appointment{openAppts.length === 1 ? '' : 's'} today still {openAppts.length === 1 ? 'needs' : 'need'} to be checked out</>
+                        )}
+                        {openAppts.length > 0 && balanceDuePayments.length > 0 && <> and </>}
+                        {balanceDuePayments.length > 0 && (
+                          <>{balanceDuePayments.length} ticket{balanceDuePayments.length === 1 ? '' : 's'} today still {balanceDuePayments.length === 1 ? 'has' : 'have'} a balance due</>
+                        )}
+                        {' '}before any register can close.
+                      </span>
+                    </div>
+                    <div className="mt-3 space-y-1.5">
+                      {openAppts.map((a) => (
+                        <button
+                          key={`appt-${a.id}`}
+                          type="button"
+                          onClick={() => onResolveAppt(a.id)}
+                          title="Check out this appointment"
+                          className="flex w-full items-center gap-2.5 rounded-[10px] border border-line bg-surface px-3 py-2 text-left transition-colors hover:border-clay hover:bg-clay-tint/30"
+                        >
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amberw-tint text-amberw">
+                            <CreditCard className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[12.5px] font-bold text-ink">{a.clientName}</span>
+                            <span className="block truncate text-[11px] text-ink-faint">{a.serviceLabel} · {a.techName} · {a.timeLabel}</span>
+                          </span>
+                          <span className="shrink-0 text-[11px] font-bold text-clay">Check out</span>
+                          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
+                        </button>
+                      ))}
+                      {balanceDuePayments.map((p) => (
+                        <button
+                          key={`pay-${p.id}`}
+                          type="button"
+                          onClick={() => onResolvePayment(p.id)}
+                          title="Collect the rest of what's owed on this ticket"
+                          className="flex w-full items-center gap-2.5 rounded-[10px] border border-line bg-surface px-3 py-2 text-left transition-colors hover:border-clay hover:bg-clay-tint/30"
+                        >
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-amberw-tint text-amberw">
+                            <Scale className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[12.5px] font-bold text-ink">{p.clientName}</span>
+                            <span className="block truncate text-[11px] text-ink-faint">{money(p.amount)} owed of {money(p.total)}</span>
+                          </span>
+                          <span className="shrink-0 text-[11px] font-bold text-clay">Collect</span>
+                          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 ) : (
                   <button

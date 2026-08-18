@@ -22,7 +22,7 @@ import { DatePickerPopover, LegendPopover } from './LegendPopover'
 import { ContextBar, NavRail } from './AppShell'
 import { SettingsPage, type SectionId } from './SettingsPage'
 import { JobCardPage } from './JobCardPage'
-import { RegisterPage, RegisterDayPrompt, type RegisterSession } from './RegisterPage'
+import { RegisterPage, RegisterDayPrompt, type RegisterSession, type RegisterOpenAppt, type RegisterBalanceDueItem } from './RegisterPage'
 import { useSessionUser } from '@/lib/session'
 import { buildJobCard, printJobCards } from '@/lib/job-card'
 import { useLocation, useNavigate } from 'react-router'
@@ -2059,6 +2059,28 @@ export function AppointmentBook() {
     setReopenDraft({ removedIds: [], addedIds: [] })
   }
 
+  // jump straight from Manage Register's blocked-close list to resolving
+  // whatever's on it -- deliberately bypasses blockIfStaleRegister above:
+  // clearing today's own blockers is the intended way out of that block,
+  // not a loophole around it, so it can't lock the salon out of itself
+  const resolveRegisterAppt = (apptId: string) => {
+    const a = (dateKey === todayKey ? appts : apptDays[todayKey] ?? []).find((x) => x.id === apptId)
+    if (!a) return
+    setRegisterOpen(false)
+    if (dateKey !== todayKey) goDay(new Date(todayKey + 'T12:00:00'))
+    openCheckout(a)
+  }
+
+  const resolveRegisterPayment = (paymentId: string) => {
+    const p = payments.find((x) => x.id === paymentId)
+    if (!p) return
+    const dayAppts = dateKey === todayKey ? appts : apptDays[todayKey] ?? []
+    const items = (p.apptIds ?? []).map((id) => dayAppts.find((x) => x.id === id)).filter((x): x is Appointment => x != null)
+    setRegisterOpen(false)
+    if (dateKey !== todayKey) goDay(new Date(todayKey + 'T12:00:00'))
+    openReopen({ payment: p, items })
+  }
+
   // the ticket's live item list — the original services (minus any removed
   // this session) plus whatever's been added, resolved fresh against the
   // book each render so price/service/tech/time edits show immediately
@@ -3225,15 +3247,32 @@ export function AppointmentBook() {
   const dayCollected = useMemo(() => payments.filter((p) => p.dateKey === dateKey).reduce((s, p) => s + p.total, 0), [payments, dateKey])
   // today's appointments still needing checkout, regardless of which day the
   // calendar happens to be showing right now -- Manage Register blocks
-  // closing any drawer until this reaches zero
-  const openTicketsToday = useMemo(
-    () => (dateKey === todayKey ? appts : apptDays[todayKey] ?? []).filter((a) => payable(a)).length,
+  // closing any drawer until this list is empty, and lists each one out so
+  // it's a shortcut straight to checking it out instead of just a count
+  const openApptsToday: RegisterOpenAppt[] = useMemo(
+    () => (dateKey === todayKey ? appts : apptDays[todayKey] ?? [])
+      .filter((a) => payable(a))
+      .sort((a, b) => a.startMin - b.startMin)
+      .map((a) => ({
+        id: a.id,
+        clientName: a.clientName,
+        serviceLabel: svcById[a.serviceId]?.short ?? svcById[a.serviceId]?.name ?? 'Service',
+        techName: techOf(a.techId).name,
+        timeLabel: fmtTime(a.startMin),
+      })),
     [appts, apptDays, dateKey, todayKey, payments],
   )
   // today's tickets that were only partially paid -- money is still owed, so
-  // these block closing a register too, alongside openTicketsToday above
-  const balanceDueToday = useMemo(
-    () => payments.filter((p) => p.dateKey === todayKey && balanceDue(p.total, paymentSources(p), p.refunds) > 0.004).length,
+  // these block closing a register too, alongside openApptsToday above
+  const balanceDuePaymentsToday: RegisterBalanceDueItem[] = useMemo(
+    () => payments
+      .filter((p) => p.dateKey === todayKey && balanceDue(p.total, paymentSources(p), p.refunds) > 0.004)
+      .map((p) => ({
+        id: p.id,
+        clientName: p.clientName,
+        amount: balanceDue(p.total, paymentSources(p), p.refunds),
+        total: p.total,
+      })),
     [payments, todayKey],
   )
 
@@ -4232,8 +4271,10 @@ export function AppointmentBook() {
         payments={payments}
         userName={sessionUser.name}
         todayKey={todayKey}
-        openTicketsToday={openTicketsToday}
-        balanceDueToday={balanceDueToday}
+        openAppts={openApptsToday}
+        balanceDuePayments={balanceDuePaymentsToday}
+        onResolveAppt={resolveRegisterAppt}
+        onResolvePayment={resolveRegisterPayment}
         onOpenRegister={(s) => {
           setRegisterSessions((x) => [...x, s])
           showFlash(`✓ ${s.registerName} opened with $${s.openingFloat.toFixed(2)}`)
