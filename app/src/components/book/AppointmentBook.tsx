@@ -2592,9 +2592,14 @@ export function AppointmentBook() {
         if (!found) { showFlash('No payment recorded for this appointment'); break }
         // only block collecting a balance still owed -- correcting or
         // refunding an already-settled ticket doesn't take new payment, so
-        // it stays allowed even with a stale register open
+        // it stays allowed even with a stale register open. And only for
+        // TODAY's own tickets -- a balance left over from the stale day
+        // itself (or any other past day) is exactly the cleanup that has to
+        // happen before that register can close, and Manage Register's own
+        // blocked-close list only ever surfaces today's tickets, so blocking
+        // this too would leave no way to reach it at all
         const stillOwed = balanceDue(found.payment.total, paymentSources(found.payment), found.payment.refunds) > 0.004
-        if (stillOwed && blockIfStaleRegister()) break
+        if (stillOwed && originKey === todayKey && blockIfStaleRegister()) break
         openReopen(found)
         break
       }
