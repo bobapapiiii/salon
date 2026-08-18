@@ -1,6 +1,6 @@
 // ─── Reports, salon analytics drawn from the book's own data ────────────────
-// Sources: completed checkouts (payments-v1), the appointment book itself
-// (appts-v1), and the client list (clients-v1). Everything computes live from
+// Sources: completed checkouts (payments-v2), the appointment book itself
+// (appts-v2), and the client list (clients-v1). Everything computes live from
 // whatever date range is picked, so it stays honest as the salon works.
 import { useMemo, useState } from "react";
 import { Download, Printer } from "lucide-react";
@@ -302,10 +302,10 @@ export function ReportsSection() {
   const [techSort, setTechSort] = useState<{ key: string; dir: 1 | -1 }>({ key: "sales", dir: -1 });
   const [closeDay, setCloseDay] = useState<string>(keyOf(new Date()));
 
-  const [payments] = usePersistentState<PaymentRec[]>(sdata("payments-v1"), []);
-  const [apptDays] = usePersistentState<Record<string, Appointment[]>>(sdata("appts-v1"), {});
+  const [payments] = usePersistentState<PaymentRec[]>(sdata("payments-v2"), []);
+  const [apptDays] = usePersistentState<Record<string, Appointment[]>>(sdata("appts-v2"), {});
   const [clients] = usePersistentState<ClientRec[]>(sdata("clients-v1"), []);
-  const [cancellations] = usePersistentState<CancellationRec[]>(sdata("cancellations-v1"), []);
+  const [cancellations] = usePersistentState<CancellationRec[]>(sdata("cancellations-v2"), []);
   const [turnaways] = usePersistentState<TurnawayRec[]>(sdata("turnaways-v1"), [], turnawaysCodec);
   const [pointsByClient] = usePersistentState<Record<string, number>>(sdata("loyalty-v1"), {});
   const staff = useStaffStore();

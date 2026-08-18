@@ -40,8 +40,8 @@ export function TechPortal({ tech, onSignOut }: { tech: Tech; onSignOut: () => v
   const { roles } = useStaffStore();
   const [date, setDate] = useState(() => new Date());
   const key = dayKey(date);
-  const [apptDays] = usePersistentState<Record<string, Appointment[]>>(sdata("appts-v1"), {});
-  const [payments] = usePersistentState<PaymentRec[]>(sdata("payments-v1"), []);
+  const [apptDays] = usePersistentState<Record<string, Appointment[]>>(sdata("appts-v2"), {});
+  const [payments] = usePersistentState<PaymentRec[]>(sdata("payments-v2"), []);
 
   const roleName = roles.find((r) => r.id === tech.teamId)?.name ?? "Technician";
   const myAppts = useMemo(

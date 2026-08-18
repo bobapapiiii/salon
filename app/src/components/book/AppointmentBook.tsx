@@ -287,7 +287,7 @@ export function AppointmentBook() {
   const todayKey = dayKey(new Date())
   const [dateKey, setDateKey] = usePersistentState<string>(upref('ui-date'), () => dayKey(new Date()))
   const date = useMemo(() => new Date(dateKey + 'T12:00:00'), [dateKey])
-  const [apptDays, setApptDays] = usePersistentState<Record<string, Appointment[]>>(sdata('appts-v1'), {})
+  const [apptDays, setApptDays] = usePersistentState<Record<string, Appointment[]>>(sdata('appts-v2'), {})
   const [appts, setAppts] = useState<Appointment[]>(() => backfillStageTimestamps(apptDays[dateKey] ?? generateDay(dateKey)))
   const [scale, setScaleRaw] = usePersistentState<Scale>(upref('ui-scale'), { colW: 112, ppm: 1.15 })
   const [density, setDensity] = usePersistentState<15 | 30 | 60 | null>(upref('ui-density'), null)
@@ -333,7 +333,7 @@ export function AppointmentBook() {
     redeemId: string | null
     tipByTech?: Record<string, string>
   }
-  const [checkoutDraft, setCheckoutDraft] = usePersistentState<CheckoutDraft | null>(sdata('checkout-draft-v1'), null)
+  const [checkoutDraft, setCheckoutDraft] = usePersistentState<CheckoutDraft | null>(sdata('checkout-draft-v2'), null)
   const [posOpen, setPosOpen] = useState(false)
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [schedules, setSchedules] = usePersistentState<Record<string, DaySchedule>>(sdata('schedule-v1'), {})
@@ -390,7 +390,7 @@ export function AppointmentBook() {
   const [pointsByClient, setPointsByClient] = usePersistentState<Record<string, number>>(sdata('loyalty-v1'), {})
   // cancellation history, kept separately since a cancelled appointment is removed
   // from the day's board entirely (nothing else needs it, but Reports does)
-  const [, setCancellations] = usePersistentState<CancellationRecord[]>(sdata('cancellations-v1'), [])
+  const [, setCancellations] = usePersistentState<CancellationRecord[]>(sdata('cancellations-v2'), [])
   const [turnaways, setTurnaways] = usePersistentState<TurnawayRecord[]>(sdata('turnaways-v1'), [], turnawaysCodec)
   const [turnawayOpen, setTurnawayOpen] = useState(false)
   // you can't turn away someone in the past or the future, only right now, so
@@ -424,7 +424,7 @@ export function AppointmentBook() {
   const turnawayTitle = canLogTurnaway
     ? turnawaySummary ?? "Log a turnaway, a client we couldn't fit in"
     : `Turnaways can only be logged for today${turnawaySummary ? ` · ${turnawaySummary}` : ''}`
-  const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; /** when it was taken, to the minute — what buckets a sale into a register shift */ at?: number; clientName: string; /** every distinct client on this ticket (host + any party members/guests), so each of them sees this checkout in their own visit history, not just the host */ clientNames?: string[]; itemCount: number; subtotal: number; tip: number; total: number; method: string; /** the actual tender(s) taken against this ticket; older records fall back to method/total via paymentSources() */ sources?: PaymentSource[]; /** total minus what the sources add up to, >0 while a partial payment is still owed */ balanceDue?: number; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[]; /** money given back on this ticket, from a specific payment source, in full or in part */ refunds?: RefundRecord[] }[]>(sdata('payments-v1'), [])
+  const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; /** when it was taken, to the minute — what buckets a sale into a register shift */ at?: number; clientName: string; /** every distinct client on this ticket (host + any party members/guests), so each of them sees this checkout in their own visit history, not just the host */ clientNames?: string[]; itemCount: number; subtotal: number; tip: number; total: number; method: string; /** the actual tender(s) taken against this ticket; older records fall back to method/total via paymentSources() */ sources?: PaymentSource[]; /** total minus what the sources add up to, >0 while a partial payment is still owed */ balanceDue?: number; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[]; /** money given back on this ticket, from a specific payment source, in full or in part */ refunds?: RefundRecord[] }[]>(sdata('payments-v2'), [])
   // online waitlist (self-serve) + walk-in queue (front desk)
   const [waitlist, setWaitlist] = usePersistentState<QueueEntry[]>(sdata('waitlist-v1'), () => [
     { id: 'w1', name: 'Ava R.', serviceId: 'p-gel', phone: '(555) 220-1188', preferredTechId: getStaff().techs.find((t) => t.teamId === 'pedi')?.id, days: [1, 3, 5], fromMin: 360, toMin: 600, notes: 'Prefers after 2 PM', createdMin: DEMO_NOW_MIN - 25 },

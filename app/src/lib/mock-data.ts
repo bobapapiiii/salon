@@ -178,11 +178,11 @@ export function generateDay(seedKey = '2026-07-24'): Appointment[] {
     return out
   }
 
-  // demo mode: just a light handful of appointments a day (2-3), enough to
+  // demo mode: a modest handful of appointments a day (8-10), enough to
   // exercise the board without wading through a full day's worth of noise --
   // useful for things like testing opening/closing the register in isolation.
   // Bump this if the demo ever needs a busier-looking day again.
-  const dayCount = int(2, 3)
+  const dayCount = int(8, 10)
   const usedTechs = new Set<string>()
   for (let i = 0; i < dayCount; i++) {
     let tech = pick(TECHS)
