@@ -593,6 +593,34 @@ export function AppointmentBook() {
     setApptDays((m) => (m[dateKey] === appts ? m : { ...m, [dateKey]: appts }))
   }, [appts, dateKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // one-time migration: a ticket checked out before the checked_out status
+  // existed is still tagged 'completed', even though a payment already
+  // covers it -- fold those over across every day, not just the one on
+  // screen, so an old checkout reads the same as a new one instead of
+  // waiting for the salon to happen to revisit that day. Idempotent (once
+  // migrated, nothing here matches 'completed' + a payment anymore), so
+  // this settles after one pass and doesn't loop
+  useEffect(() => {
+    let anyChanged = false
+    const migrated: Record<string, Appointment[]> = {}
+    for (const [k, list] of Object.entries(apptDays)) {
+      let dayChanged = false
+      const nextList = list.map((a) => {
+        if (a.status === 'completed' && payments.some((p) => p.apptIds?.includes(a.id))) {
+          dayChanged = true
+          return { ...a, status: 'checked_out' as const }
+        }
+        return a
+      })
+      migrated[k] = dayChanged ? nextList : list
+      if (dayChanged) anyChanged = true
+    }
+    if (!anyChanged) return
+    setApptDays(migrated)
+    if (migrated[dateKey] !== apptDays[dateKey]) setAppts(migrated[dateKey])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apptDays, payments])
+
   // appts/blocks for an arbitrary day, not just the one on screen — lets the
   // edit panel's "available times" rail preview other days without visiting
   // them (same stable-preview-cache pattern as the tech week/month takeover)
