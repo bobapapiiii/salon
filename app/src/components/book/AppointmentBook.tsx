@@ -1947,8 +1947,9 @@ export function AppointmentBook() {
   }, [checkoutGroup, appts, checkoutName])
 
   // who currently selected on this ticket could actually receive points --
-  // a guest (name-only, no ClientRecord) never can. Only worth surfacing a
-  // picker when there's a real choice to make; one or zero and it's implicit
+  // a guest (name-only, no ClientRecord) never can. Passed through even
+  // when it's a single name, so the panel always confirms who's earning
+  // the points instead of leaving it to happen silently
   const checkoutPointsRecipients = useMemo(
     () => checkoutPeople.filter((n) => checkoutSelected.has(n) && clients.some((c) => c.name === n)),
     [checkoutPeople, checkoutSelected, clients],

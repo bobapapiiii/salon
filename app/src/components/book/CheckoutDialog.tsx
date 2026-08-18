@@ -124,8 +124,9 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
   loyaltyBalance?: number | null;
   /** everyone currently selected on this ticket who actually has an account
    *  and could receive its points -- a guest never can. 0 means no one on
-   *  this ticket earns anything; 1 is implicit (no picker needed); 2+ shows
-   *  a picker so the front desk chooses */
+   *  this ticket earns anything, so this stays hidden; any other length
+   *  shows every eligible name (even a single one), so who's getting the
+   *  points is always confirmed on screen, not just happening silently */
   pointsRecipients?: string[];
   /** controlled draft (persisted); POS uses the internal fallback */
   draft?: CheckoutDraftState;
@@ -616,11 +617,13 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
               </div>
             </div>
 
-            {/* group checkout: let the front desk choose who this ticket's
-                points go to -- only shown when there's an actual choice
-                (2+ selected people with a real account); a guest is never
-                an option since they have nowhere to hold points */}
-            {pointsRecipients && pointsRecipients.length > 1 && (
+            {/* group checkout: who this ticket's points go to. Shown any
+                time someone selected has a real account to hold them --
+                even with just one option, this stays visible and styled the
+                same as a real choice, so it's confirmed on screen instead
+                of just happening silently. A guest is never an option
+                since they have nowhere to hold points */}
+            {pointsRecipients && pointsRecipients.length > 0 && (
               <>
                 <p className="mb-1.5 mt-4 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Give points to</p>
                 <div className="flex flex-wrap gap-1.5">
@@ -630,7 +633,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                       <button
                         key={name}
                         onClick={() => setD({ pointsRecipient: name })}
-                        className={`rounded-full border px-3 py-1.5 text-[12px] font-semibold transition ${
+                        className={`h-8 rounded-[8px] border px-3 text-[12px] font-bold transition-colors ${
                           on ? "border-violet-500/50 bg-violet-500/10 text-violet-500" : "border-line bg-surface text-ink-soft hover:border-line-strong"
                         }`}
                       >
@@ -767,23 +770,37 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                 return (
                   <div key={r.id} className={`rounded-[10px] border p-1.5 ${locked ? "border-line bg-cream/50" : "border-line bg-surface"}`}>
                     <div className="flex items-center gap-1.5">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] bg-clay-tint text-clay">
-                        {Icon && <Icon className="h-4 w-4" />}
-                      </span>
                       {locked ? (
-                        <span className="min-w-0 flex-1 text-[12px] font-semibold text-ink">
-                          {r.method}
-                          <span className="ml-1.5 font-normal text-ink-faint">already collected{refundedFromRow > 0 ? ` · ${money(refundedFromRow)} refunded` : ""}</span>
-                        </span>
+                        <>
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[7px] bg-clay-tint text-clay">
+                            {Icon && <Icon className="h-4 w-4" />}
+                          </span>
+                          <span className="min-w-0 flex-1 text-[12px] font-semibold text-ink">
+                            {r.method}
+                            <span className="ml-1.5 font-normal text-ink-faint">already collected{refundedFromRow > 0 ? ` · ${money(refundedFromRow)} refunded` : ""}</span>
+                          </span>
+                        </>
                       ) : (
-                        <select
-                          value={r.method}
-                          onChange={(e) => updateSource(r.id, { method: e.target.value })}
-                          title="Payment method"
-                          className="h-8 min-w-0 flex-1 rounded-[7px] border border-input bg-background px-1.5 text-[11.5px] font-semibold outline-none focus:border-clay"
-                        >
-                          {methods.map((m) => <option key={m} value={m}>{m}</option>)}
-                        </select>
+                        /* one tap picks the method directly -- no dropdown to open first */
+                        <div className="flex min-w-0 flex-1 gap-1">
+                          {methods.map((m) => {
+                            const MIcon = METHOD_ICONS[m as keyof typeof METHOD_ICONS];
+                            const active = r.method === m;
+                            return (
+                              <button
+                                key={m}
+                                type="button"
+                                onClick={() => updateSource(r.id, { method: m })}
+                                title={m}
+                                className={`flex h-8 flex-1 items-center justify-center rounded-[7px] border transition-colors ${
+                                  active ? "border-clay bg-clay-tint text-clay" : "border-line bg-background text-ink-faint hover:border-line-strong hover:text-ink"
+                                }`}
+                              >
+                                {MIcon && <MIcon className="h-4 w-4" />}
+                              </button>
+                            );
+                          })}
+                        </div>
                       )}
                       <div className="relative min-w-0 flex-1 basis-24 grow-0">
                         <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[11px] font-bold text-ink-faint">$</span>
@@ -1097,7 +1114,8 @@ export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClo
   onSelectAll?: () => void;
   loyaltyBalance?: number | null;
   /** everyone currently selected who could receive this ticket's points --
-   *  2+ shows a picker, 0 or 1 is implicit and no picker is shown */
+   *  shown even for a single name, so it's always visible who earns it;
+   *  empty (no one selected has an account) hides the section entirely */
   pointsRecipients?: string[];
   addedIds?: string[];
   onPatchLine?: (id: string, patch: Partial<Appointment>) => void;
