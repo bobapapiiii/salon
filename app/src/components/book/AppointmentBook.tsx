@@ -469,6 +469,10 @@ export function AppointmentBook() {
   // cash drawer: one open→close cycle per shift, salon-shared like the ledger.
   // Multiple registers can each run their own shift at once (see Settings → Registers)
   const [registerOpen, setRegisterOpen] = useState(false)
+  // true when Manage Register was opened from the nav rail's own Search
+  // icon (a shortcut into the same page), so it can jump straight into the
+  // find-a-transaction box instead of landing on the drawer summary
+  const [registerFocusSearch, setRegisterFocusSearch] = useState(false)
   const [registerSessions, setRegisterSessions] = usePersistentState<RegisterSession[]>(sdata('register-v1'), [])
   const anyRegisterOpen = registerSessions.some((s) => s.closedAt == null)
   // a register left open from a day that's already passed -- unlike simply
@@ -2003,6 +2007,7 @@ export function AppointmentBook() {
     if (ticketDateKey && ticketDateKey !== todayKey) return false
     if (a && estimateTicketTotal(a, source) <= 0.004) return false
     showFlash('⚠ A previous day\'s register is still open — close it before taking payment')
+    setRegisterFocusSearch(false)
     setRegisterOpen(true)
     return true
   }
@@ -3430,18 +3435,21 @@ export function AppointmentBook() {
 
   const hours = Array.from({ length: DAY_SLOTS / 4 + 3 }, (_, i) => (i - 1) * 60)
 
-  const onNavNavigate = (page: 'calendar' | 'techschedule' | 'jobcard' | 'services' | 'clients' | 'register' | 'settings') => {
+  const onNavNavigate = (page: 'calendar' | 'techschedule' | 'jobcard' | 'search' | 'register' | 'settings') => {
     if (page === 'techschedule') { setScheduleOpen(true); return }
     if (page === 'jobcard') { setJobCardDate(dateKey); setJobCardOpen(true); return }
-    if (page === 'register') { setRegisterOpen(true); return }
+    if (page === 'search') { setRegisterFocusSearch(true); setRegisterOpen(true); return }
+    if (page === 'register') { setRegisterFocusSearch(false); setRegisterOpen(true); return }
     if (page === 'settings') { navigate('/settings/general'); return }
-    if (page !== 'calendar') showFlash(`${page[0].toUpperCase() + page.slice(1)} page, coming soon`)
   }
 
   return (
     <div className={`h-full overflow-hidden ${darkMode ? 'dark' : ''} bg-background text-foreground`}>
     <div className="flex h-full">
-      <NavRail active={registerOpen ? 'register' : jobCardOpen ? 'jobcard' : 'calendar'} onNavigate={onNavNavigate} />
+      <NavRail
+        active={registerOpen ? (registerFocusSearch ? 'search' : 'register') : jobCardOpen ? 'jobcard' : 'calendar'}
+        onNavigate={onNavNavigate}
+      />
       <div className="flex min-w-0 flex-1 flex-col">
       <ContextBar
         title="Schedule"
@@ -3487,6 +3495,18 @@ export function AppointmentBook() {
         requestCount={requested.length}
         onToggleRail={() => setRailOpen((o) => !o)}
       />
+
+      {/* flash message -- pinned just under the day toolbar (the time
+          interval controls), not the bottom of the screen, so it's actually
+          seen instead of easy to miss below the fold. Zero-height wrapper
+          keeps it from shifting the grid down when nothing's showing */}
+      <div className="relative z-[70] h-0">
+        {flash && (
+          <div className="absolute left-1/2 top-3 -translate-x-1/2 rounded-full border border-border bg-popover px-4 py-2 text-sm shadow-2xl">
+            {flash}
+          </div>
+        )}
+      </div>
 
       {/* legend + date picker popovers */}
       {legendAnchor && (
@@ -3556,13 +3576,6 @@ export function AppointmentBook() {
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* flash message */}
-      {flash && (
-        <div className="absolute bottom-14 left-1/2 z-[70] -translate-x-1/2 rounded-full border border-border bg-popover px-4 py-2 text-sm shadow-2xl">
-          {flash}
         </div>
       )}
 
@@ -4419,6 +4432,7 @@ export function AppointmentBook() {
       {/* manage register, the cash drawer's open/close and its shift history */}
       <RegisterPage
         open={registerOpen}
+        autoFocusSearch={registerFocusSearch}
         registers={registers}
         defaultRegisterId={registerDaySelect?.dateKey === todayKey ? registerDaySelect.registerId : null}
         sessions={registerSessions}

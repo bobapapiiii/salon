@@ -7,7 +7,7 @@
 //
 // Deliberately not here: mid-day counts and tips payout — cash leaves the
 // drawer only through the close count in this build.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle, Banknote, Check, ChevronDown, ChevronRight, CreditCard, Lock, LockOpen, Receipt, Scale, Search, X,
 } from 'lucide-react'
@@ -255,6 +255,10 @@ function Row({ label, value, sub, strong, tone }: {
 
 interface Props {
   open: boolean
+  /** opened from the nav rail's Search shortcut rather than Manage Register
+   *  itself -- jump straight into the find-a-transaction box instead of
+   *  landing on the drawer summary */
+  autoFocusSearch?: boolean
   /** every configured register, active or not (see RegisterConfig in Settings) */
   registers: RegisterConfig[]
   /** the register picked at today's login, preselects the panel below */
@@ -279,7 +283,7 @@ interface Props {
 }
 
 export function RegisterPage({
-  open, registers, defaultRegisterId, sessions, payments, userName, todayKey, openAppts, balanceDuePayments,
+  open, autoFocusSearch, registers, defaultRegisterId, sessions, payments, userName, todayKey, openAppts, balanceDuePayments,
   onResolveAppt, onResolvePayment, onOpenRegister, onCloseRegister, onClose,
 }: Props) {
   // active registers show in the picker; an inactive one still shows if it
@@ -324,6 +328,12 @@ export function RegisterPage({
   // today's. Matches client name, any guest riding on the ticket, or the
   // printed invoice number
   const [txQuery, setTxQuery] = useState('')
+  const txInputRef = useRef<HTMLInputElement>(null)
+  // arriving via the nav rail's Search shortcut -- jump straight into the
+  // box instead of making them scroll to find it
+  useEffect(() => {
+    if (open && autoFocusSearch) txInputRef.current?.focus()
+  }, [open, autoFocusSearch])
   const txAllMatches = useMemo(() => {
     const q = txQuery.trim().toLowerCase()
     if (!q) return []
@@ -461,6 +471,7 @@ export function RegisterPage({
               <Search className="h-4 w-4 text-clay" /> Find a transaction
             </h2>
             <input
+              ref={txInputRef}
               value={txQuery}
               onChange={(e) => setTxQuery(e.target.value)}
               placeholder="Client, guest, or invoice number, any date"
