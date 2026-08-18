@@ -1899,13 +1899,17 @@ export function AppointmentBook() {
 
   // a real block, unlike the "no register open at all" nudge below -- a
   // drawer left open from a day that's already passed has to be reconciled
-  // before anything new rings in, so this stops the action outright and
-  // sends the salon straight to Manage Register to close it out. Returns
-  // true when it blocked, so callers can bail out of their own handler.
-  // Skipped entirely for a $0 ticket -- there's no payment to take, so
-  // there's nothing for the register to gate
-  const blockIfStaleRegister = (a?: Appointment, source?: Appointment[]) => {
+  // before anything NEW rings in today, so this stops the action outright
+  // and sends the salon straight to Manage Register to close it out.
+  // Returns true when it blocked, so callers can bail out of their own
+  // handler. Skipped for: a $0 ticket, since there's no payment to take; and
+  // any ticket whose own day isn't today, since checking out or collecting
+  // on a past day's business is cleanup that has to happen regardless of
+  // today's register state -- blocking it would leave no way to ever clear
+  // that stale day out at all
+  const blockIfStaleRegister = (a?: Appointment, ticketDateKey?: string, source?: Appointment[]) => {
     if (!staleRegisterOpen) return false
+    if (ticketDateKey && ticketDateKey !== todayKey) return false
     if (a && estimateTicketTotal(a, source) <= 0.004) return false
     showFlash('⚠ A previous day\'s register is still open — close it before taking payment')
     setRegisterOpen(true)
@@ -2308,7 +2312,7 @@ export function AppointmentBook() {
           (x.clientName === a.clientName || (a.guestOf && x.guestOf === a.guestOf) || (a.parallelGroup && x.parallelGroup === a.parallelGroup)) &&
           payable(x))
         if (!payableNow) { showFlash('Already checked out, right-click and choose View invoice / Print'); break }
-        if (blockIfStaleRegister(a)) break
+        if (blockIfStaleRegister(a, dateKey)) break
         openCheckout(a)
         break
       }
@@ -2572,7 +2576,7 @@ export function AppointmentBook() {
         // pass detailBoard too -- it's resolved against this appointment's own
         // day already, whereas `appts` (the estimate's default) may not have
         // caught up yet if the day rail had browsed the calendar elsewhere
-        if (blockIfStaleRegister(a, detailBoard)) break
+        if (blockIfStaleRegister(a, originKey, detailBoard)) break
         // pass detailParty (the whole party, not just this client) explicitly —
         // it's already resolved against the appointment's own day, whereas
         // `appts` may not have caught up to the goDay() above yet within this
@@ -2600,7 +2604,7 @@ export function AppointmentBook() {
         // blocked-close list only ever surfaces today's tickets, so blocking
         // this too would leave no way to reach it at all
         const stillOwed = balanceDue(found.payment.total, paymentSources(found.payment), found.payment.refunds) > 0.004
-        if (stillOwed && originKey === todayKey && blockIfStaleRegister()) break
+        if (stillOwed && blockIfStaleRegister(undefined, originKey)) break
         openReopen(found)
         break
       }
