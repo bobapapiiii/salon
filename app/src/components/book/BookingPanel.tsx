@@ -5,10 +5,10 @@ import {
 import { useSettingsStore } from '@/lib/settings-store'
 import type { Appointment, ClientRecord, ServiceAddon, TimeBlock } from '@/lib/booking-types'
 import { DAY_SLOTS, SLOT_MIN, fmtTime, overlaps } from '@/lib/booking-types'
-import { SERVICES } from '@/lib/mock-data'
 import { boardTechs, getStaff, useStaffStore } from '@/lib/staff-store'
 import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
 import { DatePickerPopover } from './LegendPopover'
+import type { RealVisit } from './ClientProfile'
 
 const DAY_MIN = DAY_SLOTS * SLOT_MIN
 
@@ -73,6 +73,9 @@ interface Props {
   blocks: TimeBlock[]
   clients: ClientRecord[]
   onAddClient: (c: ClientRecord) => void
+  /** this client's real completed checkouts, newest first -- powers the
+   *  guest's History tab, same data source as the client profile */
+  buildRealVisits: (clientName: string) => RealVisit[]
   prefillTime: number | null
   prefillTechId?: string | null
   /** the day currently open on the calendar behind this panel */
@@ -195,7 +198,7 @@ export function allSlotsFor(
 const DUR_OPTS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
 
 export function BookingPanel({
-  appts, blocks, clients, onAddClient, prefillTime, prefillTechId, dateKey, onPreviewDay,
+  appts, blocks, clients, onAddClient, buildRealVisits, prefillTime, prefillTechId, dateKey, onPreviewDay,
   findMakeRoomPlan, onRequestMakeRoom, onBook, onViewProfile, onClose,
 }: Props) {
   // live catalog -- so a service just added or removed in Settings shows
@@ -473,12 +476,6 @@ export function BookingPanel({
     })
     onBook(out, isParty || out.length > 1)
   }
-
-  const fakeHistory = (c: ClientRecord) =>
-    Array.from({ length: Math.min(3, c.visits) }, (_, i) => {
-      const svc = SERVICES[(Number(c.id.replace(/\D/g, '')) + i * 3) % SERVICES.length]
-      return { svc, when: `${['Apr', 'May', 'Jun'][i]} ${4 + i * 7}` }
-    })
 
   // shared column template so the time editor (row A) and technician picker (row B)
   // line up cleanly when stacked — a fixed-width left gutter (to match the Clock icon
@@ -880,16 +877,19 @@ export function BookingPanel({
                   )
                 }
                 const acc = clients.find((c) => c.id === pg?.clientId)
+                const visits = acc
+                  ? [...buildRealVisits(acc.name)].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5)
+                  : []
                 return (
                   <div className="space-y-2">
-                    {acc && fakeHistory(acc).map((h, i) => (
-                      <div key={i} className="rounded-xl border border-line p-3 text-sm">
-                        <div className="text-[11px] text-ink-faint">{h.when}</div>
-                        <div className="font-semibold text-ink">{h.svc.name}</div>
-                        <div className="text-[11px] text-ink-faint">Gloss Nail Bar · ${h.svc.price}</div>
+                    {visits.map((h) => (
+                      <div key={h.paymentId} className="rounded-xl border border-line p-3 text-sm">
+                        <div className="text-[11px] text-ink-faint">{h.date}</div>
+                        <div className="font-semibold text-ink">{h.services.join(' + ')}</div>
+                        <div className="text-[11px] text-ink-faint">Gloss Nail Bar · ${h.price.toFixed(2)}</div>
                       </div>
                     ))}
-                    {(acc?.visits ?? 0) === 0 && <div className="py-6 text-center text-sm text-ink-faint">New client, no past visits</div>}
+                    {visits.length === 0 && <div className="py-6 text-center text-sm text-ink-faint">New client, no past visits</div>}
                   </div>
                 )
               })()}

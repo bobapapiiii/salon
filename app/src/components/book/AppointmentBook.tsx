@@ -4302,6 +4302,7 @@ export function AppointmentBook() {
           blocks={dayBlocks}
           clients={clients}
           onAddClient={(c) => setClients((x) => [...x, c])}
+          buildRealVisits={buildRealVisits}
           prefillTime={bookingPrefill?.startMin ?? null}
           prefillTechId={bookingPrefill?.techId ?? null}
           dateKey={dateKey}

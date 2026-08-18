@@ -4,7 +4,6 @@ import {
 } from 'lucide-react'
 import type { Appointment, ClientRecord, ClientTechPreference } from '@/lib/booking-types'
 import { fmtTime } from '@/lib/booking-types'
-import { SERVICES } from '@/lib/mock-data'
 import { getStaff, uid, useStaffStore } from '@/lib/staff-store'
 import { useSettingsStore } from '@/lib/settings-store'
 import { activeServices, svcById, useServicesStore } from '@/lib/services-store'
@@ -46,21 +45,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'loyalty', label: 'Loyalty Points' },
 ]
 
-// deterministic demo history/loyalty from client id
-function hash(s: string) {
-  let h = 2166136261
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) }
-  return h >>> 0
-}
-function rng(seed: number) {
-  return () => {
-    seed |= 0; seed = (seed + 0x6d2b79f5) | 0
-    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-
 /** one service on a visit, with its own tech, price, and category color --
  *  lets the Last 5 visits popup render a per-service breakdown like checkout */
 export interface VisitLine {
@@ -101,37 +85,6 @@ export interface RealVisit {
   techName: string
 }
 
-function mockHistory(c: ClientRecord): PastVisit[] {
-  const r = rng(hash(c.id))
-  const n = Math.min(10, Math.max(2, c.visits))
-  const allTechs = getStaff().techs
-  const out: PastVisit[] = []
-  for (let i = 0; i < n; i++) {
-    const svcCount = r() > 0.6 ? 2 : 1
-    const svcs = Array.from({ length: svcCount }, () => SERVICES[Math.floor(r() * SERVICES.length)])
-    const roll = r()
-    const lines: VisitLine[] = svcs.map((s) => ({
-      serviceId: s.id,
-      name: s.name,
-      price: s.price,
-      techName: allTechs[Math.floor(r() * allTechs.length)]?.name ?? 'Unknown',
-      color: catById[s.categoryId]?.line,
-    }))
-    out.push({
-      invoice: `INV${50000 + Math.floor(r() * 4000)}`,
-      date: `${1 + Math.floor(r() * 6)}/${1 + Math.floor(r() * 28)}/2026`,
-      services: svcs.map((s) => s.name),
-      serviceIds: svcs.map((s) => s.id),
-      lines,
-      status: roll > 0.92 ? 'NO SHOW' : roll > 0.85 ? 'OPEN' : 'CLOSED',
-      price: lines.reduce((s, x) => s + x.price, 0),
-      techName: lines[0]?.techName ?? 'Unknown',
-    })
-  }
-  return out
-}
-
-
 const STATUS_STYLE: Record<string, string> = {
   CLOSED: 'bg-slate-500/15 text-slate-500',
   OPEN: 'bg-emerald-500/15 text-emerald-600',
@@ -163,8 +116,8 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
       invoice: v.invoice, date: v.date, services: v.services, serviceIds: v.serviceIds, lines: v.lines,
       status: 'CLOSED', price: v.price, techName: v.techName, paymentId: v.paymentId,
     }))
-    return [...real, ...mockHistory(client)]
-  }, [client, realVisits])
+    return real.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+  }, [realVisits])
   const settings = useSettingsStore()
   const balance = pointsBalance
   const upcoming = appts.filter((a) => a.clientName === client.name)
@@ -321,6 +274,9 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
                       <span className="w-24 truncate text-right text-muted-foreground">{h.techName}</span>
                     </div>
                   ))}
+                  {upcoming.length === 0 && history.length === 0 && (
+                    <div className="py-8 text-center text-sm text-muted-foreground">No visits yet</div>
+                  )}
                 </div>
               </div>
             </div>
@@ -531,6 +487,11 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
                         <td className="px-4 py-2.5 text-right text-muted-foreground">{h.techName}</td>
                       </tr>
                     ))}
+                    {history.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">No past visits yet</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -699,9 +660,8 @@ export function LastVisitsDialog({ client, realVisits, onClose }: {
       invoice: v.invoice, date: v.date, services: v.services, serviceIds: v.serviceIds, lines: v.lines,
       status: 'CLOSED', price: v.price, techName: v.techName, paymentId: v.paymentId,
     }))
-    const all = [...real, ...mockHistory(client)]
-    return all.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5)
-  }, [client, realVisits])
+    return real.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5)
+  }, [realVisits])
 
   return (
     <div className="fixed inset-0 z-[98] flex items-center justify-center bg-black/45 p-4" onClick={onClose}>
