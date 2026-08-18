@@ -2300,9 +2300,10 @@ export function AppointmentBook() {
       case 'start': setStatus(a, 'in_service', '▶ Service started'); break
       case 'complete': setStatus(a, 'completed', '✓ Completed, ready for checkout'); break
       case 'checkout': {
-        // only today's board can check out — a past or future day's appointments
-        // aren't real cash movement yet (or already happened elsewhere)
-        if (dateKey !== todayKey) { showFlash('Checkout is only available for today\'s appointments'); break }
+        // today or any past day can check out -- the service already
+        // happened, it just hasn't been rung up yet. Only a future day is
+        // blocked, since nothing's actually been rendered yet to charge for
+        if (dateKey > todayKey) { showFlash('Checkout isn\'t available until this appointment\'s day arrives'); break }
         const payableNow = appts.some((x) =>
           (x.clientName === a.clientName || (a.guestOf && x.guestOf === a.guestOf) || (a.parallelGroup && x.parallelGroup === a.parallelGroup)) &&
           payable(x))
@@ -2564,10 +2565,10 @@ export function AppointmentBook() {
     if (originKey !== dateKey) goDay(new Date(originKey + 'T12:00:00'))
     switch (action) {
       case 'checkout':
-        // only today's own appointments can check out (the AppointmentDetail
-        // footer already disables the button for any other day, this is the
+        // today or any past day can check out (the AppointmentDetail footer
+        // already disables the button for a future day, this is the
         // backstop in case the action still fires)
-        if (originKey !== todayKey) { showFlash('Checkout is only available for today\'s appointments'); break }
+        if (originKey > todayKey) { showFlash('Checkout isn\'t available until this appointment\'s day arrives'); break }
         // pass detailBoard too -- it's resolved against this appointment's own
         // day already, whereas `appts` (the estimate's default) may not have
         // caught up yet if the day rail had browsed the calendar elsewhere

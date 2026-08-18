@@ -125,11 +125,12 @@ export function AppointmentDetail({
   const [rebooking, setRebooking] = useState(false)
   const [rebookSlot, setRebookSlot] = useState<{ dateKey: string; startMin: number } | null>(null)
 
-  // checkout only ever runs against today -- this panel can be opened for
-  // any day's appointment. Reopening a ticket has no such restriction: it
-  // doesn't redo checkout, it just opens the still-recorded payment for
-  // correction or refund
-  const isOriginToday = originDateKey === dayKeyOf(new Date())
+  // checkout runs against today or any past day -- the service already
+  // happened, it just hasn't been rung up yet. Only a future day is blocked,
+  // since that appointment hasn't happened at all. Reopening a ticket has no
+  // such restriction either way: it doesn't redo checkout, it just opens the
+  // still-recorded payment for correction or refund
+  const canCheckoutDay = originDateKey <= dayKeyOf(new Date())
   const client = clients.find((c) => c.name === appt.clientName)
   const setSvc = (id: string, patch: Partial<Appointment>) =>
     setDraft((d) => d.map((x) => (x.id === id ? { ...x, ...patch } : x)))
@@ -526,9 +527,9 @@ export function AppointmentDetail({
               <div className="grid grid-cols-2 gap-1.5">
                 {canCheckout && (
                   <button
-                    onClick={() => isOriginToday && onAction('checkout')}
-                    disabled={!isOriginToday}
-                    title={isOriginToday ? undefined : 'Checkout is only available for today\'s appointments'}
+                    onClick={() => canCheckoutDay && onAction('checkout')}
+                    disabled={!canCheckoutDay}
+                    title={canCheckoutDay ? undefined : 'Checkout isn\'t available until this appointment\'s day arrives'}
                     className={`${actionBtn} ${!hasInvoice ? 'col-span-2' : ''} disabled:cursor-not-allowed disabled:opacity-40`}
                   >
                     <CreditCard className="h-3.5 w-3.5" /> Check out {appt.clientName.split(' ')[0]}
