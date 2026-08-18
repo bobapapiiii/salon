@@ -1899,14 +1899,18 @@ export function AppointmentBook() {
 
   // a real block, unlike the "no register open at all" nudge below -- a
   // drawer left open from a day that's already passed has to be reconciled
-  // before anything NEW rings in today, so this stops the action outright
-  // and sends the salon straight to Manage Register to close it out.
-  // Returns true when it blocked, so callers can bail out of their own
-  // handler. Skipped for: a $0 ticket, since there's no payment to take; and
-  // any ticket whose own day isn't today, since checking out or collecting
-  // on a past day's business is cleanup that has to happen regardless of
-  // today's register state -- blocking it would leave no way to ever clear
-  // that stale day out at all
+  // before anything NEW rings in, so this stops the action outright and
+  // sends the salon straight to Manage Register to close it out. Returns
+  // true when it blocked, so callers can bail out of their own handler.
+  // Deliberately narrow: only POS (a walk-up sale with no appointment behind
+  // it, so it's the one case with no other record of what happened) uses
+  // this today. Checking out or reopening an actual appointment never goes
+  // through here at all -- every one of those already has its own audit
+  // trail on the book regardless of the register, and gating them here kept
+  // creating dead ends (today's own ticket needed checking out to close the
+  // stale register, but checking it out was itself blocked by that same
+  // stale register). ticketDateKey/source are kept for a caller that wants
+  // the same $0-ticket / past-day exemptions this already supports
   const blockIfStaleRegister = (a?: Appointment, ticketDateKey?: string, source?: Appointment[]) => {
     if (!staleRegisterOpen) return false
     if (ticketDateKey && ticketDateKey !== todayKey) return false
@@ -2312,7 +2316,6 @@ export function AppointmentBook() {
           (x.clientName === a.clientName || (a.guestOf && x.guestOf === a.guestOf) || (a.parallelGroup && x.parallelGroup === a.parallelGroup)) &&
           payable(x))
         if (!payableNow) { showFlash('Already checked out, right-click and choose View invoice / Print'); break }
-        if (blockIfStaleRegister(a, dateKey)) break
         openCheckout(a)
         break
       }
@@ -2573,10 +2576,6 @@ export function AppointmentBook() {
         // already disables the button for a future day, this is the
         // backstop in case the action still fires)
         if (originKey > todayKey) { showFlash('Checkout isn\'t available until this appointment\'s day arrives'); break }
-        // pass detailBoard too -- it's resolved against this appointment's own
-        // day already, whereas `appts` (the estimate's default) may not have
-        // caught up yet if the day rail had browsed the calendar elsewhere
-        if (blockIfStaleRegister(a, originKey, detailBoard)) break
         // pass detailParty (the whole party, not just this client) explicitly —
         // it's already resolved against the appointment's own day, whereas
         // `appts` may not have caught up to the goDay() above yet within this
@@ -2595,16 +2594,6 @@ export function AppointmentBook() {
         // here touches the payment until a refund is actually submitted
         const found = findDetailPayment(originKey)
         if (!found) { showFlash('No payment recorded for this appointment'); break }
-        // only block collecting a balance still owed -- correcting or
-        // refunding an already-settled ticket doesn't take new payment, so
-        // it stays allowed even with a stale register open. And only for
-        // TODAY's own tickets -- a balance left over from the stale day
-        // itself (or any other past day) is exactly the cleanup that has to
-        // happen before that register can close, and Manage Register's own
-        // blocked-close list only ever surfaces today's tickets, so blocking
-        // this too would leave no way to reach it at all
-        const stillOwed = balanceDue(found.payment.total, paymentSources(found.payment), found.payment.refunds) > 0.004
-        if (stillOwed && blockIfStaleRegister(undefined, originKey)) break
         openReopen(found)
         break
       }
