@@ -380,13 +380,19 @@ export function AppointmentDetail({
             <button onClick={() => onAction('log')} title="Show appointment log" className={actionBtn}>
               <ScrollText className="h-3.5 w-3.5" /> View log
             </button>
-            <button
-              onClick={() => onAction('cancel')}
-              title="Cancel this appointment"
-              className="flex items-center justify-center gap-1.5 rounded-[8px] border border-rust/40 py-2 text-[12px] font-semibold text-rust transition-colors hover:bg-rust-tint"
-            >
-              <CalendarX className="h-3.5 w-3.5" /> Cancel appointment
-            </button>
+            {/* once a payment already covers this booking there's nothing left
+                to cancel -- the ledger, not appt.status, is what actually
+                says "paid", so this keys off hasInvoice the same way the
+                checkout/reopen footer buttons below do */}
+            {!hasInvoice && (
+              <button
+                onClick={() => onAction('cancel')}
+                title="Cancel this appointment"
+                className="flex items-center justify-center gap-1.5 rounded-[8px] border border-rust/40 py-2 text-[12px] font-semibold text-rust transition-colors hover:bg-rust-tint"
+              >
+                <CalendarX className="h-3.5 w-3.5" /> Cancel appointment
+              </button>
+            )}
           </div>
         </div>
 
