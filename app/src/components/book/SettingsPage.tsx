@@ -1349,6 +1349,20 @@ function ServicesSection() {
           <Plus className="h-3.5 w-3.5" /> Add category
         </button>
       </div>
+      {/* column labels for every service row below -- lined up with that row's
+          own widths/gaps (card p-4 + row px-2.5 = 26px left/right inset) so
+          each label sits directly above its field */}
+      <div className="mb-1.5 flex items-center gap-2 pl-[26px] pr-[26px] text-[10px] font-bold uppercase tracking-wide text-slate-400">
+        <span className="h-3.5 w-3.5 shrink-0" />
+        <span className="min-w-0 flex-[2]">Service name</span>
+        <span className="min-w-0 w-20" title="Short label for tight calendar cells">Short label</span>
+        <span className="w-[132px] shrink-0">Category</span>
+        <span className="w-[86px] shrink-0">Duration</span>
+        <span className="w-16 shrink-0 text-right">Price</span>
+        <span className="w-16 shrink-0 text-center">Add-ons</span>
+        <span className="w-9 shrink-0 text-center">Active</span>
+        <span className="h-3.5 w-3.5 shrink-0" />
+      </div>
       <div className="space-y-4">
         {topCats.map((cat) => {
           const svcs = services.filter((s) => s.categoryId === cat.id);
