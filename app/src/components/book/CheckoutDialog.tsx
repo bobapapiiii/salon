@@ -1060,13 +1060,15 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
               ))}
             </div>
           </div>
+          {/* print and done carry equal weight -- this is the last real
+              choice on the screen (keep a paper copy or not), so neither
+              should read as the throwaway option next to the other */}
           <div className="mt-5 flex w-full gap-2">
             <button
               onClick={() => window.print()}
-              title="Print receipt"
-              className="flex h-[46px] w-[46px] shrink-0 items-center justify-center rounded-xl border border-line text-ink-soft transition-colors hover:bg-cream hover:text-ink"
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-line py-2.5 text-[14px] font-bold text-ink-soft transition-colors hover:bg-cream hover:text-ink"
             >
-              <Printer className="h-4 w-4" />
+              <Printer className="h-4 w-4" /> Print receipt
             </button>
             <button
               onClick={() => onComplete({ method: methodLabel, sources: finalSources, balanceDue, tip, subtotal, total, points, discount, redeemed: redemption ? { name: redemption.name, points: redemption.pointsCost, value: discount } : undefined, notes: D.note.trim() || undefined, customFields: Object.fromEntries(Object.entries(D.custom ?? {}).filter(([, v]) => v.trim())), tipByTech: tip > 0 ? tipByTechResult : undefined })}
