@@ -4,8 +4,12 @@
 // matches. Every technician and service picker in the app uses this so
 // choosing from a long roster or catalog is always searchable and (within
 // each group) alphabetized, instead of scrolling a long native <select>.
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, Search } from 'lucide-react'
+
+/** the dropdown panel's fixed width (matches the w-60 class below), used to
+ *  decide whether it needs to open right-aligned instead of left-aligned */
+const PANEL_W = 240
 
 export interface SearchSelectOption {
   value: string
@@ -32,7 +36,22 @@ export function SearchSelect({
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
+  // right-align the panel instead of left-align when the trigger sits close
+  // enough to the right edge of the screen that a left-anchored panel would
+  // overflow the viewport -- otherwise the browser scrolls whatever
+  // ancestor is scrollable to bring the autofocused search box into view,
+  // which visibly shoves the calendar/table sideways behind a narrow panel
+  const [alignRight, setAlignRight] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
   const selected = options.find((o) => o.value === value)
+
+  const toggleOpen = () => {
+    if (!open) {
+      const rect = wrapRef.current?.getBoundingClientRect()
+      setAlignRight(!!rect && rect.left + PANEL_W > window.innerWidth - 8)
+    }
+    setOpen((o) => !o)
+  }
 
   const groups = useMemo(() => {
     const text = q.trim().toLowerCase()
@@ -50,18 +69,18 @@ export function SearchSelect({
   }, [options, q])
 
   return (
-    <div className={`relative min-w-0 ${className}`}>
+    <div ref={wrapRef} className={`relative min-w-0 ${className}`}>
       <button
         type="button"
         disabled={disabled}
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggleOpen}
         className="flex w-full items-center justify-between gap-1.5 rounded-[8px] border border-input bg-background px-2 py-1.5 text-left text-xs outline-none transition-colors focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
       >
         <span className={`truncate ${selected ? '' : 'text-muted-foreground'}`}>{selected?.label ?? placeholder}</span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       </button>
       {open && !disabled && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-60 overflow-hidden rounded-lg border border-border bg-popover shadow-2xl">
+        <div className={`absolute top-full z-30 mt-1 w-60 overflow-hidden rounded-lg border border-border bg-popover shadow-2xl ${alignRight ? 'right-0' : 'left-0'}`}>
           <div className="border-b border-border p-1.5">
             <div className="relative">
               <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
