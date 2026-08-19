@@ -304,6 +304,31 @@ export function RegisterPage({
       : []),
     [sessions, selected],
   )
+  // closed shifts grouped by calendar month -- after a year of daily closes
+  // this is a dozen collapsible headers instead of hundreds of flat rows.
+  // `history` is already newest-first, so the first time a month key shows
+  // up fixes that group's position; no separate sort needed
+  const historyByMonth = useMemo(() => {
+    const byKey = new Map<string, RegisterSession[]>()
+    for (const s of history) {
+      const key = s.dateKey.slice(0, 7)
+      if (!byKey.has(key)) byKey.set(key, [])
+      byKey.get(key)!.push(s)
+    }
+    const groups: { key: string; label: string; shifts: RegisterSession[] }[] = []
+    const seen = new Set<string>()
+    for (const s of history) {
+      const key = s.dateKey.slice(0, 7)
+      if (seen.has(key)) continue
+      seen.add(key)
+      groups.push({
+        key,
+        label: new Date(key + '-01T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+        shifts: byKey.get(key)!,
+      })
+    }
+    return groups
+  }, [history])
 
   // open form
   const [openCounts, setOpenCounts] = useState<Record<string, number>>({})
@@ -318,6 +343,14 @@ export function RegisterPage({
   const [closeByDenom, setCloseByDenom] = useState(true)
   const [closeNote, setCloseNote] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
+  // which month groups in Closed shifts are expanded -- the current
+  // calendar month starts open, everything further back starts collapsed
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(() => new Set([todayKey.slice(0, 7)]))
+  const toggleMonth = (key: string) => setExpandedMonths((s) => {
+    const n = new Set(s)
+    if (n.has(key)) n.delete(key); else n.add(key)
+    return n
+  })
   // the closure report: `true` previews the shift about to close, using the
   // live close-form numbers below; a RegisterSession instead reprints a
   // past shift straight from its own stored record (see the history table)
@@ -703,51 +736,81 @@ export function RegisterPage({
                   No closed shifts yet.
                 </p>
               ) : (
-                <table className="w-full border-t border-line text-[12.5px]">
-                  <thead>
-                    <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-ink-faint">
-                      <th className="px-4 py-2 font-bold">Day</th>
-                      <th className="px-4 py-2 font-bold">Opened</th>
-                      <th className="px-4 py-2 font-bold">Closed</th>
-                      <th className="px-4 py-2 text-right font-bold">Float</th>
-                      <th className="px-4 py-2 text-right font-bold">Expected</th>
-                      <th className="px-4 py-2 text-right font-bold">Counted</th>
-                      <th className="px-4 py-2 text-right font-bold">Over / short</th>
-                      <th className="px-4 py-2 text-right font-bold"><span className="sr-only">Print</span></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {history.map((s) => {
-                      const v = s.variance ?? 0
-                      return (
-                        <tr key={s.id} className="border-b border-line/60 last:border-0 align-top">
-                          <td className="px-4 py-2.5 font-semibold text-ink">
-                            {dayLabelOf(s.dateKey)}
-                            {s.closingNote && <span className="mt-0.5 block text-[11px] font-normal italic text-ink-faint">{s.closingNote}</span>}
-                          </td>
-                          <td className="px-4 py-2.5 text-ink-soft">{stamp(s.openedAt)}<span className="block text-[11px] text-ink-faint">{s.openedBy}</span></td>
-                          <td className="px-4 py-2.5 text-ink-soft">{s.closedAt ? stamp(s.closedAt) : '—'}<span className="block text-[11px] text-ink-faint">{s.closedBy}</span></td>
-                          <td className="tnum px-4 py-2.5 text-right">{money(s.openingFloat)}</td>
-                          <td className="tnum px-4 py-2.5 text-right">{money(s.expectedCash ?? 0)}</td>
-                          <td className="tnum px-4 py-2.5 text-right">{money(s.countedCash ?? 0)}</td>
-                          <td className={`tnum px-4 py-2.5 text-right font-bold ${v === 0 ? 'text-olive' : v > 0 ? 'text-amberw' : 'text-rust'}`}>
-                            {v === 0 ? 'Balanced' : v > 0 ? `+ ${money(v)}` : money(v)}
-                          </td>
-                          <td className="px-4 py-2.5 text-right">
-                            <button
-                              type="button"
-                              title="Print this shift's closure report"
-                              onClick={() => setReportSession(s)}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] text-ink-faint transition-colors hover:bg-cream hover:text-ink"
-                            >
-                              <Printer className="h-3.5 w-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                <div className="divide-y divide-line/60 border-t border-line">
+                  {historyByMonth.map((group) => {
+                    const monthOpen = expandedMonths.has(group.key)
+                    const flagged = group.shifts.filter((s) => Math.abs(s.variance ?? 0) > 0.004).length
+                    return (
+                      <div key={group.key}>
+                        <button
+                          type="button"
+                          onClick={() => toggleMonth(group.key)}
+                          className="flex w-full items-center gap-2 px-4 py-2.5 text-left transition-colors hover:bg-cream/60"
+                        >
+                          <span className="flex-1 text-[12.5px] font-bold text-ink">
+                            {group.label}
+                            <span className="ml-1.5 font-normal text-ink-faint">
+                              ({group.shifts.length} shift{group.shifts.length === 1 ? '' : 's'})
+                            </span>
+                          </span>
+                          {flagged > 0 && (
+                            <span className="flex shrink-0 items-center gap-1 rounded-full bg-rust-tint px-2 py-0.5 text-[10.5px] font-bold text-rust">
+                              <AlertTriangle className="h-3 w-3" /> {flagged} off
+                            </span>
+                          )}
+                          <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-ink-faint transition-transform ${monthOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                        {monthOpen && (
+                          <table className="w-full border-t border-line/60 text-[12.5px]">
+                            <thead>
+                              <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-ink-faint">
+                                <th className="px-4 py-2 font-bold">Day</th>
+                                <th className="px-4 py-2 font-bold">Opened</th>
+                                <th className="px-4 py-2 font-bold">Closed</th>
+                                <th className="px-4 py-2 text-right font-bold">Float</th>
+                                <th className="px-4 py-2 text-right font-bold">Expected</th>
+                                <th className="px-4 py-2 text-right font-bold">Counted</th>
+                                <th className="px-4 py-2 text-right font-bold">Over / short</th>
+                                <th className="px-4 py-2 text-right font-bold"><span className="sr-only">Print</span></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.shifts.map((s) => {
+                                const v = s.variance ?? 0
+                                return (
+                                  <tr key={s.id} className="border-b border-line/60 last:border-0 align-top">
+                                    <td className="px-4 py-2.5 font-semibold text-ink">
+                                      {dayLabelOf(s.dateKey)}
+                                      {s.closingNote && <span className="mt-0.5 block text-[11px] font-normal italic text-ink-faint">{s.closingNote}</span>}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-ink-soft">{stamp(s.openedAt)}<span className="block text-[11px] text-ink-faint">{s.openedBy}</span></td>
+                                    <td className="px-4 py-2.5 text-ink-soft">{s.closedAt ? stamp(s.closedAt) : '—'}<span className="block text-[11px] text-ink-faint">{s.closedBy}</span></td>
+                                    <td className="tnum px-4 py-2.5 text-right">{money(s.openingFloat)}</td>
+                                    <td className="tnum px-4 py-2.5 text-right">{money(s.expectedCash ?? 0)}</td>
+                                    <td className="tnum px-4 py-2.5 text-right">{money(s.countedCash ?? 0)}</td>
+                                    <td className={`tnum px-4 py-2.5 text-right font-bold ${v === 0 ? 'text-olive' : v > 0 ? 'text-amberw' : 'text-rust'}`}>
+                                      {v === 0 ? 'Balanced' : v > 0 ? `+ ${money(v)}` : money(v)}
+                                    </td>
+                                    <td className="px-4 py-2.5 text-right">
+                                      <button
+                                        type="button"
+                                        title="Print this shift's closure report"
+                                        onClick={() => setReportSession(s)}
+                                        className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] text-ink-faint transition-colors hover:bg-cream hover:text-ink"
+                                      >
+                                        <Printer className="h-3.5 w-3.5" />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
               )
             )}
           </div>
