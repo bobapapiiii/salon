@@ -34,7 +34,7 @@ export interface RefundablePayment {
   tipByTech?: { techId: string; amount: number }[]
 }
 
-export function ReopenCheckoutDialog({ payment, items, dateLabel, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, onRefund, onSync, onComplete, onClose }: {
+export function ReopenCheckoutDialog({ payment, items, dateLabel, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, onRefund, onSync, onComplete, onClose, accountNames, existingPrefs }: {
   payment: RefundablePayment
   items: Appointment[]
   dateLabel: string
@@ -55,6 +55,12 @@ export function ReopenCheckoutDialog({ payment, items, dateLabel, onPatchLine, o
   onSync: (p: PaymentResult) => void
   onComplete: (p: PaymentResult) => void
   onClose: () => void
+  /** everyone on this ticket who already has a ClientRecord -- see
+   *  PaymentFlow's own accountNames doc */
+  accountNames?: string[]
+  /** technician + category pairs already saved for someone on this ticket --
+   *  pre-checks a "save as preferred" box that already matches one */
+  existingPrefs?: { person: string; techId: string; categoryId: string }[]
 }) {
   // items added THIS session render with the "added" badge and the full-delete
   // remove icon, same as a fresh checkout -- frozen at open so it doesn't
@@ -76,6 +82,7 @@ export function ReopenCheckoutDialog({ payment, items, dateLabel, onPatchLine, o
       sub: `${a.durationMin}m${(a.addons ?? []).length > 0 ? ` · +${a.addons!.map((x) => x.name).join(', +')}` : ''}`,
       color: svc ? catById[svc.categoryId]?.line : undefined,
       price: (a.priceOverride ?? svc?.price ?? 0) + (a.addons ?? []).reduce((x, ad) => x + ad.price, 0),
+      person: a.clientName,
       serviceId: a.serviceId,
       startMin: a.startMin,
       techId: a.techId,
@@ -98,6 +105,8 @@ export function ReopenCheckoutDialog({ payment, items, dateLabel, onPatchLine, o
       onAddExtra={onAddExtra}
       onRemoveExtra={onRemoveExtra}
       existing={{ payment, tip: payment.tip, refunds: payment.refunds, onRefund, onSync }}
+      accountNames={accountNames}
+      existingPrefs={existingPrefs}
     />
   )
 }

@@ -1960,6 +1960,20 @@ export function AppointmentBook() {
     ? checkoutDraft.pointsRecipient
     : checkoutPointsRecipients[0] ?? null
 
+  // technician + category pairs already saved as a standing preference for
+  // anyone on this ticket -- pre-checks a "save as preferred" box that
+  // already matches one, instead of showing blank as if never saved
+  const checkoutExistingPrefs = useMemo(() => {
+    const out: { person: string; techId: string; categoryId: string }[] = []
+    for (const name of checkoutPeople) {
+      const c = clients.find((x) => x.name === name)
+      for (const pr of c?.preferredTechs ?? []) {
+        for (const categoryId of pr.categoryIds) out.push({ person: name, techId: pr.techId, categoryId })
+      }
+    }
+    return out
+  }, [checkoutPeople, clients])
+
   const toggleCheckoutPerson = (name: string) =>
     setCheckoutSelected((s) => {
       // never empty the ticket — one person must stay on it
@@ -2094,6 +2108,50 @@ export function AppointmentBook() {
     setCheckoutGuestOf(null)
   }
 
+  // merge (or create) preferred-tech entries from a ticket's checked "save
+  // as preferred tech" boxes -- shared by a fresh checkout (completeCheckout)
+  // and a reopened ticket's correction (completeReopen), both of which
+  // resolve to the same PaymentResult shape. `party` scopes it to names
+  // actually on that ticket, mirroring how the checkbox itself only ever
+  // appears on that ticket's own lines
+  const applyPreferredTechPrefs = (prefs: { person: string; techId: string; categoryId: string }[] | undefined, party: Set<string>) => {
+    if (!prefs || prefs.length === 0) return
+    setClients((cs) => {
+      const prefsByPerson = new Map<string, { techId: string; categoryId: string }[]>()
+      for (const pr of prefs) {
+        if (!party.has(pr.person)) continue
+        prefsByPerson.set(pr.person, [...(prefsByPerson.get(pr.person) ?? []), pr])
+      }
+      if (prefsByPerson.size === 0) return cs
+      const mergePrefs = (existing: ClientRecord['preferredTechs'], adds: { techId: string; categoryId: string }[]) => {
+        const next = existing ? [...existing] : []
+        for (const pr of adds) {
+          const idx = next.findIndex((x) => x.techId === pr.techId)
+          if (idx >= 0) {
+            if (!next[idx].categoryIds.includes(pr.categoryId)) {
+              next[idx] = { ...next[idx], categoryIds: [...next[idx].categoryIds, pr.categoryId] }
+            }
+          } else {
+            next.push({ id: uid('pref'), techId: pr.techId, categoryIds: [pr.categoryId] })
+          }
+        }
+        return next
+      }
+      const updated = cs.map((c) => {
+        const adds = prefsByPerson.get(c.name)
+        if (!adds) return c
+        prefsByPerson.delete(c.name) // handled here, not created fresh below
+        return { ...c, preferredTechs: mergePrefs(c.preferredTechs, adds) }
+      })
+      // whoever's left had no ClientRecord at all -- checking the box is
+      // enough to start a minimal profile just to hold the preference
+      const created: ClientRecord[] = [...prefsByPerson.entries()].map(([name, adds]) => ({
+        id: uid('client'), name, phone: '', visits: 1, preferredTechs: mergePrefs(undefined, adds),
+      }))
+      return created.length > 0 ? [...updated, ...created] : updated
+    })
+  }
+
   const completeCheckout = (p: PaymentResult) => {
     const ids = new Set(checkoutItems.map((a) => a.id))
     // everything else (service, tech, time, price, adds) is already live on the book
@@ -2119,43 +2177,11 @@ export function AppointmentBook() {
       party: party.size > 1 ? party.size : undefined, lines: payLines, apptIds: [...ids], pointsRecipient, ...p,
     }
     setPayments((x) => [...x, newPayment])
-    // every account holder on the ticket gets a visit, and anyone whose line
-    // was checked "save as preferred tech" gets that tech + category added
-    // to their standing preferences (merged into an existing entry for that
-    // same tech if they already have one, so a second category just appends)
-    setClients((cs) => {
-      const prefsByPerson = new Map<string, { techId: string; categoryId: string }[]>()
-      for (const pr of p.preferredTechPrefs ?? []) {
-        prefsByPerson.set(pr.person, [...(prefsByPerson.get(pr.person) ?? []), pr])
-      }
-      const mergePrefs = (existing: ClientRecord['preferredTechs'], adds: { techId: string; categoryId: string }[]) => {
-        const next = existing ? [...existing] : []
-        for (const pr of adds) {
-          const idx = next.findIndex((x) => x.techId === pr.techId)
-          if (idx >= 0) {
-            if (!next[idx].categoryIds.includes(pr.categoryId)) {
-              next[idx] = { ...next[idx], categoryIds: [...next[idx].categoryIds, pr.categoryId] }
-            }
-          } else {
-            next.push({ id: uid('pref'), techId: pr.techId, categoryIds: [pr.categoryId] })
-          }
-        }
-        return next
-      }
-      const updated = cs.map((c) => {
-        if (!party.has(c.name)) return c
-        const adds = prefsByPerson.get(c.name)
-        if (!adds || adds.length === 0) return { ...c, visits: c.visits + 1 }
-        prefsByPerson.delete(c.name) // handled here, not created fresh below
-        return { ...c, visits: c.visits + 1, preferredTechs: mergePrefs(c.preferredTechs, adds) }
-      })
-      // whoever's left had no ClientRecord at all -- checking the box is
-      // enough to start a minimal profile just to hold the preference
-      const created: ClientRecord[] = [...prefsByPerson.entries()].map(([name, adds]) => ({
-        id: uid('client'), name, phone: '', visits: 1, preferredTechs: mergePrefs(undefined, adds),
-      }))
-      return created.length > 0 ? [...updated, ...created] : updated
-    })
+    // every account holder on the ticket gets a visit
+    setClients((cs) => cs.map((c) => (party.has(c.name) ? { ...c, visits: c.visits + 1 } : c)))
+    // anyone whose line was checked "save as preferred tech" gets that tech
+    // + category added to their standing preferences
+    applyPreferredTechPrefs(p.preferredTechPrefs, party)
     // loyalty: deduct redeemed points, then award what this ticket earned --
     // stamped on the payment above too, so a later correction or refund
     // reverses the SAME person's balance even if the ticket's selection changes
@@ -2276,6 +2302,24 @@ export function AppointmentBook() {
     return ids.map((id) => dayAppts.find((a) => a.id === id)).filter((a): a is Appointment => a != null)
   }, [refundPrompt, reopenDraft, appts, apptDays, dateKey])
 
+  // same idea as checkoutPointsRecipients/checkoutExistingPrefs above, just
+  // scoped to whoever's actually on this reopened ticket right now
+  const reopenNames = useMemo(() => [...new Set(reopenItems.map((a) => a.clientName))], [reopenItems])
+  const reopenAccountNames = useMemo(
+    () => reopenNames.filter((n) => clients.some((c) => c.name === n)),
+    [reopenNames, clients],
+  )
+  const reopenExistingPrefs = useMemo(() => {
+    const out: { person: string; techId: string; categoryId: string }[] = []
+    for (const name of reopenNames) {
+      const c = clients.find((x) => x.name === name)
+      for (const pr of c?.preferredTechs ?? []) {
+        for (const categoryId of pr.categoryIds) out.push({ person: name, techId: pr.techId, categoryId })
+      }
+    }
+    return out
+  }, [reopenNames, clients])
+
   // reopening a paid ticket no longer voids the payment right away -- it opens
   // a checkout-style panel on top of the still-recorded sale where services
   // can be added/removed/re-priced and the difference settled right there:
@@ -2303,6 +2347,9 @@ export function AppointmentBook() {
       return next
     }
     setPayments((x) => x.map((pay) => (pay.id === payment.id ? patch(pay) : pay)))
+    // anyone whose line was checked "save as preferred tech" gets that tech
+    // + category added to their standing preferences, same as a fresh checkout
+    applyPreferredTechPrefs(p.preferredTechPrefs, new Set(payment.clientNames ?? [payment.clientName]))
     const charged = p.sources.reduce((s, x) => s + x.amount, 0)
     showFlash(charged > 0.004
       ? `✓ Charged $${charged.toFixed(2)}${p.balanceDue > 0.004 ? `, $${p.balanceDue.toFixed(2)} still due` : ''}`
@@ -4551,6 +4598,8 @@ export function AppointmentBook() {
           onSync={reopenSync}
           onComplete={completeReopen}
           onClose={closeReopen}
+          accountNames={reopenAccountNames}
+          existingPrefs={reopenExistingPrefs}
         />
       )}
 
@@ -4572,6 +4621,7 @@ export function AppointmentBook() {
           loyaltyBalance={checkoutPointsRecipient ? (() => { const c = clients.find((x) => x.name === checkoutPointsRecipient); return c ? pointsByClient[c.id] ?? 0 : 0 })() : null}
           pointsRecipients={checkoutPointsRecipients}
           accountNames={checkoutPointsRecipients}
+          existingPrefs={checkoutExistingPrefs}
           addedIds={checkoutDraft?.addedIds ?? []}
           onPatchLine={patchCheckoutAppt}
           onRemoveLine={removeCheckoutLine}

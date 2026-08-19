@@ -103,7 +103,7 @@ export interface CheckoutDraftState {
 
 const money = (v: number) => `$${v.toFixed(2)}`;
 
-export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, hostName, editable, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, loyaltyBalance, pointsRecipients, accountNames, draft, onDraft, existing }: {
+export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, hostName, editable, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, loyaltyBalance, pointsRecipients, accountNames, existingPrefs, draft, onDraft, existing }: {
   title: string;
   subtitle: string;
   lines: PaymentLine[];
@@ -131,10 +131,16 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
    *  shows every eligible name (even a single one), so who's getting the
    *  points is always confirmed on screen, not just happening silently */
   pointsRecipients?: string[];
-  /** everyone on this ticket who has a ClientRecord to save a preference
-   *  onto -- gates the "save as preferred technician" checkbox per line,
-   *  same idea as pointsRecipients: a guest has nowhere for it to land */
+  /** everyone on this ticket who already has a ClientRecord -- purely
+   *  cosmetic, drives the "(creates their profile)" hint under a checked
+   *  "save as preferred technician" box for someone who doesn't have one */
   accountNames?: string[];
+  /** technician + category pairs already saved as a standing preference for
+   *  someone on this ticket (from ClientRecord.preferredTechs) -- any line
+   *  that already matches one starts with its "save as preferred" box
+   *  checked instead of blank, so re-opening a ticket doesn't look like the
+   *  preference was never saved */
+  existingPrefs?: { person: string; techId: string; categoryId: string }[];
   /** controlled draft (persisted); POS uses the internal fallback */
   draft?: CheckoutDraftState;
   onDraft?: (patch: Partial<CheckoutDraftState>) => void;
@@ -196,8 +202,21 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
   const [refundFrom, setRefundFrom] = useState<"service" | "tip" | undefined>(undefined);
   const [refundTechId, setRefundTechId] = useState("");
   // lines checked "save as preferred technician" this checkout -- resolved
-  // into technician + category pairs (per person) when the ticket completes
-  const [prefPicks, setPrefPicks] = useState<Set<string>>(new Set());
+  // into technician + category pairs (per person) when the ticket completes.
+  // starts pre-checked for any line that already matches a saved preference
+  // (existingPrefs), so reopening a ticket shows what's already on record
+  const [prefPicks, setPrefPicks] = useState<Set<string>>(() => {
+    if (!existingPrefs || existingPrefs.length === 0) return new Set();
+    const s = new Set<string>();
+    for (const l of lines) {
+      if (!l.techId || !l.person || !l.serviceId) continue;
+      const categoryId = svcById[l.serviceId]?.categoryId;
+      if (!categoryId) continue;
+      const already = existingPrefs.some((pr) => pr.person === l.person && pr.techId === l.techId && pr.categoryId === categoryId);
+      if (already) s.add(l.id);
+    }
+    return s;
+  });
   const togglePrefPick = (lineId: string) =>
     setPrefPicks((s) => {
       const next = new Set(s);
@@ -1154,7 +1173,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
 }
 
 // ─── Appointment checkout, live ticket editing ───────────────────────────────
-export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, loyaltyBalance, pointsRecipients, accountNames, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, draft, onDraft }: {
+export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, loyaltyBalance, pointsRecipients, accountNames, existingPrefs, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, draft, onDraft }: {
   clientName: string;
   items: Appointment[];
   dateLabel: string;
@@ -1169,9 +1188,13 @@ export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClo
    *  shown even for a single name, so it's always visible who earns it;
    *  empty (no one selected has an account) hides the section entirely */
   pointsRecipients?: string[];
-  /** everyone on this ticket who has a ClientRecord -- gates the "save as
-   *  preferred technician" checkbox per line, same idea as pointsRecipients */
+  /** everyone on this ticket who already has a ClientRecord -- drives the
+   *  "(creates their profile)" hint under a checked box for someone who
+   *  doesn't have one yet */
   accountNames?: string[];
+  /** technician + category pairs already saved for someone on this ticket --
+   *  pre-checks any line that already matches one */
+  existingPrefs?: { person: string; techId: string; categoryId: string }[];
   addedIds?: string[];
   onPatchLine?: (id: string, patch: Partial<Appointment>) => void;
   onRemoveLine?: (id: string) => void;
@@ -1217,6 +1240,7 @@ export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClo
       loyaltyBalance={loyaltyBalance}
       pointsRecipients={pointsRecipients}
       accountNames={accountNames}
+      existingPrefs={existingPrefs}
       draft={draft}
       onDraft={onDraft}
     />
