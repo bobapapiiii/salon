@@ -3290,8 +3290,6 @@ export function AppointmentBook() {
     if (a.startMin < 0 || a.startMin >= DAY_MIN) return null // never render outside salon hours
     const svc = svcById[a.serviceId]
     const cat = catById[svc.categoryId]
-    const top = GROUP_H + TECH_H + yAt(a.startMin)
-    const h = Math.max(8, a.durationMin * pxPerMin - 2)
     const col = colIndex.get(a.techId)
     if (col == null) return null
     // overlap mode: split the column into side-by-side lanes
@@ -3310,6 +3308,14 @@ export function AppointmentBook() {
     const dragInvalidCard = Boolean(movingItem && dragErrors.get(movingItem.id))
     const dispStart = movingItem?.startMin ?? a.startMin
     const dispDur = movingItem?.durationMin ?? a.durationMin
+    // a resize drag grows/shrinks the card in place from its fixed top edge,
+    // tracking the live duration below -- a move drag instead keeps the
+    // card's original size and slides the whole thing along with the
+    // pointer via the `float` transform further down, so each needs the
+    // OTHER kind of drag to leave its own dimension alone
+    const isResizing = isMoving && drag?.mode === 'resize'
+    const top = GROUP_H + TECH_H + yAt(a.startMin)
+    const h = Math.max(8, (isResizing ? dispDur : a.durationMin) * pxPerMin - 2)
 
     // ── Lumina visual language ──────────────────────────────────────────
     const byStatus = colorMode === 'status'
@@ -3346,6 +3352,17 @@ export function AppointmentBook() {
     const tall = h >= 52 // room for name + service + time
     // linked partners glow while one of them is being dragged
     const isDragLinked = dragGroupKey != null && key === dragGroupKey && !isMoving
+    // one cursor class, not several competing ones -- a resize drag keeps
+    // the ns-resize cursor the whole gesture through (the pointer strays
+    // off the thin bottom strip immediately once dragging starts), not the
+    // grabbing hand a move drag shows
+    const cursorClass = isOverview
+      ? 'cursor-pointer'
+      : isResizing
+        ? 'cursor-ns-resize'
+        : isMoving
+          ? 'cursor-grabbing'
+          : 'cursor-grab active:cursor-grabbing'
 
     return (
       <div
@@ -3368,10 +3385,8 @@ export function AppointmentBook() {
           if (!isOverview) { openDetail(a.id) }
         }}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setHoverTip(null); openDetail(a.id) }}
-        className={`group/blk absolute z-10 select-none rounded-[6px] text-left ${
-          isMoving ? 'z-40 cursor-grabbing' : 'transition-[box-shadow,transform,opacity] duration-150 ease-out-expo'
-        } ${
-          isOverview ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing'
+        className={`group/blk absolute z-10 select-none rounded-[6px] text-left ${cursorClass} ${
+          isMoving ? 'z-40' : 'transition-[box-shadow,transform,opacity] duration-150 ease-out-expo'
         } ${!isMoving && 'hover:-translate-y-px hover:shadow-sh-2'} ${
           isNoShow ? 'saturate-50' : ''
         } ${dragInvalidCard ? 'ring-2 ring-rust' : ''} ${isDragLinked ? 'z-20 ring-2 ring-clay shadow-sh-2' : ''} ${isSelected || isFocusRelated ? 'z-20 ring-2 ring-clay' : ''} ${
@@ -3389,7 +3404,9 @@ export function AppointmentBook() {
                   ? `1.5px dashed ${lineC}`
                   : `1px solid ${lineC}66`,
           opacity: isMoving ? 0.95 : isPaid ? 0.55 : isNoShow ? 0.7 : undefined,
-          transform: isMoving && float ? `translate(${float.x}px, ${float.y}px)` : undefined,
+          // a resize drag has already moved via the live height above, not a
+          // translate -- sliding it too would double up with the growing box
+          transform: isMoving && !isResizing && float ? `translate(${float.x}px, ${float.y}px)` : undefined,
           boxShadow: isMoving ? '0 12px 28px rgba(38,37,43,.25)' : undefined,
           pointerEvents: isMoving ? 'none' : undefined,
         }}
