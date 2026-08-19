@@ -7,7 +7,7 @@ import {
   OPEN_MIN, OVERVIEW_COL_W, SLOT_MIN, TEXT_COL_W, fmtTime, overlaps,
 } from '@/lib/booking-types'
 import { CLIENTS, SERVICES, generateDay } from '@/lib/mock-data'
-import { boardTechs, getStaff, isArchived, moveRole, roleColor, useStaffStore } from '@/lib/staff-store'
+import { boardTechs, getStaff, isArchived, moveRole, roleColor, uid, useStaffStore } from '@/lib/staff-store'
 import { sdata, setCodec, upref, usePersistentState } from '@/lib/persist'
 import { svcById } from '@/lib/services-store'
 import { Toolbar } from './Toolbar'
@@ -2119,8 +2119,27 @@ export function AppointmentBook() {
       party: party.size > 1 ? party.size : undefined, lines: payLines, apptIds: [...ids], pointsRecipient, ...p,
     }
     setPayments((x) => [...x, newPayment])
-    // every account holder on the ticket gets a visit
-    setClients((cs) => cs.map((c) => (party.has(c.name) ? { ...c, visits: c.visits + 1 } : c)))
+    // every account holder on the ticket gets a visit, and anyone whose line
+    // was checked "save as preferred tech" gets that tech + category added
+    // to their standing preferences (merged into an existing entry for that
+    // same tech if they already have one, so a second category just appends)
+    setClients((cs) => cs.map((c) => {
+      if (!party.has(c.name)) return c
+      const mine = (p.preferredTechPrefs ?? []).filter((pr) => pr.person === c.name)
+      if (mine.length === 0) return { ...c, visits: c.visits + 1 }
+      let preferredTechs = c.preferredTechs ? [...c.preferredTechs] : []
+      for (const pr of mine) {
+        const idx = preferredTechs.findIndex((x) => x.techId === pr.techId)
+        if (idx >= 0) {
+          if (!preferredTechs[idx].categoryIds.includes(pr.categoryId)) {
+            preferredTechs[idx] = { ...preferredTechs[idx], categoryIds: [...preferredTechs[idx].categoryIds, pr.categoryId] }
+          }
+        } else {
+          preferredTechs.push({ id: uid('pref'), techId: pr.techId, categoryIds: [pr.categoryId] })
+        }
+      }
+      return { ...c, visits: c.visits + 1, preferredTechs }
+    }))
     // loyalty: deduct redeemed points, then award what this ticket earned --
     // stamped on the payment above too, so a later correction or refund
     // reverses the SAME person's balance even if the ticket's selection changes
@@ -4536,6 +4555,7 @@ export function AppointmentBook() {
           // the redeem/earn section has nothing to attach to and hides itself
           loyaltyBalance={checkoutPointsRecipient ? (() => { const c = clients.find((x) => x.name === checkoutPointsRecipient); return c ? pointsByClient[c.id] ?? 0 : 0 })() : null}
           pointsRecipients={checkoutPointsRecipients}
+          accountNames={checkoutPointsRecipients}
           addedIds={checkoutDraft?.addedIds ?? []}
           onPatchLine={patchCheckoutAppt}
           onRemoveLine={removeCheckoutLine}

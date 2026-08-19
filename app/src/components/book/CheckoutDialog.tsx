@@ -60,6 +60,9 @@ export interface PaymentResult {
   /** the appointment ids on this ticket at the moment payment completed --
    *  only set when reopening an existing payment, where it can have changed */
   apptIds?: string[];
+  /** technician + category pairs the salon checked "save as preferred" for
+   *  at checkout -- merged into that client's ClientRecord.preferredTechs */
+  preferredTechPrefs?: { person: string; techId: string; categoryId: string }[];
 }
 
 /** a service added to the invoice at checkout time (kept for API compat) */
@@ -100,7 +103,7 @@ export interface CheckoutDraftState {
 
 const money = (v: number) => `$${v.toFixed(2)}`;
 
-export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, hostName, editable, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, loyaltyBalance, pointsRecipients, draft, onDraft, existing }: {
+export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, hostName, editable, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, loyaltyBalance, pointsRecipients, accountNames, draft, onDraft, existing }: {
   title: string;
   subtitle: string;
   lines: PaymentLine[];
@@ -128,6 +131,10 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
    *  shows every eligible name (even a single one), so who's getting the
    *  points is always confirmed on screen, not just happening silently */
   pointsRecipients?: string[];
+  /** everyone on this ticket who has a ClientRecord to save a preference
+   *  onto -- gates the "save as preferred technician" checkbox per line,
+   *  same idea as pointsRecipients: a guest has nowhere for it to land */
+  accountNames?: string[];
   /** controlled draft (persisted); POS uses the internal fallback */
   draft?: CheckoutDraftState;
   onDraft?: (patch: Partial<CheckoutDraftState>) => void;
@@ -188,6 +195,16 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
   const [refundReason, setRefundReason] = useState("");
   const [refundFrom, setRefundFrom] = useState<"service" | "tip" | undefined>(undefined);
   const [refundTechId, setRefundTechId] = useState("");
+  // lines checked "save as preferred technician" this checkout -- resolved
+  // into technician + category pairs (per person) when the ticket completes
+  const [prefPicks, setPrefPicks] = useState<Set<string>>(new Set());
+  const togglePrefPick = (lineId: string) =>
+    setPrefPicks((s) => {
+      const next = new Set(s);
+      if (next.has(lineId)) next.delete(lineId);
+      else next.add(lineId);
+      return next;
+    });
 
   const methods = settings.payments.methods.filter((m) => m in METHOD_ICONS);
   const tipPresets = settings.payments.tipPresets;
@@ -320,6 +337,15 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
     .map((r) => ({ id: r.id, method: r.method, amount: round2(Number(r.amountText) || 0) }));
   const methodLabel = finalSources.length === 0 ? D.method : finalSources.length === 1 ? finalSources[0].method : "Split";
   const apptIds = lines.map((l) => l.id);
+  // resolve the checked lines into technician + category pairs, per person
+  const preferredTechPrefs = [...prefPicks]
+    .map((lineId) => {
+      const l = allLines.find((x) => x.id === lineId);
+      const categoryId = l?.serviceId ? svcById[l.serviceId]?.categoryId : undefined;
+      if (!l || !l.techId || !l.person || !categoryId) return null;
+      return { person: l.person, techId: l.techId, categoryId };
+    })
+    .filter((x): x is { person: string; techId: string; categoryId: string } => x != null);
 
   // live sync while correcting an already-paid ticket -- a service, tech,
   // price, or add/remove change settles onto the payments ledger on its own
@@ -349,6 +375,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
       customFields: Object.fromEntries(Object.entries(D.custom ?? {}).filter(([, v]) => v.trim())),
       tipByTech: tip > 0 ? tipByTechResult : undefined,
       apptIds,
+      preferredTechPrefs: preferredTechPrefs.length > 0 ? preferredTechPrefs : undefined,
     });
   };
   const submitRefund = (sourceId: string, available: number) => {
@@ -439,6 +466,27 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                 .join(" · ")}
             </p>
           )}
+          {/* save this tech + service's category as the client's standing
+              preference -- only offered once a tech is on the line and the
+              person it belongs to actually has a profile to save it onto */}
+          {isEditing && l.techId && l.person && accountNames?.includes(l.person) && (() => {
+            const svc = l.serviceId ? svcById[l.serviceId] : undefined;
+            const cat = svc ? catById[svc.categoryId] : undefined;
+            const tech = getStaff().techs.find((t) => t.id === l.techId);
+            if (!cat || !tech) return null;
+            const checked = prefPicks.has(l.id);
+            return (
+              <label className="mt-1 flex items-center gap-1.5 text-[10.5px] text-ink-faint">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => togglePrefPick(l.id)}
+                  className="h-3 w-3 rounded border-input accent-clay"
+                />
+                Save {tech.name.split(" ")[0]} as {l.person}&rsquo;s preferred tech for {cat.name}
+              </label>
+            );
+          })()}
         </div>
         {isEditing ? (
           <span className="flex h-[30px] shrink-0 items-center text-[13px] font-semibold">
@@ -1089,7 +1137,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
               <Printer className="h-4 w-4" /> Print receipt
             </button>
             <button
-              onClick={() => onComplete({ method: methodLabel, sources: finalSources, balanceDue, tip, subtotal, total, points, discount, redeemed: redemption ? { name: redemption.name, points: redemption.pointsCost, value: discount } : undefined, notes: D.note.trim() || undefined, customFields: Object.fromEntries(Object.entries(D.custom ?? {}).filter(([, v]) => v.trim())), tipByTech: tip > 0 ? tipByTechResult : undefined })}
+              onClick={() => onComplete({ method: methodLabel, sources: finalSources, balanceDue, tip, subtotal, total, points, discount, redeemed: redemption ? { name: redemption.name, points: redemption.pointsCost, value: discount } : undefined, notes: D.note.trim() || undefined, customFields: Object.fromEntries(Object.entries(D.custom ?? {}).filter(([, v]) => v.trim())), tipByTech: tip > 0 ? tipByTechResult : undefined, preferredTechPrefs: preferredTechPrefs.length > 0 ? preferredTechPrefs : undefined })}
               className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-clay py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-clay-deep"
             >
               <Receipt className="h-4 w-4" />
@@ -1103,7 +1151,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
 }
 
 // ─── Appointment checkout, live ticket editing ───────────────────────────────
-export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, loyaltyBalance, pointsRecipients, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, draft, onDraft }: {
+export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, loyaltyBalance, pointsRecipients, accountNames, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, draft, onDraft }: {
   clientName: string;
   items: Appointment[];
   dateLabel: string;
@@ -1118,6 +1166,9 @@ export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClo
    *  shown even for a single name, so it's always visible who earns it;
    *  empty (no one selected has an account) hides the section entirely */
   pointsRecipients?: string[];
+  /** everyone on this ticket who has a ClientRecord -- gates the "save as
+   *  preferred technician" checkbox per line, same idea as pointsRecipients */
+  accountNames?: string[];
   addedIds?: string[];
   onPatchLine?: (id: string, patch: Partial<Appointment>) => void;
   onRemoveLine?: (id: string) => void;
@@ -1162,6 +1213,7 @@ export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClo
       onRemoveExtra={onRemoveExtra}
       loyaltyBalance={loyaltyBalance}
       pointsRecipients={pointsRecipients}
+      accountNames={accountNames}
       draft={draft}
       onDraft={onDraft}
     />
