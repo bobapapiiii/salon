@@ -1132,7 +1132,7 @@ function ServicesSection() {
       {
         id: `svc-${Math.random().toString(36).slice(2, 8)}`,
         name: "New service",
-        short: "New",
+        short: "New service",
         durationMin: 45,
         price: 30,
         categoryId,
@@ -1294,7 +1294,13 @@ function ServicesSection() {
           </span>
           <input
             value={sv.name}
-            onChange={(e) => patch(sv.id, { name: e.target.value })}
+            onChange={(e) => {
+              const name = e.target.value;
+              // the short label defaults to the service name, and keeps
+              // following it until the salon customizes short away from
+              // that default -- once it differs, renaming stops touching it
+              patch(sv.id, sv.short === sv.name ? { name, short: name } : { name });
+            }}
             className="min-w-0 flex-[2] rounded-md border border-transparent bg-transparent px-1.5 py-1 text-[12.5px] font-semibold text-slate-800 outline-none transition focus:border-[#5B54D6] focus:bg-white"
           />
           <input
