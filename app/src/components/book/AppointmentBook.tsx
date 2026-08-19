@@ -16,7 +16,7 @@ import { ConfirmDialog } from './ConfirmDialog'
 import { BookingPanel, layoutItems, type BookedService, type SlotGroup } from './BookingPanel'
 import { AvailabilityFinder } from './AvailabilityFinder'
 import { AppointmentDetail, type DetailAction } from './AppointmentDetail'
-import { ClientProfile, LastVisitsDialog, type ClientNote, type VisitLine } from './ClientProfile'
+import { ClientAlertDialog, ClientProfile, LastVisitsDialog, type ClientAlertTrigger, type ClientNote, type VisitLine } from './ClientProfile'
 import { RequestsRail } from './RequestsRail'
 import { DatePickerPopover, LegendPopover } from './LegendPopover'
 import { ContextBar, NavRail } from './AppShell'
@@ -2067,6 +2067,7 @@ export function AppointmentBook() {
     setCheckoutGroup(a.parallelGroup ?? null)
     setCheckoutGuestOf(a.parallelGroup ? a.guestOf ?? null : null)
     setCheckoutName(name)
+    checkClientAlerts(name, 'checkout')
     // resume the saved draft for this client, or start a fresh one -- for a
     // standalone visit (no parallelGroup) this must also be the SAME
     // appointment (or one of its overlapping siblings) the draft was opened
@@ -2505,7 +2506,7 @@ export function AppointmentBook() {
       case 'edit': openDetail(a.id); break
       case 'log': setLogApptId(a.id); break
       case 'confirm': setStatus(a, 'confirmed', '✓ Confirmed, client notified by SMS'); break
-      case 'checkin': setStatus(a, 'checked_in', `✓ ${a.clientName} checked in`); break
+      case 'checkin': setStatus(a, 'checked_in', `✓ ${a.clientName} checked in`); checkClientAlerts(a.clientName, 'checkin'); break
       case 'start': setStatus(a, 'in_service', '▶ Service started'); break
       case 'complete': setStatus(a, 'completed', '✓ Completed, ready for checkout'); break
       case 'checkout': {
@@ -2949,6 +2950,7 @@ export function AppointmentBook() {
 
   const openProfile = (name: string) => {
     setProfileName(name)
+    checkClientAlerts(name, 'profileOpen')
   }
 
   // a client resolved by name for a modal that isn't necessarily the profile
@@ -3016,13 +3018,14 @@ export function AppointmentBook() {
     return out.sort((a, b) => b.dateKey.localeCompare(a.dateKey) || b.appt.startMin - a.appt.startMin)
   }, [profileClient, apptDays, appts, dateKey])
 
-  const addClientNote = (text: string) => {
+  const addClientNote = (text: string, alertOn: ClientAlertTrigger[]) => {
     if (!profileClient) return
     const note: ClientNote = {
       id: `n${Date.now()}`,
       text,
       when: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       by: 'Front desk',
+      alertOn: alertOn.length > 0 ? alertOn : undefined,
     }
     setNotesByClient((m) => ({ ...m, [profileClient.name]: [note, ...(m[profileClient.name] ?? [])] }))
   }
@@ -3030,6 +3033,25 @@ export function AppointmentBook() {
   const deleteClientNote = (id: string) => {
     if (!profileClient) return
     setNotesByClient((m) => ({ ...m, [profileClient.name]: (m[profileClient.name] ?? []).filter((n) => n.id !== id) }))
+  }
+
+  // change which "pop up on" moments an existing note is flagged for
+  const updateClientNoteAlert = (id: string, alertOn: ClientAlertTrigger[]) => {
+    if (!profileClient) return
+    setNotesByClient((m) => ({
+      ...m,
+      [profileClient.name]: (m[profileClient.name] ?? []).map((n) => (n.id === id ? { ...n, alertOn: alertOn.length > 0 ? alertOn : undefined } : n)),
+    }))
+  }
+
+  // a client whose notes include one flagged for `trigger` -- pops up
+  // ClientAlertDialog with just those notes. Checked at each of the four
+  // moments a note can be flagged for: opening the profile, starting a
+  // booking, checking in, and checking out
+  const [clientAlert, setClientAlert] = useState<{ name: string; notes: ClientNote[] } | null>(null)
+  const checkClientAlerts = (name: string, trigger: ClientAlertTrigger) => {
+    const matches = (notesByClient[name] ?? []).filter((n) => n.alertOn?.includes(trigger))
+    if (matches.length > 0) setClientAlert({ name, notes: matches })
   }
 
   const saveClientProfile = (patch: Partial<ClientRecord>) => {
@@ -4393,6 +4415,7 @@ export function AppointmentBook() {
           onRequestMakeRoom={onRequestMakeRoom}
           onBook={onBookFromPanel}
           onViewProfile={openProfile}
+          onClientAlert={(name) => checkClientAlerts(name, 'booking')}
           onClose={() => setBookingOpen(false)}
         />
       )}
@@ -4478,8 +4501,20 @@ export function AppointmentBook() {
           notes={notesByClient[profileClient.name] ?? []}
           onAddNote={addClientNote}
           onDeleteNote={deleteClientNote}
+          onUpdateNoteAlert={updateClientNoteAlert}
           onSaveProfile={saveClientProfile}
           onClose={() => setProfileName(null)}
+        />
+      )}
+
+      {/* note-driven alert -- opening a profile, starting a booking, checking
+          in, or checking out a client with a note flagged to pop up then */}
+      {clientAlert && (
+        <ClientAlertDialog
+          clientName={clientAlert.name}
+          notes={clientAlert.notes}
+          onViewProfile={profileName === clientAlert.name ? undefined : () => { setProfileName(clientAlert.name); setClientAlert(null) }}
+          onDismiss={() => setClientAlert(null)}
         />
       )}
 

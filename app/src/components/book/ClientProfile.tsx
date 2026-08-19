@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  CreditCard, Crown, Heart, Mail, MapPin, Pencil, Phone, Plus, Printer, Star, Trash2, X,
+  Bell, CreditCard, Crown, Heart, Mail, MapPin, Pencil, Phone, Plus, Printer, Star, Trash2, X,
 } from 'lucide-react'
 import type { Appointment, ClientRecord, ClientTechPreference } from '@/lib/booking-types'
 import { fmtTime } from '@/lib/booking-types'
@@ -13,11 +13,26 @@ import { SearchSelect } from './SearchSelect'
 
 const techById = (id: string) => getStaff().techs.find((t) => t.id === id)
 
+/** the moments a note can pop up as an alert, beyond just sitting on the
+ *  Notes tab -- opening the profile, starting a new booking, checking the
+ *  client in, or checking them out */
+export type ClientAlertTrigger = 'profileOpen' | 'booking' | 'checkin' | 'checkout'
+
+export const ALERT_TRIGGERS: { id: ClientAlertTrigger; label: string }[] = [
+  { id: 'profileOpen', label: 'Opening profile' },
+  { id: 'booking', label: 'Making an appointment' },
+  { id: 'checkin', label: 'Check-in' },
+  { id: 'checkout', label: 'Checkout' },
+]
+
 export interface ClientNote {
   id: string
   text: string
   when: string
   by: string
+  /** which of the moments above should pop this note up as an alert --
+   *  unset or empty means it's a plain note, it only ever shows here */
+  alertOn?: ClientAlertTrigger[]
 }
 
 interface Props {
@@ -30,8 +45,10 @@ interface Props {
   pointsBalance?: number
   loyaltyHistory?: { id: string; dateKey: string; total: number; points: number; redeemed?: { name: string; points: number; value: number } }[]
   notes: ClientNote[]
-  onAddNote: (text: string) => void
+  onAddNote: (text: string, alertOn: ClientAlertTrigger[]) => void
   onDeleteNote: (id: string) => void
+  /** change which moments an existing note pops up for, without re-adding it */
+  onUpdateNoteAlert: (id: string, alertOn: ClientAlertTrigger[]) => void
   onSaveProfile: (patch: Partial<ClientRecord>) => void
   onClose: () => void
 }
@@ -93,7 +110,7 @@ const STATUS_STYLE: Record<string, string> = {
   'NO SHOW': 'bg-red-500/15 text-red-500',
 }
 
-export function ClientProfile({ client, appts, guestVisits = [], realVisits = [], onViewInvoice, pointsBalance = 0, loyaltyHistory = [], notes, onAddNote, onDeleteNote, onSaveProfile, onClose }: Props) {
+export function ClientProfile({ client, appts, guestVisits = [], realVisits = [], onViewInvoice, pointsBalance = 0, loyaltyHistory = [], notes, onAddNote, onDeleteNote, onUpdateNoteAlert, onSaveProfile, onClose }: Props) {
   // live catalog -- so a service just added or removed in Settings is
   // reflected in the "preferred services" picker immediately
   const services = activeServices(useServicesStore())
@@ -114,6 +131,9 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
     [guestVisits, activeGuest],
   )
   const [noteText, setNoteText] = useState('')
+  const [draftAlertOn, setDraftAlertOn] = useState<ClientAlertTrigger[]>([])
+  const toggleDraftAlert = (t: ClientAlertTrigger) =>
+    setDraftAlertOn((a) => (a.includes(t) ? a.filter((x) => x !== t) : [...a, t]))
   const history = useMemo(() => {
     const real: PastVisit[] = realVisits.map((v) => ({
       invoice: v.invoice, date: v.date, services: v.services, serviceIds: v.serviceIds, lines: v.lines,
@@ -423,17 +443,37 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
                   value={noteText}
                   onChange={(e) => setNoteText(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && noteText.trim()) { onAddNote(noteText.trim()); setNoteText('') }
+                    if (e.key === 'Enter' && noteText.trim()) { onAddNote(noteText.trim(), draftAlertOn); setNoteText(''); setDraftAlertOn([]) }
                   }}
                   placeholder="Add a note, allergies, preferences, design refs"
                   className={field}
                 />
                 <button
-                  onClick={() => { if (noteText.trim()) { onAddNote(noteText.trim()); setNoteText('') } }}
+                  onClick={() => { if (noteText.trim()) { onAddNote(noteText.trim(), draftAlertOn); setNoteText(''); setDraftAlertOn([]) } }}
                   className="flex shrink-0 items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground"
                 >
                   <Plus className="h-4 w-4" /> Add
                 </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
+                  <Bell className="h-3 w-3" /> Pop up on:
+                </span>
+                {ALERT_TRIGGERS.map((t) => {
+                  const on = draftAlertOn.includes(t.id)
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => toggleDraftAlert(t.id)}
+                      className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                        on ? 'border-amber-500 bg-amber-500/10 text-amber-600' : 'border-border text-muted-foreground hover:border-amber-300'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  )
+                })}
               </div>
               {notes.length === 0 && (
                 <div className="rounded-lg border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
@@ -441,15 +481,35 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
                 </div>
               )}
               {notes.map((n) => (
-                <div key={n.id} className="flex items-start gap-3 rounded-lg border border-border p-3">
-                  <Pencil className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm">{n.text}</div>
-                    <div className="mt-0.5 text-[11px] text-muted-foreground">{n.when} · by {n.by}</div>
+                <div key={n.id} className={`rounded-lg border p-3 ${(n.alertOn?.length ?? 0) > 0 ? 'border-amber-400/60 bg-amber-500/5' : 'border-border'}`}>
+                  <div className="flex items-start gap-3">
+                    <Pencil className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm">{n.text}</div>
+                      <div className="mt-0.5 text-[11px] text-muted-foreground">{n.when} · by {n.by}</div>
+                    </div>
+                    <button onClick={() => setPendingNoteId(n.id)} className="text-muted-foreground hover:text-red-400" title="Delete note">
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
                   </div>
-                  <button onClick={() => setPendingNoteId(n.id)} className="text-muted-foreground hover:text-red-400" title="Delete note">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-6">
+                    <Bell className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    {ALERT_TRIGGERS.map((t) => {
+                      const on = n.alertOn?.includes(t.id) ?? false
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => onUpdateNoteAlert(n.id, on ? (n.alertOn ?? []).filter((x) => x !== t.id) : [...(n.alertOn ?? []), t.id])}
+                          className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                            on ? 'border-amber-500 bg-amber-500/10 text-amber-600' : 'border-border/60 text-muted-foreground/70 hover:border-amber-300'
+                          }`}
+                        >
+                          {t.label}
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
               ))}
             </div>
@@ -668,6 +728,46 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
           onClose={() => setPendingNoteId(null)}
         />
       )}
+    </div>
+  )
+}
+
+/** the note-driven alert popup -- shown when a client with one or more
+ *  "pop up on X" notes hits that trigger (opening their profile, starting a
+ *  new booking, checking in, or checking out). `onViewProfile` is omitted
+ *  when the trigger itself IS opening the profile, since it's redundant. */
+export function ClientAlertDialog({ clientName, notes, onViewProfile, onDismiss }: {
+  clientName: string
+  notes: ClientNote[]
+  onViewProfile?: () => void
+  onDismiss: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-[99] flex items-center justify-center bg-black/45 p-4" onClick={onDismiss}>
+      <div className="w-[420px] max-w-[92vw] rounded-xl border border-amber-400/50 bg-popover p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 text-amber-600">
+          <Bell className="h-4 w-4" />
+          <span className="text-xs font-bold uppercase tracking-wide">Heads up — {clientName}</span>
+        </div>
+        <div className="mt-3 max-h-[50vh] space-y-2 overflow-y-auto">
+          {notes.map((n) => (
+            <div key={n.id} className="rounded-lg border border-amber-400/40 bg-amber-500/5 p-3 text-sm">
+              {n.text}
+              <div className="mt-1 text-[11px] text-muted-foreground">{n.when} · by {n.by}</div>
+            </div>
+          ))}
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          {onViewProfile && (
+            <button onClick={onViewProfile} className="rounded-md border border-border px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground">
+              View profile
+            </button>
+          )}
+          <button onClick={onDismiss} className="rounded-md bg-primary px-4 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90">
+            Got it
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

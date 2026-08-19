@@ -92,6 +92,9 @@ interface Props {
   onBook: (services: BookedService[], linkGroup: boolean) => void
   /** open the guest's full profile, when they already have an account */
   onViewProfile: (clientName: string) => void
+  /** fires when an existing client is picked for this booking -- surfaces
+   *  any of their notes flagged "pop up on: Making an appointment" */
+  onClientAlert?: (clientName: string) => void
   onClose: () => void
 }
 
@@ -201,7 +204,7 @@ const DUR_OPTS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
 
 export function BookingPanel({
   appts, blocks, clients, onAddClient, buildRealVisits, prefillTime, prefillTechId, dateKey, onPreviewDay,
-  findMakeRoomPlan, onRequestMakeRoom, onBook, onViewProfile, onClose,
+  findMakeRoomPlan, onRequestMakeRoom, onBook, onViewProfile, onClientAlert, onClose,
 }: Props) {
   // live catalog -- so a service just added or removed in Settings shows
   // up in the service picker immediately instead of the stale baseline list
@@ -415,6 +418,7 @@ export function BookingPanel({
     })
     setStep('services')
     setQ('')
+    onClientAlert?.(c.name)
   }
 
   // name-only guest, no profile; the visit links to the first (account) client
