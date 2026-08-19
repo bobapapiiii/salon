@@ -4248,7 +4248,7 @@ export function AppointmentBook() {
               {item('View profile settings', () => navigate('/settings/techs', { state: { techId: t.id } }))}
               {item('View week schedule', () => setTechSchedView({ techId: t.id, mode: 'week' }))}
               {item('View monthly schedule', () => setTechSchedView({ techId: t.id, mode: 'month' }))}
-              {item("Set today's status (late, out, emergency)…", () => { setScheduleFocusTechId(t.id); setScheduleOpen(true) })}
+              {item("Set today's schedule", () => { setScheduleFocusTechId(t.id); setScheduleOpen(true) })}
               <div className="my-1 border-t border-border" />
               {item('Move appointments to other techs', () => setMoveApptsTechId(t.id))}
             </div>
