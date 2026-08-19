@@ -22,7 +22,7 @@ import { DatePickerPopover, LegendPopover } from './LegendPopover'
 import { ContextBar, NavRail } from './AppShell'
 import { SettingsPage, type SectionId } from './SettingsPage'
 import { JobCardPage } from './JobCardPage'
-import { RegisterPage, RegisterDayPrompt, type RegisterSession, type RegisterOpenAppt, type RegisterBalanceDueItem } from './RegisterPage'
+import { RegisterPage, RegisterDayPrompt, FindTransactionModal, type RegisterSession, type RegisterOpenAppt, type RegisterBalanceDueItem } from './RegisterPage'
 import { useSessionUser } from '@/lib/session'
 import { buildJobCard, printJobCards } from '@/lib/job-card'
 import { useLocation, useNavigate } from 'react-router'
@@ -469,10 +469,10 @@ export function AppointmentBook() {
   // cash drawer: one open→close cycle per shift, salon-shared like the ledger.
   // Multiple registers can each run their own shift at once (see Settings → Registers)
   const [registerOpen, setRegisterOpen] = useState(false)
-  // true when Manage Register was opened from the nav rail's own Search
-  // icon (a shortcut into the same page), so it can jump straight into the
-  // find-a-transaction box instead of landing on the drawer summary
-  const [registerFocusSearch, setRegisterFocusSearch] = useState(false)
+  // the nav rail's own Search icon opens a lightweight find-a-transaction
+  // modal directly, rather than detouring through the full Manage Register
+  // page just to reach the search box at the top of it
+  const [findTxOpen, setFindTxOpen] = useState(false)
   const [registerSessions, setRegisterSessions] = usePersistentState<RegisterSession[]>(sdata('register-v1'), [])
   const anyRegisterOpen = registerSessions.some((s) => s.closedAt == null)
   // a register left open from a day that's already passed -- unlike simply
@@ -2022,7 +2022,6 @@ export function AppointmentBook() {
     if (ticketDateKey && ticketDateKey !== todayKey) return false
     if (a && estimateTicketTotal(a, source) <= 0.004) return false
     showFlash('⚠ A previous day\'s register is still open — close it before taking payment')
-    setRegisterFocusSearch(false)
     setRegisterOpen(true)
     return true
   }
@@ -2269,6 +2268,7 @@ export function AppointmentBook() {
     const a = (dateKey === todayKey ? appts : apptDays[todayKey] ?? []).find((x) => x.id === apptId)
     if (!a) return
     setRegisterOpen(false)
+    setFindTxOpen(false)
     if (dateKey !== todayKey) goDay(new Date(todayKey + 'T12:00:00'))
     // pass todayKey explicitly -- goDay's setDateKey hasn't taken effect yet
     // within this same synchronous call, so openCheckout's own default
@@ -2286,6 +2286,7 @@ export function AppointmentBook() {
     const payDayAppts = p.dateKey === dateKey ? appts : apptDays[p.dateKey] ?? []
     const items = (p.apptIds ?? []).map((id) => payDayAppts.find((x) => x.id === id)).filter((x): x is Appointment => x != null)
     setRegisterOpen(false)
+    setFindTxOpen(false)
     if (p.dateKey !== dateKey) goDay(new Date(p.dateKey + 'T12:00:00'))
     openReopen({ payment: p, items })
   }
@@ -3543,8 +3544,8 @@ export function AppointmentBook() {
   const onNavNavigate = (page: 'calendar' | 'techschedule' | 'jobcard' | 'search' | 'register' | 'settings') => {
     if (page === 'techschedule') { setScheduleOpen(true); return }
     if (page === 'jobcard') { setJobCardDate(dateKey); setJobCardOpen(true); return }
-    if (page === 'search') { setRegisterFocusSearch(true); setRegisterOpen(true); return }
-    if (page === 'register') { setRegisterFocusSearch(false); setRegisterOpen(true); return }
+    if (page === 'search') { setFindTxOpen(true); return }
+    if (page === 'register') { setRegisterOpen(true); return }
     if (page === 'settings') { navigate('/settings/general'); return }
   }
 
@@ -3552,7 +3553,7 @@ export function AppointmentBook() {
     <div className={`h-full overflow-hidden ${darkMode ? 'dark' : ''} bg-background text-foreground`}>
     <div className="flex h-full">
       <NavRail
-        active={registerOpen ? (registerFocusSearch ? 'search' : 'register') : jobCardOpen ? 'jobcard' : 'calendar'}
+        active={findTxOpen ? 'search' : registerOpen ? 'register' : jobCardOpen ? 'jobcard' : 'calendar'}
         onNavigate={onNavNavigate}
       />
       <div className="flex min-w-0 flex-1 flex-col">
@@ -4551,7 +4552,6 @@ export function AppointmentBook() {
       {/* manage register, the cash drawer's open/close and its shift history */}
       <RegisterPage
         open={registerOpen}
-        autoFocusSearch={registerFocusSearch}
         registers={registers}
         defaultRegisterId={registerDaySelect?.dateKey === todayKey ? registerDaySelect.registerId : null}
         sessions={registerSessions}
@@ -4574,6 +4574,15 @@ export function AppointmentBook() {
             : `✓ Register closed, ${v > 0 ? 'over' : 'short'} by $${Math.abs(v).toFixed(2)}`)
         }}
         onClose={() => setRegisterOpen(false)}
+      />
+
+      {/* find a transaction, from the nav rail's own Search shortcut -- a
+          lightweight modal rather than the full Manage Register page */}
+      <FindTransactionModal
+        open={findTxOpen}
+        payments={payments}
+        onResolvePayment={resolveRegisterPayment}
+        onClose={() => setFindTxOpen(false)}
       />
 
       {/* which register today -- asked once a day whenever more than one is

@@ -255,10 +255,6 @@ function Row({ label, value, sub, strong, tone }: {
 
 interface Props {
   open: boolean
-  /** opened from the nav rail's Search shortcut rather than Manage Register
-   *  itself -- jump straight into the find-a-transaction box instead of
-   *  landing on the drawer summary */
-  autoFocusSearch?: boolean
   /** every configured register, active or not (see RegisterConfig in Settings) */
   registers: RegisterConfig[]
   /** the register picked at today's login, preselects the panel below */
@@ -283,7 +279,7 @@ interface Props {
 }
 
 export function RegisterPage({
-  open, autoFocusSearch, registers, defaultRegisterId, sessions, payments, userName, todayKey, openAppts, balanceDuePayments,
+  open, registers, defaultRegisterId, sessions, payments, userName, todayKey, openAppts, balanceDuePayments,
   onResolveAppt, onResolvePayment, onOpenRegister, onCloseRegister, onClose,
 }: Props) {
   // active registers show in the picker; an inactive one still shows if it
@@ -322,29 +318,6 @@ export function RegisterPage({
   const [closeByDenom, setCloseByDenom] = useState(true)
   const [closeNote, setCloseNote] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
-
-  // find a transaction, any day -- not scoped to the current shift or even
-  // this register, so a ticket from two weeks ago is just as reachable as
-  // today's. Matches client name, any guest riding on the ticket, or the
-  // printed invoice number
-  const [txQuery, setTxQuery] = useState('')
-  const txInputRef = useRef<HTMLInputElement>(null)
-  // arriving via the nav rail's Search shortcut -- jump straight into the
-  // box instead of making them scroll to find it
-  useEffect(() => {
-    if (open && autoFocusSearch) txInputRef.current?.focus()
-  }, [open, autoFocusSearch])
-  const txAllMatches = useMemo(() => {
-    const q = txQuery.trim().toLowerCase()
-    if (!q) return []
-    return payments
-      .filter((p) => {
-        const names = [p.clientName, ...(p.clientNames ?? [])]
-        return names.some((n) => n.toLowerCase().includes(q)) || invoiceNoOf(p).toLowerCase().includes(q)
-      })
-      .sort((a, b) => paymentAt(b) - paymentAt(a))
-  }, [payments, txQuery])
-  const txMatches = txAllMatches.slice(0, TX_RESULTS_CAP)
 
   // this shift's takings, live while it's open
   const shift = useMemo(() => (active ? sessionPayments(active, payments) : []), [active, payments])
@@ -462,59 +435,6 @@ export function RegisterPage({
               })}
             </div>
           )}
-
-          {/* ── find a transaction, any day, any register -- the fast path
-              back to a ticket you don't remember the date of, e.g. a
-              refund that comes up weeks after the sale ── */}
-          <div className="rounded-2xl border border-line bg-surface p-4">
-            <h2 className="mb-2.5 flex items-center gap-1.5 text-[13px] font-bold text-ink">
-              <Search className="h-4 w-4 text-clay" /> Find a transaction
-            </h2>
-            <input
-              ref={txInputRef}
-              value={txQuery}
-              onChange={(e) => setTxQuery(e.target.value)}
-              placeholder="Client, guest, or invoice number, any date"
-              className="w-full rounded-[8px] border border-input bg-background px-2.5 py-2 text-[12.5px] outline-none focus:border-clay"
-            />
-            {txQuery.trim() && (
-              txMatches.length === 0 ? (
-                <p className="mt-3 text-center text-[12px] text-ink-faint">No transactions match &quot;{txQuery.trim()}&quot;</p>
-              ) : (
-                <>
-                  <div className="mt-3 max-h-72 space-y-1.5 overflow-y-auto">
-                    {txMatches.map((p) => {
-                      const names = [p.clientName, ...(p.clientNames ?? []).filter((n) => n !== p.clientName)]
-                      return (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onClick={() => onResolvePayment(p.id)}
-                          title="Open this ticket, e.g. to issue a refund"
-                          className="flex w-full items-center gap-2.5 rounded-[10px] border border-line bg-surface px-3 py-2 text-left transition-colors hover:border-clay hover:bg-clay-tint/30"
-                        >
-                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-clay-tint text-clay">
-                            <Receipt className="h-3.5 w-3.5" />
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[12.5px] font-bold text-ink">{names.join(', ')}</span>
-                            <span className="block truncate text-[11px] text-ink-faint">{dayLabelOf(p.dateKey)} · {invoiceNoOf(p)} · {p.method}</span>
-                          </span>
-                          <span className="tnum shrink-0 text-[12.5px] font-bold text-ink">{money(p.total)}</span>
-                          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
-                        </button>
-                      )
-                    })}
-                  </div>
-                  {txAllMatches.length > TX_RESULTS_CAP && (
-                    <p className="mt-2 text-center text-[11px] text-ink-faint">
-                      Showing the {TX_RESULTS_CAP} most recent of {txAllMatches.length} matches, narrow the search to see others
-                    </p>
-                  )}
-                </>
-              )
-            )}
-          </div>
 
           {/* ── no registers configured at all ── */}
           {!selected && (
@@ -807,6 +727,109 @@ export function RegisterPage({
             )}
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+/* ── find a transaction, any day, any register -- a lightweight standalone
+   modal, reachable straight from the nav rail's Search shortcut without
+   detouring through the full Manage Register page. Not scoped to the
+   current shift or even a particular register, so a ticket from two weeks
+   ago is just as reachable as today's. Matches client name, any guest
+   riding on the ticket, or the printed invoice number. ── */
+export function FindTransactionModal({ open, payments, onResolvePayment, onClose }: {
+  open: boolean
+  payments: RegisterPayment[]
+  /** open this ticket, e.g. to issue a refund -- also closes the modal */
+  onResolvePayment: (id: string) => void
+  onClose: () => void
+}) {
+  const [txQuery, setTxQuery] = useState('')
+  const txInputRef = useRef<HTMLInputElement>(null)
+  // jump straight into the box on open, and clear the search once it closes
+  // so it doesn't carry over stale results into the next time it's opened
+  useEffect(() => {
+    if (open) requestAnimationFrame(() => txInputRef.current?.focus())
+    else setTxQuery('')
+  }, [open])
+  const txAllMatches = useMemo(() => {
+    const q = txQuery.trim().toLowerCase()
+    if (!q) return []
+    return payments
+      .filter((p) => {
+        const names = [p.clientName, ...(p.clientNames ?? [])]
+        return names.some((n) => n.toLowerCase().includes(q)) || invoiceNoOf(p).toLowerCase().includes(q)
+      })
+      .sort((a, b) => paymentAt(b) - paymentAt(a))
+  }, [payments, txQuery])
+  const txMatches = txAllMatches.slice(0, TX_RESULTS_CAP)
+
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-[120] flex items-start justify-center bg-slate-900/55 p-4 pt-[12vh]" onClick={onClose}>
+      <div
+        className="w-full max-w-lg rounded-2xl border border-line bg-popover p-4 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-2.5 flex items-center justify-between gap-2">
+          <h2 className="flex items-center gap-1.5 text-[13px] font-bold text-ink">
+            <Search className="h-4 w-4 text-clay" /> Find a transaction
+          </h2>
+          <button
+            type="button"
+            title="Close"
+            onClick={onClose}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-ink-faint transition-colors hover:bg-cream"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <input
+          ref={txInputRef}
+          value={txQuery}
+          onChange={(e) => setTxQuery(e.target.value)}
+          placeholder="Client, guest, or invoice number, any date"
+          className="w-full rounded-[8px] border border-input bg-background px-2.5 py-2 text-[12.5px] outline-none focus:border-clay"
+        />
+        {txQuery.trim() && (
+          txMatches.length === 0 ? (
+            <p className="mt-3 text-center text-[12px] text-ink-faint">No transactions match &quot;{txQuery.trim()}&quot;</p>
+          ) : (
+            <>
+              <div className="mt-3 max-h-72 space-y-1.5 overflow-y-auto">
+                {txMatches.map((p) => {
+                  const names = [p.clientName, ...(p.clientNames ?? []).filter((n) => n !== p.clientName)]
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => onResolvePayment(p.id)}
+                      title="Open this ticket, e.g. to issue a refund"
+                      className="flex w-full items-center gap-2.5 rounded-[10px] border border-line bg-surface px-3 py-2 text-left transition-colors hover:border-clay hover:bg-clay-tint/30"
+                    >
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-clay-tint text-clay">
+                        <Receipt className="h-3.5 w-3.5" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[12.5px] font-bold text-ink">{names.join(', ')}</span>
+                        <span className="block truncate text-[11px] text-ink-faint">{dayLabelOf(p.dateKey)} · {invoiceNoOf(p)} · {p.method}</span>
+                      </span>
+                      <span className="tnum shrink-0 text-[12.5px] font-bold text-ink">{money(p.total)}</span>
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-ink-faint" />
+                    </button>
+                  )
+                })}
+              </div>
+              {txAllMatches.length > TX_RESULTS_CAP && (
+                <p className="mt-2 text-center text-[11px] text-ink-faint">
+                  Showing the {TX_RESULTS_CAP} most recent of {txAllMatches.length} matches, narrow the search to see others
+                </p>
+              )}
+            </>
+          )
+        )}
       </div>
     </div>
   )
