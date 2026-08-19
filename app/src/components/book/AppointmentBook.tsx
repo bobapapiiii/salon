@@ -3464,7 +3464,7 @@ export function AppointmentBook() {
           <div
             onPointerDown={(e) => startDrag(e, a, 'resize')}
             onClick={(e) => e.stopPropagation()}
-            className="absolute inset-x-0 bottom-0 h-2 cursor-ns-resize opacity-0 transition-opacity duration-150 group-hover/blk:opacity-100"
+            className="absolute inset-x-0 bottom-0 z-20 h-2 cursor-ns-resize opacity-0 transition-opacity duration-150 group-hover/blk:opacity-100"
             style={{ background: 'linear-gradient(to top, rgba(42,33,26,.14), transparent)' }}
           />
         )}
