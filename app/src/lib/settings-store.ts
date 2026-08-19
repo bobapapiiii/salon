@@ -89,7 +89,7 @@ const defaults: SalonSettings = {
   },
   booking: {
     autoConfirm: false, minLeadHrs: 2, maxDaysOut: 60, allowTechChoice: true, allowSameTime: true,
-    allowOverlap: false, warnOnDoubleBook: true, autoRelocateNonRequested: true, increment: 15,
+    allowOverlap: true, warnOnDoubleBook: true, autoRelocateNonRequested: true, increment: 15,
     showNoShows: true,
   },
   payments: { methods: [...ALL_METHODS], tipPresets: [0, 15, 18, 20, 25] },

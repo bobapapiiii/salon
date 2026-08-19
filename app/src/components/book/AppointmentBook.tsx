@@ -4087,7 +4087,6 @@ export function AppointmentBook() {
             {dragInvalid ? '⛔ Slot unavailable' : '✓ Release to drop'}
           </span>
         )}
-        {allowOverlap && <span className="font-medium text-violet-500">double-booking on</span>}
         {focusKey != null && <span className="font-medium text-clay">focus mode, click anywhere to exit</span>}
         <span className="ml-auto" />
 
