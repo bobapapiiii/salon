@@ -2123,23 +2123,39 @@ export function AppointmentBook() {
     // was checked "save as preferred tech" gets that tech + category added
     // to their standing preferences (merged into an existing entry for that
     // same tech if they already have one, so a second category just appends)
-    setClients((cs) => cs.map((c) => {
-      if (!party.has(c.name)) return c
-      const mine = (p.preferredTechPrefs ?? []).filter((pr) => pr.person === c.name)
-      if (mine.length === 0) return { ...c, visits: c.visits + 1 }
-      let preferredTechs = c.preferredTechs ? [...c.preferredTechs] : []
-      for (const pr of mine) {
-        const idx = preferredTechs.findIndex((x) => x.techId === pr.techId)
-        if (idx >= 0) {
-          if (!preferredTechs[idx].categoryIds.includes(pr.categoryId)) {
-            preferredTechs[idx] = { ...preferredTechs[idx], categoryIds: [...preferredTechs[idx].categoryIds, pr.categoryId] }
-          }
-        } else {
-          preferredTechs.push({ id: uid('pref'), techId: pr.techId, categoryIds: [pr.categoryId] })
-        }
+    setClients((cs) => {
+      const prefsByPerson = new Map<string, { techId: string; categoryId: string }[]>()
+      for (const pr of p.preferredTechPrefs ?? []) {
+        prefsByPerson.set(pr.person, [...(prefsByPerson.get(pr.person) ?? []), pr])
       }
-      return { ...c, visits: c.visits + 1, preferredTechs }
-    }))
+      const mergePrefs = (existing: ClientRecord['preferredTechs'], adds: { techId: string; categoryId: string }[]) => {
+        const next = existing ? [...existing] : []
+        for (const pr of adds) {
+          const idx = next.findIndex((x) => x.techId === pr.techId)
+          if (idx >= 0) {
+            if (!next[idx].categoryIds.includes(pr.categoryId)) {
+              next[idx] = { ...next[idx], categoryIds: [...next[idx].categoryIds, pr.categoryId] }
+            }
+          } else {
+            next.push({ id: uid('pref'), techId: pr.techId, categoryIds: [pr.categoryId] })
+          }
+        }
+        return next
+      }
+      const updated = cs.map((c) => {
+        if (!party.has(c.name)) return c
+        const adds = prefsByPerson.get(c.name)
+        if (!adds || adds.length === 0) return { ...c, visits: c.visits + 1 }
+        prefsByPerson.delete(c.name) // handled here, not created fresh below
+        return { ...c, visits: c.visits + 1, preferredTechs: mergePrefs(c.preferredTechs, adds) }
+      })
+      // whoever's left had no ClientRecord at all -- checking the box is
+      // enough to start a minimal profile just to hold the preference
+      const created: ClientRecord[] = [...prefsByPerson.entries()].map(([name, adds]) => ({
+        id: uid('client'), name, phone: '', visits: 1, preferredTechs: mergePrefs(undefined, adds),
+      }))
+      return created.length > 0 ? [...updated, ...created] : updated
+    })
     // loyalty: deduct redeemed points, then award what this ticket earned --
     // stamped on the payment above too, so a later correction or refund
     // reverses the SAME person's balance even if the ticket's selection changes

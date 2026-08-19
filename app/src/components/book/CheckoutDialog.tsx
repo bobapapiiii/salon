@@ -467,14 +467,16 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
             </p>
           )}
           {/* save this tech + service's category as the client's standing
-              preference -- only offered once a tech is on the line and the
-              person it belongs to actually has a profile to save it onto */}
-          {isEditing && l.techId && l.person && accountNames?.includes(l.person) && (() => {
+              preference -- offered on any editable line once it has a tech
+              assigned; if this person doesn't have a profile yet, checking
+              it creates a minimal one just to hold the preference */}
+          {isEditing && l.techId && l.person && (() => {
             const svc = l.serviceId ? svcById[l.serviceId] : undefined;
             const cat = svc ? catById[svc.categoryId] : undefined;
             const tech = getStaff().techs.find((t) => t.id === l.techId);
             if (!cat || !tech) return null;
             const checked = prefPicks.has(l.id);
+            const hasAccount = accountNames?.includes(l.person) ?? false;
             return (
               <label className="mt-1 flex items-center gap-1.5 text-[10.5px] text-ink-faint">
                 <input
@@ -484,6 +486,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                   className="h-3 w-3 rounded border-input accent-clay"
                 />
                 Save {tech.name.split(" ")[0]} as {l.person}&rsquo;s preferred tech for {cat.name}
+                {!hasAccount && checked && <span className="text-ink-faint/70"> (creates their profile)</span>}
               </label>
             );
           })()}
