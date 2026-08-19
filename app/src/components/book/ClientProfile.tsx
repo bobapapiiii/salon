@@ -36,10 +36,11 @@ interface Props {
   onClose: () => void
 }
 
-type Tab = 'overview' | 'profile' | 'notes' | 'appointments' | 'guests' | 'loyalty'
+type Tab = 'overview' | 'profile' | 'preferences' | 'notes' | 'appointments' | 'guests' | 'loyalty'
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'profile', label: 'Profile' },
+  { id: 'preferences', label: 'Preferred Techs' },
   { id: 'notes', label: 'Notes' },
   { id: 'appointments', label: 'Appointments' },
   { id: 'guests', label: 'Guests' },
@@ -197,6 +198,9 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
               {t.id === 'notes' && notes.length > 0 && (
                 <span className="ml-1.5 rounded-full bg-sky-500/15 px-1.5 text-[10px] text-sky-600">{notes.length}</span>
               )}
+              {t.id === 'preferences' && prefDraft.length > 0 && (
+                <span className="ml-1.5 rounded-full bg-sky-500/15 px-1.5 text-[10px] text-sky-600">{prefDraft.length}</span>
+              )}
             </button>
           ))}
         </div>
@@ -304,6 +308,40 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
                 </div>
               </div>
 
+              <div className="grid grid-cols-3 gap-4">
+                <div className="col-span-2"><label className={label}>Street address</label><input className={field} placeholder="Street address" /></div>
+                <div><label className={label}>City</label><input className={field} placeholder="Houston" /></div>
+                <div>
+                  <label className={label}>State</label>
+                  <select className={field}><option>Texas</option><option>Other</option></select>
+                </div>
+                <div><label className={label}>Zip code</label><input className={field} placeholder="77000" /></div>
+              </div>
+
+              <div className="rounded-lg border border-border p-4">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Notification preferences</div>
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <label className="flex items-center gap-2"><input type="checkbox" defaultChecked className="accent-sky-500" /> Transactional, SMS</label>
+                  <label className="flex items-center gap-2"><input type="checkbox" defaultChecked className="accent-sky-500" /> Marketing, SMS</label>
+                  <label className="flex items-center gap-2"><input type="checkbox" defaultChecked className="accent-sky-500" /> Transactional, Email</label>
+                  <label className="flex items-center gap-2"><input type="checkbox" className="accent-sky-500" /> Marketing, Email</label>
+                </div>
+                <label className="mt-3 flex items-center gap-2 border-t border-border pt-3 text-sm text-red-500">
+                  <input type="checkbox" className="accent-red-500" /> Block guest from online appointment booking
+                </label>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button onClick={saveProfile} className="rounded-md bg-primary px-6 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90">
+                  Save
+                </button>
+                {saved && <span className="text-sm text-emerald-500">✓ Profile saved</span>}
+              </div>
+            </div>
+          )}
+
+          {tab === 'preferences' && (
+            <div className="max-w-3xl space-y-5">
               <div className="rounded-lg border border-border p-4">
                 <div className="mb-2 flex items-center justify-between">
                   <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -369,34 +407,11 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4">
-                <div className="col-span-2"><label className={label}>Street address</label><input className={field} placeholder="Street address" /></div>
-                <div><label className={label}>City</label><input className={field} placeholder="Houston" /></div>
-                <div>
-                  <label className={label}>State</label>
-                  <select className={field}><option>Texas</option><option>Other</option></select>
-                </div>
-                <div><label className={label}>Zip code</label><input className={field} placeholder="77000" /></div>
-              </div>
-
-              <div className="rounded-lg border border-border p-4">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Notification preferences</div>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <label className="flex items-center gap-2"><input type="checkbox" defaultChecked className="accent-sky-500" /> Transactional, SMS</label>
-                  <label className="flex items-center gap-2"><input type="checkbox" defaultChecked className="accent-sky-500" /> Marketing, SMS</label>
-                  <label className="flex items-center gap-2"><input type="checkbox" defaultChecked className="accent-sky-500" /> Transactional, Email</label>
-                  <label className="flex items-center gap-2"><input type="checkbox" className="accent-sky-500" /> Marketing, Email</label>
-                </div>
-                <label className="mt-3 flex items-center gap-2 border-t border-border pt-3 text-sm text-red-500">
-                  <input type="checkbox" className="accent-red-500" /> Block guest from online appointment booking
-                </label>
-              </div>
-
               <div className="flex items-center gap-3">
                 <button onClick={saveProfile} className="rounded-md bg-primary px-6 py-2 text-sm font-semibold text-primary-foreground hover:opacity-90">
                   Save
                 </button>
-                {saved && <span className="text-sm text-emerald-500">✓ Profile saved</span>}
+                {saved && <span className="text-sm text-emerald-500">✓ Saved</span>}
               </div>
             </div>
           )}
