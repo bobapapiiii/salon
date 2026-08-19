@@ -9,9 +9,9 @@
 // drawer only through the close count in this build.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  AlertTriangle, Banknote, Check, ChevronDown, ChevronRight, CreditCard, Lock, LockOpen, Receipt, Scale, Search, X,
+  AlertTriangle, Banknote, Check, ChevronDown, ChevronRight, CreditCard, Lock, LockOpen, Printer, Receipt, Scale, Search, X,
 } from 'lucide-react'
-import type { RegisterConfig } from '@/lib/settings-store'
+import { useSettingsStore, type RegisterConfig } from '@/lib/settings-store'
 import { paymentSources, type PaymentSource } from './CheckoutDialog'
 
 /** one open→close cycle of the drawer */
@@ -318,6 +318,11 @@ export function RegisterPage({
   const [closeByDenom, setCloseByDenom] = useState(true)
   const [closeNote, setCloseNote] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
+  // the closure report: `true` previews the shift about to close, using the
+  // live close-form numbers below; a RegisterSession instead reprints a
+  // past shift straight from its own stored record (see the history table)
+  const [reportPreview, setReportPreview] = useState(false)
+  const [reportSession, setReportSession] = useState<RegisterSession | null>(null)
 
   // this shift's takings, live while it's open
   const shift = useMemo(() => (active ? sessionPayments(active, payments) : []), [active, payments])
@@ -372,6 +377,7 @@ export function RegisterPage({
   const varianceLabel = variance === 0 ? 'Balanced' : variance > 0 ? `Over by ${money(variance)}` : `Short by ${money(Math.abs(variance))}`
 
   return (
+    <>
     <div className="fixed inset-0 z-[95] flex flex-col bg-[#FAF8FA]">
       {/* ══ header ══ */}
       <div className="flex h-16 shrink-0 items-center gap-3 border-b border-line bg-surface px-4">
@@ -647,7 +653,15 @@ export function RegisterPage({
                     className="mt-3 w-full rounded-[8px] border border-input bg-background px-2.5 py-2 text-[12.5px] outline-none focus:border-clay"
                   />
 
-                  <div className="mt-3.5 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setReportPreview(true)}
+                    className="mt-3.5 flex w-full items-center justify-center gap-2 rounded-xl border border-line py-2.5 text-[13px] font-bold text-ink-soft transition-colors hover:bg-cream"
+                  >
+                    <Printer className="h-4 w-4" /> Print closing report
+                  </button>
+
+                  <div className="mt-2 flex gap-2">
                     <button
                       type="button"
                       onClick={() => setClosing(false)}
@@ -699,6 +713,7 @@ export function RegisterPage({
                       <th className="px-4 py-2 text-right font-bold">Expected</th>
                       <th className="px-4 py-2 text-right font-bold">Counted</th>
                       <th className="px-4 py-2 text-right font-bold">Over / short</th>
+                      <th className="px-4 py-2 text-right font-bold"><span className="sr-only">Print</span></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -718,6 +733,16 @@ export function RegisterPage({
                           <td className={`tnum px-4 py-2.5 text-right font-bold ${v === 0 ? 'text-olive' : v > 0 ? 'text-amberw' : 'text-rust'}`}>
                             {v === 0 ? 'Balanced' : v > 0 ? `+ ${money(v)}` : money(v)}
                           </td>
+                          <td className="px-4 py-2.5 text-right">
+                            <button
+                              type="button"
+                              title="Print this shift's closure report"
+                              onClick={() => setReportSession(s)}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-[8px] text-ink-faint transition-colors hover:bg-cream hover:text-ink"
+                            >
+                              <Printer className="h-3.5 w-3.5" />
+                            </button>
+                          </td>
                         </tr>
                       )
                     })}
@@ -729,6 +754,37 @@ export function RegisterPage({
         </div>
       </div>
     </div>
+
+    {/* closure report -- a live preview of the shift about to close, built
+        from the current close-form numbers above */}
+    {reportPreview && active && selected && (
+      <RegisterClosureReportDialog
+        data={{
+          registerName: selected.name,
+          dateKey: active.dateKey,
+          openedAt: active.openedAt,
+          openedBy: active.openedBy,
+          openingFloat: active.openingFloat,
+          tenders,
+          expectedCash: expected,
+          countedCash: counted,
+          variance,
+          closingCounts: closeByDenom ? closeCounts : undefined,
+          closingNote: closeNote.trim() || undefined,
+        }}
+        onClose={() => setReportPreview(false)}
+      />
+    )}
+
+    {/* closure report -- a reprint of a past shift, straight from its own
+        stored record in history */}
+    {reportSession && (
+      <RegisterClosureReportDialog
+        data={closureReportFromSession(reportSession)}
+        onClose={() => setReportSession(null)}
+      />
+    )}
+    </>
   )
 }
 
@@ -830,6 +886,172 @@ export function FindTransactionModal({ open, payments, onResolvePayment, onClose
             </>
           )
         )}
+      </div>
+    </div>
+  )
+}
+
+/** everything the printable closure report needs -- built live from the
+ *  in-progress close form (a preview, before Close register is even
+ *  clicked) or from a stored RegisterSession (a reprint of a past shift);
+ *  see closureReportFromSession below for the latter */
+export interface ClosureReportData {
+  registerName: string
+  dateKey: string
+  openedAt: number
+  openedBy: string
+  /** unset for a live preview -- the shift hasn't actually closed yet */
+  closedAt?: number
+  closedBy?: string
+  openingFloat: number
+  /** sales by tender for this shift -- cash, credit card, and whatever
+   *  other payment sources were taken */
+  tenders: { method: string; amount: number; count: number }[]
+  expectedCash: number
+  countedCash: number
+  variance: number
+  /** denomination → quantity, when the drawer was counted that way rather
+   *  than typed as a single total */
+  closingCounts?: Record<string, number>
+  closingNote?: string
+}
+
+/** a stored session already carries everything a reprint needs, frozen at
+ *  close time -- this just reshapes it into the report's own type */
+export function closureReportFromSession(s: RegisterSession): ClosureReportData {
+  return {
+    registerName: s.registerName,
+    dateKey: s.dateKey,
+    openedAt: s.openedAt,
+    openedBy: s.openedBy,
+    closedAt: s.closedAt,
+    closedBy: s.closedBy,
+    openingFloat: s.openingFloat,
+    tenders: s.tenders ?? [],
+    expectedCash: s.expectedCash ?? 0,
+    countedCash: s.countedCash ?? 0,
+    variance: s.variance ?? 0,
+    closingCounts: s.closingCounts,
+    closingNote: s.closingNote,
+  }
+}
+
+/* ── printable register closure report -- sales by tender, the cash math
+   (float + cash taken vs. what was actually counted), and the denomination
+   breakdown behind that count, so a manager can see exactly how the
+   counted total was reached. Reachable from the close form itself (a
+   preview of the shift about to close) or from a past shift in history
+   (a reprint) -- same dialog either way, see ClosureReportData above. ── */
+export function RegisterClosureReportDialog({ data, onClose }: {
+  data: ClosureReportData
+  onClose: () => void
+}) {
+  const settings = useSettingsStore()
+  const salon = settings.general
+  const dayLabel = dayLabelOf(data.dateKey)
+  const collected = Math.round(data.tenders.reduce((t, x) => t + x.amount, 0) * 100) / 100
+  const varianceTone = data.variance === 0 ? 'text-olive' : data.variance > 0 ? 'text-amberw' : 'text-rust'
+  const varianceLabel = data.variance === 0
+    ? 'Balanced'
+    : data.variance > 0 ? `Over by ${money(data.variance)}` : `Short by ${money(Math.abs(data.variance))}`
+  const denomLines = data.closingCounts
+    ? DENOMS.map((d) => ({ ...d, qty: data.closingCounts![d.id] ?? 0 })).filter((d) => d.qty > 0)
+    : []
+
+  return (
+    <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/45 p-4">
+      {/* only this block prints, same pattern as InvoiceDialog */}
+      <style>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          .print-area, .print-area * { visibility: visible !important; }
+          .print-area { position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; box-shadow: none !important; border: none !important; }
+        }
+      `}</style>
+      <div className="print-area relative max-h-[90vh] w-[420px] max-w-[95vw] overflow-y-auto rounded-2xl border border-line bg-popover shadow-2xl">
+        {/* salon header */}
+        <div className="border-b border-dashed border-line px-6 pb-3 pt-5 text-center">
+          <h2 className="font-display text-[19px] font-bold tracking-wide">{salon.name}</h2>
+          <p className="mt-0.5 text-[11px] text-ink-faint">{salon.address}</p>
+          <p className="text-[11px] text-ink-faint">{salon.phone}{salon.website ? ` · ${salon.website}` : ''}</p>
+          <p className="mt-2 text-[13px] font-bold text-ink">Register closure report</p>
+        </div>
+
+        {/* shift meta */}
+        <div className="space-y-1 border-b border-dashed border-line px-6 py-3 text-[12px]">
+          <div className="flex justify-between"><span className="text-ink-faint">Register</span><span className="font-semibold">{data.registerName}</span></div>
+          <div className="flex justify-between"><span className="text-ink-faint">Day</span><span className="font-semibold">{dayLabel}</span></div>
+          <div className="flex justify-between"><span className="text-ink-faint">Opened</span><span className="font-semibold">{stamp(data.openedAt)} · {data.openedBy}</span></div>
+          <div className="flex justify-between">
+            <span className="text-ink-faint">Closed</span>
+            <span className="font-semibold">{data.closedAt ? `${stamp(data.closedAt)} · ${data.closedBy}` : 'Not yet closed (preview)'}</span>
+          </div>
+        </div>
+
+        {/* sales by tender */}
+        <div className="space-y-1 border-b border-dashed border-line px-6 py-3 text-[13px]">
+          <p className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-ink-faint">Sales by payment method</p>
+          {data.tenders.length === 0 ? (
+            <p className="text-[12px] text-ink-faint">No payments taken this shift.</p>
+          ) : (
+            data.tenders.map((t) => (
+              <div key={t.method} className="flex justify-between">
+                <span className="text-ink-soft">{t.method} <span className="text-[11px] text-ink-faint">({t.count} sale{t.count === 1 ? '' : 's'})</span></span>
+                <span className="tnum font-semibold">{money(t.amount)}</span>
+              </div>
+            ))
+          )}
+          <div className="flex justify-between border-t border-line pt-1.5 text-[14px] font-bold">
+            <span>Total collected</span><span className="tnum">{money(collected)}</span>
+          </div>
+        </div>
+
+        {/* cash math */}
+        <div className="space-y-1 border-b border-dashed border-line px-6 py-3 text-[13px]">
+          <p className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-ink-faint">Cash drawer</p>
+          <div className="flex justify-between"><span className="text-ink-faint">Opening float</span><span className="tnum">{money(data.openingFloat)}</span></div>
+          <div className="flex justify-between"><span className="text-ink-faint">Cash taken</span><span className="tnum">+ {money(data.tenders.find((t) => t.method === 'Cash')?.amount ?? 0)}</span></div>
+          <div className="flex justify-between border-t border-line pt-1.5 font-bold"><span>Cash that should be in the drawer</span><span className="tnum">{money(data.expectedCash)}</span></div>
+          <div className="flex justify-between"><span className="text-ink-faint">Cash counted</span><span className="tnum">{money(data.countedCash)}</span></div>
+          <div className={`flex justify-between border-t border-line pt-1.5 text-[14px] font-bold ${varianceTone}`}>
+            <span>{varianceLabel}</span>
+            <span className="tnum">{data.variance > 0 ? `+ ${money(data.variance)}` : money(data.variance)}</span>
+          </div>
+        </div>
+
+        {/* denomination breakdown behind the counted total, if it was counted that way */}
+        {denomLines.length > 0 && (
+          <div className="space-y-1 border-b border-dashed border-line px-6 py-3 text-[12.5px]">
+            <p className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-ink-faint">Counted by denomination</p>
+            {denomLines.map((d) => (
+              <div key={d.id} className="flex justify-between">
+                <span className="text-ink-soft">{d.label} <span className="text-[11px] text-ink-faint">× {d.qty}</span></span>
+                <span className="tnum font-semibold">{money(d.value * d.qty)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {data.closingNote && (
+          <p className="border-b border-dashed border-line px-6 py-3 text-[11.5px] italic text-ink-faint">{data.closingNote}</p>
+        )}
+
+        {/* actions (hidden in print via visibility of parent) */}
+        <div className="flex gap-2 px-6 py-3.5">
+          <button
+            onClick={() => window.print()}
+            className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-clay py-2.5 text-[13px] font-bold text-white transition-colors hover:bg-clay-deep"
+          >
+            <Printer className="h-4 w-4" /> Print report
+          </button>
+          <button
+            onClick={onClose}
+            className="flex h-[42px] w-[42px] items-center justify-center rounded-xl border border-line text-ink-soft transition-colors hover:bg-cream"
+            title="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
     </div>
   )
