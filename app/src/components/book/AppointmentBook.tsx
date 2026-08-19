@@ -344,6 +344,9 @@ export function AppointmentBook() {
   const [checkoutDraft, setCheckoutDraft] = usePersistentState<CheckoutDraft | null>(sdata('checkout-draft-v2'), null)
   const [posOpen, setPosOpen] = useState(false)
   const [scheduleOpen, setScheduleOpen] = useState(false)
+  // opened from a specific tech's own ⋯ menu rather than the general
+  // Schedule shortcut -- pre-filters the team schedule panel to just them
+  const [scheduleFocusTechId, setScheduleFocusTechId] = useState<string | null>(null)
   const [schedules, setSchedules] = usePersistentState<Record<string, DaySchedule>>(sdata('schedule-v1'), {})
   const [blocksByDay, setBlocksByDay] = usePersistentState<Record<string, TimeBlock[]>>(sdata('blocks-v1'), {})
   const [gridMenu, setGridMenu] = useState<{ x: number; y: number; techId: string; startMin: number } | null>(null)
@@ -3559,7 +3562,7 @@ export function AppointmentBook() {
   const hours = Array.from({ length: DAY_SLOTS / 4 + 3 }, (_, i) => (i - 1) * 60)
 
   const onNavNavigate = (page: 'calendar' | 'techschedule' | 'jobcard' | 'search' | 'register' | 'settings') => {
-    if (page === 'techschedule') { setScheduleOpen(true); return }
+    if (page === 'techschedule') { setScheduleFocusTechId(null); setScheduleOpen(true); return }
     if (page === 'jobcard') { setJobCardDate(dateKey); setJobCardOpen(true); return }
     if (page === 'search') { setFindTxOpen(true); return }
     if (page === 'register') { setRegisterOpen(true); return }
@@ -4245,6 +4248,7 @@ export function AppointmentBook() {
               {item('View profile settings', () => navigate('/settings/techs', { state: { techId: t.id } }))}
               {item('View week schedule', () => setTechSchedView({ techId: t.id, mode: 'week' }))}
               {item('View monthly schedule', () => setTechSchedView({ techId: t.id, mode: 'month' }))}
+              {item("Set today's status (late, out, emergency)…", () => { setScheduleFocusTechId(t.id); setScheduleOpen(true) })}
               <div className="my-1 border-t border-border" />
               {item('Move appointments to other techs', () => setMoveApptsTechId(t.id))}
             </div>
@@ -4619,7 +4623,8 @@ export function AppointmentBook() {
           dateLabel={dayLabel(date)}
           day={daySchedule}
           onSet={setTechDay}
-          onClose={() => setScheduleOpen(false)}
+          onClose={() => { setScheduleOpen(false); setScheduleFocusTechId(null) }}
+          focusTechId={scheduleFocusTechId ?? undefined}
         />
       )}
 

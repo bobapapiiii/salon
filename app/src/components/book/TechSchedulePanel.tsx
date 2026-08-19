@@ -32,15 +32,20 @@ const STATUS_ORDER: TechDay["status"][] = ["working", "off", "vacation", "emerge
 const field =
   "w-full rounded-[8px] border border-input bg-background px-2 py-1.5 text-[12px] outline-none focus:ring-1 focus:ring-ring";
 
-export function TechSchedulePanel({ dateLabel, day, onSet, onClose }: {
+export function TechSchedulePanel({ dateLabel, day, onSet, onClose, focusTechId }: {
   dateLabel: string;
   day: DaySchedule;
   onSet: (techId: string, patch: Partial<TechDay>) => void;
   onClose: () => void;
+  /** opened from a specific tech's own ⋯ menu on the calendar rather than
+   *  the general Schedule shortcut -- pre-filters the list to just them and
+   *  opens their row straight away, so marking someone out sick or coming
+   *  in late is a couple of clicks, not a search through the whole team */
+  focusTechId?: string;
 }) {
   const { roles, techs } = useStaffStore();
-  const [q, setQ] = useState("");
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [q, setQ] = useState(() => (focusTechId ? techs.find((t) => t.id === focusTechId)?.name ?? "" : ""));
+  const [openId, setOpenId] = useState<string | null>(focusTechId ?? null);
 
   const groups = useMemo(() => {
     const text = q.trim().toLowerCase();
