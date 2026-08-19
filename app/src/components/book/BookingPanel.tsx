@@ -654,9 +654,9 @@ export function BookingPanel({
               {catServices.length > 0 && (
                 <SearchSelect
                   options={catServices.map((s) => ({ value: s.id, label: s.name, sublabel: `$${s.price}`, group: serviceGroupLabel(s, categories) }))}
-                  value=""
+                  value={catServices.find((s) => svcIds.includes(s.id))?.id ?? ''}
                   onChange={(svcId) => addPreferredService(gi, p.techId, svcId)}
-                  placeholder="+ Add a service for them…"
+                  placeholder="+ Add service"
                   searchPlaceholder="Search services"
                   className="w-full"
                 />
