@@ -483,7 +483,7 @@ function WalkInBuilder({ clients, onAddClient, onAdd }: {
               key={g.name}
               type="button"
               onClick={() => setActiveIdx(i)}
-              className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold transition-colors ${
+              className={`flex items-center gap-1 rounded-[8px] border px-2 py-0.5 text-[11px] font-semibold transition-colors ${
                 i === activeIdx ? 'border-clay bg-clay-tint text-clay' : 'border-line bg-surface text-ink-soft hover:border-clay/50'
               }`}
               title={`Select services for ${g.name}`}
@@ -834,7 +834,7 @@ function RequestCard({ req, appts, blocks, onApprove, onAskDecline, onPropose }:
             {slots.length === 0 && <span className="text-small font-medium text-ink-faint">No open slots today</span>}
             {slots.map((s) => (
               <button key={s} type="button" onClick={() => onPropose(req.id, s)}
-                className="tnum rounded-full border border-clay/40 bg-clay-tint px-2.5 py-1 text-[12px] font-bold text-clay transition-colors hover:bg-clay hover:text-white">
+                className="tnum rounded-[10px] border border-clay/40 bg-clay-tint px-2.5 py-1 text-[12px] font-bold text-clay transition-colors hover:bg-clay hover:text-white">
                 {fmtTime(s)}
               </button>
             ))}

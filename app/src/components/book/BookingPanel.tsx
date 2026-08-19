@@ -256,7 +256,7 @@ export function BookingPanel({
               key={a.id}
               type="button"
               onClick={() => setAddonsByService((m) => ({ ...m, [key]: has ? on.filter((x) => x.id !== a.id) : [...on, a] }))}
-              className={`rounded-full border px-2 py-0.5 text-[10.5px] font-bold transition-colors ${
+              className={`rounded-[8px] border px-2 py-0.5 text-[10.5px] font-bold transition-colors ${
                 has ? 'border-clay/60 bg-clay-tint text-clay' : 'border-line text-ink-faint hover:border-clay/40'
               }`}
             >
@@ -645,7 +645,7 @@ export function BookingPanel({
                   <button
                     onClick={() => applyPreference(gi, p)}
                     disabled={applied}
-                    className="shrink-0 rounded-full border border-clay/40 px-2 py-0.5 text-[10.5px] font-semibold text-clay transition-colors hover:bg-clay-tint disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
+                    className="shrink-0 rounded-[8px] border border-clay/40 px-2 py-0.5 text-[10.5px] font-semibold text-clay transition-colors hover:bg-clay-tint disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent"
                   >
                     {applied ? 'Applied' : 'Apply to picked'}
                   </button>
@@ -823,7 +823,7 @@ export function BookingPanel({
                   <button
                     key={g.id}
                     onClick={() => setActiveGuest(i)}
-                    className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    className={`flex items-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-xs font-semibold transition-colors ${
                       activeGuest === i ? 'border-clay/60 bg-clay-tint text-ink' : 'border-line text-ink-faint hover:border-clay/40'
                     }`}
                     title={`Select services for ${g.name}`}

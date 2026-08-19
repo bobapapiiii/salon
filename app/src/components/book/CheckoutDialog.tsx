@@ -583,7 +583,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                     <button
                       key={name}
                       onClick={() => onTogglePerson(name)}
-                      className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11.5px] font-bold transition ${
+                      className={`flex items-center gap-1.5 rounded-[8px] border px-2.5 py-1 text-[11.5px] font-bold transition ${
                         on ? "border-clay bg-clay text-white" : "border-line bg-surface text-ink-faint hover:border-clay/50 hover:text-ink-soft"
                       }`}
                       title={on ? `Take ${name} off this ticket` : `Add ${name} to this ticket`}
@@ -644,7 +644,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                           <button
                             key={p2}
                             onClick={() => setDraftPerson(p2)}
-                            className={`rounded-full border px-2 py-0.5 text-[10.5px] font-bold transition ${
+                            className={`rounded-[8px] border px-2 py-0.5 text-[10.5px] font-bold transition ${
                               draftPerson === p2 ? "border-clay bg-clay-tint text-clay" : "border-line bg-surface text-ink-faint hover:border-line-strong"
                             }`}
                           >
@@ -920,7 +920,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                             {canRefundService && (
                               <button
                                 onClick={() => { setRefundFrom("service"); setRefundTechId(serviceTechTotals[0]?.techId ?? ""); }}
-                                className={`rounded-full border px-2 py-0.5 text-[10.5px] font-bold transition ${
+                                className={`rounded-[8px] border px-2 py-0.5 text-[10.5px] font-bold transition ${
                                   refundFrom === "service" ? "border-clay bg-clay-tint text-clay" : "border-line bg-surface text-ink-faint hover:border-line-strong"
                                 }`}
                               >
@@ -930,7 +930,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
                             {canRefundTip && (
                               <button
                                 onClick={() => { setRefundFrom("tip"); setRefundTechId(tipTechTotals[0]?.techId ?? ""); }}
-                                className={`rounded-full border px-2 py-0.5 text-[10.5px] font-bold transition ${
+                                className={`rounded-[8px] border px-2 py-0.5 text-[10.5px] font-bold transition ${
                                   refundFrom === "tip" ? "border-clay bg-clay-tint text-clay" : "border-line bg-surface text-ink-faint hover:border-line-strong"
                                 }`}
                               >

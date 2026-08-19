@@ -411,7 +411,7 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
                                   key={c.id}
                                   type="button"
                                   onClick={() => togglePrefCategory(p.id, c.id)}
-                                  className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                                  className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors ${
                                     selected ? 'border-sky-500 bg-sky-500/10 text-sky-600' : 'border-border text-muted-foreground hover:border-sky-300'
                                   }`}
                                 >
@@ -466,7 +466,7 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
                       key={t.id}
                       type="button"
                       onClick={() => toggleDraftAlert(t.id)}
-                      className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                      className={`rounded-md border px-2.5 py-1 text-[11px] font-medium transition-colors ${
                         on ? 'border-amber-500 bg-amber-500/10 text-amber-600' : 'border-border text-muted-foreground hover:border-amber-300'
                       }`}
                     >
@@ -501,7 +501,7 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
                           key={t.id}
                           type="button"
                           onClick={() => onUpdateNoteAlert(n.id, on ? (n.alertOn ?? []).filter((x) => x !== t.id) : [...(n.alertOn ?? []), t.id])}
-                          className={`rounded-full border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                          className={`rounded-md border px-2 py-0.5 text-[10px] font-medium transition-colors ${
                             on ? 'border-amber-500 bg-amber-500/10 text-amber-600' : 'border-border/60 text-muted-foreground/70 hover:border-amber-300'
                           }`}
                         >

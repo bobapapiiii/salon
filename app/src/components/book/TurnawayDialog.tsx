@@ -61,7 +61,7 @@ function CategoryPicker({ categories, selected, onChange }: {
           key={c.id}
           type="button"
           onClick={() => toggle(c.id)}
-          className={`rounded-full border px-2.5 py-1 text-[11.5px] font-bold transition-colors ${
+          className={`rounded-[10px] border px-2.5 py-1 text-[11.5px] font-bold transition-colors ${
             selected.includes(c.id) ? "border-clay bg-clay-tint text-clay" : "border-line bg-surface text-ink-soft hover:border-line-strong"
           }`}
         >
@@ -140,7 +140,7 @@ export function TurnawayDialog({ onSave, onClose }: {
                   <button
                     type="button"
                     onClick={() => removeGuest(i)}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-ink-faint transition-colors hover:bg-surface hover:text-[#B3402F]"
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[10px] text-ink-faint transition-colors hover:bg-surface hover:text-[#B3402F]"
                     aria-label="Remove this person"
                   >
                     <X className="h-3.5 w-3.5" />
@@ -172,7 +172,7 @@ export function TurnawayDialog({ onSave, onClose }: {
               key={r.id}
               type="button"
               onClick={() => setReason(r.id)}
-              className={`rounded-full border px-2.5 py-1 text-[11.5px] font-bold transition-colors ${
+              className={`rounded-[10px] border px-2.5 py-1 text-[11.5px] font-bold transition-colors ${
                 reason === r.id ? "border-clay bg-clay-tint text-clay" : "border-line bg-surface text-ink-soft hover:border-line-strong"
               }`}
             >

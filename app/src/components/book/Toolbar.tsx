@@ -269,7 +269,7 @@ export function Toolbar(p: Props) {
                   p.onToggleTeamChip(c.id)
                 }}
                 title={`${c.name}, click to ${hidden ? 'show' : 'hide'} · drag to reorder`}
-                className={`relative flex h-8 touch-none select-none items-center gap-1.5 rounded-full border px-2.5 text-[12px] font-bold ${
+                className={`relative flex h-8 touch-none select-none items-center gap-1.5 rounded-[10px] border px-2.5 text-[12px] font-bold ${
                   isDragged
                     ? 'z-30 cursor-grabbing shadow-sh-2 ring-1 ring-line transition-none'
                     : 'cursor-grab transition-all duration-150'

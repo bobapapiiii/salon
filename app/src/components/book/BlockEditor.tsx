@@ -57,7 +57,7 @@ export function BlockEditor({ techName, isNew, initial, onSave, onDelete, onClos
             <button
               key={r}
               onClick={() => setReason(r)}
-              className={`rounded-full border px-2.5 py-1 text-[11.5px] font-bold transition-colors ${
+              className={`rounded-[10px] border px-2.5 py-1 text-[11.5px] font-bold transition-colors ${
                 reason === r ? "border-clay bg-clay-tint text-clay" : "border-line bg-surface text-ink-soft hover:border-line-strong"
               }`}
             >
