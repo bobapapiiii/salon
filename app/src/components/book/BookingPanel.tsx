@@ -732,9 +732,6 @@ export function BookingPanel({
           )}
           {guests[0] ? (
             <>
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-clay-tint text-sm font-bold text-clay">
-                {guests[0].name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
-              </span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   {guests[0].isGuest ? (
@@ -821,9 +818,6 @@ export function BookingPanel({
                     onClick={() => pickGuest(c)}
                     className="flex w-full items-center gap-3 rounded-xl border border-transparent px-3 py-2.5 text-left hover:border-line hover:bg-cream"
                   >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-clay-tint text-xs font-bold text-clay">
-                      {c.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
-                    </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-semibold text-ink">{c.name}</span>
                       <span className="block text-[11px] text-ink-faint">{c.phone} · {c.visits} visits</span>
@@ -1292,9 +1286,6 @@ function AddAnotherGuest({ clients, guests, primaryName, onPick, onPickNameOnly,
               onMouseDown={() => { onPick(c); setQ('') }}
               className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] hover:bg-cream"
             >
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-clay-tint text-[9px] font-bold text-clay">
-                {c.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
-              </span>
               <span className="min-w-0 flex-1 truncate font-semibold text-ink">{c.name}</span>
               <span className="text-[10px] text-ink-faint">{c.phone}</span>
             </button>
