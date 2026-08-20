@@ -102,7 +102,9 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   const [q, setQ] = useState("")
   const [searching, setSearching] = useState(false)
   const [newPhone, setNewPhone] = useState("")
-  const [rows, setRows] = useState<SaleRow[]>([{ id: "r1", serviceId: services[0]?.id ?? "", techId: "" }])
+  // a blank line prompts for a service instead of silently defaulting to
+  // the catalog's first item -- picking one is an explicit action here
+  const [rows, setRows] = useState<SaleRow[]>([{ id: "r1", serviceId: "", techId: "" }])
 
   const matches = useMemo(() => {
     if (!q.trim()) return []
@@ -120,9 +122,10 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   const activeIdx = guests.length === 0 ? 0 : Math.min(activeGuest, guests.length - 1)
   const activeName = guests[activeIdx]?.name
   const visibleRows = guests.length > 0 ? rows.filter((r) => r.person === activeName) : rows
-  // every guest on the sale needs at least one service before checking out
-  // -- otherwise their chip sits there with nothing actually being rung up
-  const guestsMissingServices = guests.filter((g) => !rows.some((r) => r.person === g.name))
+  // every guest on the sale needs at least one *picked* service before
+  // checking out -- a blank prompt row doesn't count
+  const guestsMissingServices = guests.filter((g) => !rows.some((r) => r.person === g.name && r.serviceId))
+  const hasBlankRow = rows.some((r) => !r.serviceId)
 
   // add a guest to the party and make them the active tab, same as New
   // Appointment's own guest picker -- the first guest on an otherwise-
@@ -158,7 +161,7 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
     setPosSelected((s) => { const n = new Set(s); n.delete(name); return n })
     setRows((rs) => {
       const next = rs.filter((r) => r.person !== name)
-      return next.length > 0 ? next : [{ id: `r${Date.now()}`, serviceId: services[0]?.id ?? "", techId: "" }]
+      return next.length > 0 ? next : [{ id: `r${Date.now()}`, serviceId: "", techId: "" }]
     })
     setActiveGuest(0)
   }
@@ -171,7 +174,7 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
       return n
     })
 
-  const addRow = () => setRows((r) => [...r, { id: `r${Date.now()}`, serviceId: services[0]?.id ?? "", techId: "", person: activeName }])
+  const addRow = () => setRows((r) => [...r, { id: `r${Date.now()}`, serviceId: "", techId: "", person: activeName }])
   const patchRow = (id: string, patch: Partial<SaleRow>) => setRows((r) => r.map((x) => (x.id === id ? { ...x, ...patch } : x)))
   const removeRow = (id: string) => setRows((r) => r.filter((x) => x.id !== id))
 
@@ -268,7 +271,7 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
           // click-to-select tabs as New Appointment's own guest chips
           <div className="mb-2 flex flex-wrap gap-2">
             {guests.map((g, i) => {
-              const count = rows.filter((r) => r.person === g.name).length
+              const count = rows.filter((r) => r.person === g.name && r.serviceId).length
               return (
                 <button
                   key={g.id}
@@ -379,6 +382,7 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
                     options={orderedSvcs.map((s) => ({ value: s.id, label: s.name, sublabel: `$${s.price}`, group: serviceGroupLabel(s, categories) }))}
                     value={r.serviceId}
                     onChange={(v) => patchRow(r.id, { serviceId: v, techId: "" })}
+                    placeholder="Select a service"
                     searchPlaceholder="Search services"
                     className="w-full"
                   />
@@ -410,14 +414,16 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
           <span className="text-[12px] text-ink-soft">{rows.length} {rows.length === 1 ? "item" : "items"}</span>
           <span className="text-[15px] font-bold">Subtotal <span className="tnum text-clay">{money(subtotal)}</span></span>
         </div>
-        {guestsMissingServices.length > 0 && (
+        {(guestsMissingServices.length > 0 || hasBlankRow) && (
           <p className="mb-2 text-[11px] font-semibold text-rust">
-            Add a service for {guestsMissingServices.map((g) => g.name).join(", ")} before checking out.
+            {guestsMissingServices.length > 0
+              ? `Add a service for ${guestsMissingServices.map((g) => g.name).join(", ")} before checking out.`
+              : "Pick a service for every line before checking out."}
           </p>
         )}
         <button
           onClick={() => setStep("pay")}
-          disabled={rows.length === 0 || guestsMissingServices.length > 0}
+          disabled={rows.length === 0 || hasBlankRow || guestsMissingServices.length > 0}
           className="w-full rounded-xl bg-clay py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-clay-deep disabled:opacity-40"
         >
           Continue to payment →
