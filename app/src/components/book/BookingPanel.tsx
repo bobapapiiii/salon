@@ -247,38 +247,33 @@ export function BookingPanel({
   // add-ons picked per service: key `${gi}:${serviceId}` → snapshots
   const [addonsByService, setAddonsByService] = useState<Record<string, ServiceAddon[]>>({})
 
-  // shares gridRow's exact column template (defined below) so the chips land
-  // in the same "right" column as the technician dropdown above them, instead
-  // of starting back at the row's left edge
+  // 162px = the exact left offset gridRow's "right" column starts at (icon
+  // slot 12px + gap 6px + request-type column 112px + gap 6px + "for" column
+  // 20px + gap 6px) -- lines the chips up under the technician dropdown above
+  // them without confining them to that column's width, which squeezed a row
+  // of chips into a narrow strip and wrapped them across several lines
   const addonChips = (gi: number, svcId: string) => {
     const svc = svcById[svcId]
     if (!svc?.addons?.length) return null
     const key = `${gi}:${svcId}`
     const on = addonsByService[key] ?? []
     return (
-      <div className="mt-1.5">
-        {gridRow(
-          null,
-          null,
-          null,
-          <div className="flex flex-wrap gap-1">
-            {svc.addons.map((a) => {
-              const has = on.some((x) => x.id === a.id)
-              return (
-                <button
-                  key={a.id}
-                  type="button"
-                  onClick={() => setAddonsByService((m) => ({ ...m, [key]: has ? on.filter((x) => x.id !== a.id) : [...on, a] }))}
-                  className={`rounded-[8px] border px-2 py-0.5 text-[10.5px] font-bold transition-colors ${
-                    has ? 'border-clay/60 bg-clay-tint text-clay' : 'border-line text-ink-faint hover:border-clay/40'
-                  }`}
-                >
-                  + {a.name} · {a.mins}m · ${a.price}
-                </button>
-              )
-            })}
-          </div>,
-        )}
+      <div className="mt-1.5 flex flex-wrap gap-1 pl-[162px]">
+        {svc.addons.map((a) => {
+          const has = on.some((x) => x.id === a.id)
+          return (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => setAddonsByService((m) => ({ ...m, [key]: has ? on.filter((x) => x.id !== a.id) : [...on, a] }))}
+              className={`rounded-[8px] border px-2 py-0.5 text-[10.5px] font-bold transition-colors ${
+                has ? 'border-clay/60 bg-clay-tint text-clay' : 'border-line text-ink-faint hover:border-clay/40'
+              }`}
+            >
+              + {a.name} · {a.mins}m · ${a.price}
+            </button>
+          )
+        })}
       </div>
     )
   }
@@ -847,65 +842,71 @@ export function BookingPanel({
 
           {step === 'services' && (
             <>
-              {/* guest chips, click to edit that guest's services; X removes */}
-              <div className="mb-3 flex flex-wrap gap-2">
-                {guests.map((g, i) => (
-                  <button
-                    key={g.id}
-                    onClick={() => setActiveGuest(i)}
-                    className={`flex items-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                      activeGuest === i ? 'border-clay/60 bg-clay-tint text-ink' : 'border-line text-ink-faint hover:border-clay/40'
-                    }`}
-                    title={`Select services for ${g.name}`}
-                  >
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-clay-tint text-[10px] font-bold text-clay">
-                      {g.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
-                    </span>
-                    {g.name}
-                    {g.isGuest ? (
-                      <span className="rounded-full bg-cream px-1.5 text-[10px] font-semibold text-ink-faint">guest</span>
-                    ) : isParty && hostIdx === i && (
-                      <span className="rounded-full bg-amberw-tint px-1.5 text-[10px] font-semibold text-amberw">host</span>
-                    )}
-                    <span className="rounded-full bg-olive-tint px-1.5 text-[10px] text-olive">
-                      {(svcsByGuest[i] ?? []).length} svc
-                    </span>
-                    <span
-                      role="button"
-                      onClick={(e) => { e.stopPropagation(); removeGuest(i) }}
-                      className="hover:text-rust"
-                      title={`Remove ${g.name}`}
+              {/* guest chips + add guest -- sticky so they stay visible while the
+                  services list below scrolls */}
+              <div className="sticky top-0 z-10 bg-popover pb-3">
+                {/* guest chips, click to edit that guest's services; X removes */}
+                <div className="flex flex-wrap gap-2">
+                  {guests.map((g, i) => (
+                    <button
+                      key={g.id}
+                      onClick={() => setActiveGuest(i)}
+                      className={`flex items-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        activeGuest === i ? 'border-clay/60 bg-clay-tint text-ink' : 'border-line text-ink-faint hover:border-clay/40'
+                      }`}
+                      title={`Select services for ${g.name}`}
                     >
-                      <X className="h-3 w-3" />
-                    </span>
-                  </button>
-                ))}
-                {!addGuestOpen && (
-                  <button
-                    onClick={() => setAddGuestOpen(true)}
-                    className="flex items-center gap-1.5 rounded-[8px] border border-dashed border-input px-3 py-1.5 text-xs font-semibold text-ink-faint transition-colors hover:border-clay/40 hover:text-clay"
-                  >
-                    <UserPlus className="h-3.5 w-3.5" /> Add Client
-                  </button>
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-clay-tint text-[10px] font-bold text-clay">
+                        {g.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
+                      </span>
+                      {g.name}
+                      {g.isGuest ? (
+                        <span className="rounded-full bg-cream px-1.5 text-[10px] font-semibold text-ink-faint">guest</span>
+                      ) : isParty && hostIdx === i && (
+                        <span className="rounded-full bg-amberw-tint px-1.5 text-[10px] font-semibold text-amberw">host</span>
+                      )}
+                      <span className="rounded-full bg-olive-tint px-1.5 text-[10px] text-olive">
+                        {(svcsByGuest[i] ?? []).length} svc
+                      </span>
+                      <span
+                        role="button"
+                        onClick={(e) => { e.stopPropagation(); removeGuest(i) }}
+                        className="hover:text-rust"
+                        title={`Remove ${g.name}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </span>
+                    </button>
+                  ))}
+                  {!addGuestOpen && (
+                    <button
+                      onClick={() => setAddGuestOpen(true)}
+                      className="flex items-center gap-1.5 rounded-[8px] border border-dashed border-input px-3 py-1.5 text-xs font-semibold text-ink-faint transition-colors hover:border-clay/40 hover:text-clay"
+                    >
+                      <UserPlus className="h-3.5 w-3.5" /> Add Guest
+                    </button>
+                  )}
+                </div>
+
+                {/* add another guest, hidden behind the button above until clicked */}
+                {addGuestOpen && (
+                <div className="mt-2">
+                  <AddAnotherGuest
+                    clients={clients}
+                    guests={guests}
+                    primaryName={guests[0]?.name ?? ''}
+                    onPick={(c) => { pickGuest(c); setAddGuestOpen(false) }}
+                    onPickNameOnly={(name) => { pickNameOnlyGuest(name); setAddGuestOpen(false) }}
+                    onCreate={(name, phone) => {
+                      const c: ClientRecord = { id: `c${Date.now()}`, name, phone: phone || '(555) 000-0000', visits: 0 }
+                      onAddClient(c)
+                      pickGuest(c)
+                      setAddGuestOpen(false)
+                    }}
+                  />
+                </div>
                 )}
               </div>
-
-              {/* add another guest, hidden behind the button above until clicked */}
-              {addGuestOpen && (
-              <AddAnotherGuest
-                clients={clients}
-                guests={guests}
-                primaryName={guests[0]?.name ?? ''}
-                onPick={(c) => { pickGuest(c); setAddGuestOpen(false) }}
-                onPickNameOnly={(name) => { pickNameOnlyGuest(name); setAddGuestOpen(false) }}
-                onCreate={(name, phone) => {
-                  const c: ClientRecord = { id: `c${Date.now()}`, name, phone: phone || '(555) 000-0000', visits: 0 }
-                  onAddClient(c)
-                  pickGuest(c)
-                  setAddGuestOpen(false)
-                }}
-              />
-              )}
 
               {/* tabs */}
               <div className="mb-3 mt-4 flex gap-4 border-b border-line text-sm">
