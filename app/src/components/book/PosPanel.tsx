@@ -120,6 +120,9 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   const activeIdx = guests.length === 0 ? 0 : Math.min(activeGuest, guests.length - 1)
   const activeName = guests[activeIdx]?.name
   const visibleRows = guests.length > 0 ? rows.filter((r) => r.person === activeName) : rows
+  // every guest on the sale needs at least one service before checking out
+  // -- otherwise their chip sits there with nothing actually being rung up
+  const guestsMissingServices = guests.filter((g) => !rows.some((r) => r.person === g.name))
 
   // add a guest to the party and make them the active tab, same as New
   // Appointment's own guest picker -- the first guest on an otherwise-
@@ -278,7 +281,9 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
                 >
                   {g.name}
                   {g.isGuest && <span className="rounded-full bg-cream px-1.5 text-[10px] font-semibold text-ink-faint">guest</span>}
-                  <span className="rounded-full bg-olive-tint px-1.5 text-[10px] text-olive">{count} svc</span>
+                  <span className={`rounded-full px-1.5 text-[10px] ${count === 0 ? "bg-rust-tint text-rust" : "bg-olive-tint text-olive"}`}>
+                    {count} svc
+                  </span>
                   <span
                     role="button"
                     onClick={(e) => { e.stopPropagation(); removeGuest(g.id, g.name) }}
@@ -405,9 +410,14 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
           <span className="text-[12px] text-ink-soft">{rows.length} {rows.length === 1 ? "item" : "items"}</span>
           <span className="text-[15px] font-bold">Subtotal <span className="tnum text-clay">{money(subtotal)}</span></span>
         </div>
+        {guestsMissingServices.length > 0 && (
+          <p className="mb-2 text-[11px] font-semibold text-rust">
+            Add a service for {guestsMissingServices.map((g) => g.name).join(", ")} before checking out.
+          </p>
+        )}
         <button
           onClick={() => setStep("pay")}
-          disabled={rows.length === 0}
+          disabled={rows.length === 0 || guestsMissingServices.length > 0}
           className="w-full rounded-xl bg-clay py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-clay-deep disabled:opacity-40"
         >
           Continue to payment →
