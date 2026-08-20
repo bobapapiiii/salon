@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  AlertTriangle, Calendar, CalendarX, Check, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, History, Link2, Mail, MessageSquare, Phone, Printer, Receipt, RefreshCw, ScrollText, Undo2, X,
+  AlertTriangle, Calendar, CalendarX, Check, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, History, Link2, Mail, MessageSquare, Phone, Printer, Receipt, RefreshCw, ScrollText, Undo2, UserPlus, Users, X,
 } from 'lucide-react'
 import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, fmtTime } from '@/lib/booking-types'
@@ -28,6 +28,10 @@ interface Props {
    *  checking out together) — NOT how many services `group` has, which is
    *  just this one client's own linked services (e.g. gel mani + gel pedi) */
   partySize: number
+  /** every appointment sharing this booking's parallelGroup, across every
+   *  guest (unlike `group`, which is only this one client's own services) —
+   *  used to show and manage the rest of the party from this same panel */
+  party: Appointment[]
   clients: ClientRecord[]
   error: string | null
   /** the day this appointment actually lives on, fixed for the life of this panel even
@@ -46,7 +50,10 @@ interface Props {
   findMakeRoomPlan: (groups: SlotGroup[], startMin: number, ignoreIds?: Set<string>) => Appointment[] | null
   /** confirm and apply a make-room plan found above, then run `thenSelect` */
   onRequestMakeRoom: (moves: Appointment[], startMin: number, thenSelect: () => void) => void
-  onSave: (updated: Appointment[], removedIds: string[], moveToDayKey?: string) => void
+  /** `added` is any brand-new guest(s) picked from the Party section below —
+   *  real appointment records with fresh ids that don't exist on the board
+   *  yet, for the caller to insert alongside the usual update/remove */
+  onSave: (updated: Appointment[], removedIds: string[], moveToDayKey?: string, added?: Appointment[]) => void
   onAction: (a: DetailAction) => void
   /** book a fresh copy of this client's own services (same services, same
    *  techs) on the day/time picked in the rail below — a real rebook, not an
@@ -116,7 +123,7 @@ const REQUEST_HEART_COLOR: Record<string, string | undefined> = {
 }
 
 export function AppointmentDetail({
-  appt, group, partySize, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks,
+  appt, group, partySize, party, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks,
   findMakeRoomPlan, onRequestMakeRoom, onSave, onAction, onRebook, onViewProfile, onShowVisits, onClose,
   canCheckout, hasInvoice, invoiceBalanceDue, invoiceNetCollected,
 }: Props) {
@@ -141,6 +148,17 @@ export function AppointmentDetail({
   const [rebooking, setRebooking] = useState(false)
   const [rebookSlot, setRebookSlot] = useState<{ dateKey: string; startMin: number } | null>(null)
 
+  // ── party management: the rest of the guests sharing this booking's time
+  // slot, with the ability to remove one (reuses the existing `removed`
+  // array — it already filters against the whole day's board, not just this
+  // client's own services) or add someone new (staged locally until Save,
+  // same as every other edit here) ──
+  const [addingGuest, setAddingGuest] = useState(false)
+  const [newGuests, setNewGuests] = useState<Appointment[]>([])
+  const [newGuestClientId, setNewGuestClientId] = useState('')
+  const [newGuestServiceId, setNewGuestServiceId] = useState(services[0]?.id ?? '')
+  const [newGuestTechId, setNewGuestTechId] = useState('first')
+
   // checkout runs against today or any past day -- the service already
   // happened, it just hasn't been rung up yet. Only a future day is blocked,
   // since that appointment hasn't happened at all. Reopening a ticket has no
@@ -150,6 +168,53 @@ export function AppointmentDetail({
   const client = clients.find((c) => c.name === appt.clientName)
   const setSvc = (id: string, patch: Partial<Appointment>) =>
     setDraft((d) => d.map((x) => (x.id === id ? { ...x, ...patch } : x)))
+
+  // other guests already in this party, grouped by name -- excludes this
+  // client (shown separately above) and anyone already marked `removed`, so
+  // a removal disappears from the list immediately instead of waiting for Save
+  const otherGuests = useMemo(() => {
+    const byName = new Map<string, string[]>()
+    for (const a of party) {
+      if (a.clientName === appt.clientName || removed.includes(a.id)) continue
+      byName.set(a.clientName, [...(byName.get(a.clientName) ?? []), a.id])
+    }
+    return [...byName.entries()].map(([clientName, ids]) => ({ clientName, ids }))
+  }, [party, appt.clientName, removed])
+  // clients not already accounted for in this party (current, other guests,
+  // or already staged to be added) -- the add-guest picker only offers
+  // someone genuinely new
+  const partyNames = new Set([appt.clientName, ...otherGuests.map((g) => g.clientName), ...newGuests.map((g) => g.clientName)])
+  const availableClients = clients.filter((c) => !partyNames.has(c.name))
+  const newGuestClient = clients.find((c) => c.id === newGuestClientId)
+  // same "tech's own call" flag as the per-service warning below, shown
+  // before adding rather than blocking it -- saving anyway is still the
+  // salon's call
+  const newGuestBannedTech = newGuestClient
+    ? techs.find((t) => t.id === newGuestTechId && (t.bannedClientIds ?? []).includes(newGuestClient.id))
+    : undefined
+
+  const addGuestToParty = () => {
+    if (!newGuestClient || !newGuestServiceId) return
+    const svc = svcById[newGuestServiceId]
+    setNewGuests((gs) => [...gs, {
+      id: `a${Date.now()}-party${gs.length}`,
+      techId: newGuestTechId,
+      clientName: newGuestClient.name,
+      serviceId: newGuestServiceId,
+      startMin: groupStart ?? appt.startMin,
+      durationMin: svc.durationMin,
+      status: 'booked',
+      bookingSource: 'front_desk',
+      parallelGroup: appt.parallelGroup,
+      techRequested: newGuestTechId !== 'first' && newGuestTechId !== 'pref-female' && newGuestTechId !== 'pref-male' && newGuestTechId !== 'issue' ? true : undefined,
+      requestedTechChoice: newGuestTechId === 'pref-female' || newGuestTechId === 'pref-male' ? newGuestTechId : undefined,
+      issue: newGuestTechId === 'issue' ? true : undefined,
+    }])
+    setAddingGuest(false)
+    setNewGuestClientId('')
+    setNewGuestServiceId(services[0]?.id ?? '')
+    setNewGuestTechId('first')
+  }
 
   // changing the Status dropdown applies to every one of this client's own
   // linked services (mirrors the right-click Confirm/Check in/etc. actions,
@@ -165,6 +230,7 @@ export function AppointmentDetail({
       draft.map((d) => ({ ...d, status: v, notes: d.id === appt.id ? notes || undefined : d.notes })),
       removed,
       dateKey !== originDateKey ? dateKey : undefined,
+      newGuests,
     )
   }
 
@@ -361,6 +427,104 @@ export function AppointmentDetail({
             })}
           </div>
           <div className="mt-1 text-right text-[11px] font-semibold text-ink-faint">Total <span className="tnum text-ink">${total.toFixed(2)}</span></div>
+        </div>
+
+        {/* party — the rest of the guests sharing this booking's time slot,
+            if any, plus a way to add or remove someone without leaving this
+            panel for the from-scratch New Appointment flow. Removing reuses
+            the same `removed` array as removing one of this client's own
+            services; adding stages a real draft appointment locally until
+            Save actually commits it */}
+        <div>
+          <label className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+            <Users className="h-3 w-3" /> Party
+          </label>
+          <div className="space-y-1.5">
+            {otherGuests.map((g) => (
+              <div key={g.clientName} className="flex items-center justify-between gap-2 rounded-[8px] border border-line px-2.5 py-1.5">
+                <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-ink">{g.clientName}</span>
+                <span className="shrink-0 text-[10.5px] text-ink-faint">{g.ids.length} svc</span>
+                <button
+                  onClick={() => setRemoved((r) => [...r, ...g.ids])}
+                  title={`Remove ${g.clientName} from this party`}
+                  className="shrink-0 text-ink-faint hover:text-rust"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+            {newGuests.map((g, i) => (
+              <div key={g.id} className="flex items-center justify-between gap-2 rounded-[8px] border border-clay/30 bg-clay-tint/20 px-2.5 py-1.5">
+                <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-ink">{g.clientName}</span>
+                <span className="shrink-0 text-[10.5px] font-semibold text-clay">pending · {svcById[g.serviceId].name}</span>
+                <button
+                  onClick={() => setNewGuests((gs) => gs.filter((_, j) => j !== i))}
+                  title={`Undo adding ${g.clientName}`}
+                  className="shrink-0 text-ink-faint hover:text-rust"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+            {addingGuest ? (
+              <div className="space-y-1.5 rounded-[8px] border border-clay/30 bg-clay-tint/20 p-2">
+                <SearchSelect
+                  options={availableClients.map((c) => ({ value: c.id, label: c.name, sublabel: c.phone }))}
+                  value={newGuestClientId}
+                  onChange={setNewGuestClientId}
+                  placeholder="Choose a client"
+                  searchPlaceholder="Search clients"
+                />
+                <div className="grid grid-cols-2 gap-1.5">
+                  <SearchSelect
+                    options={svcOptions}
+                    value={newGuestServiceId}
+                    onChange={setNewGuestServiceId}
+                    searchPlaceholder="Search services"
+                  />
+                  <SearchSelect
+                    options={[
+                      { value: 'first', label: 'First available' },
+                      ...roles.flatMap((role) => techs.filter((t) => t.teamId === role.id).sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({
+                        value: t.id, label: t.name, group: role.name,
+                      }))),
+                    ]}
+                    value={newGuestTechId}
+                    onChange={setNewGuestTechId}
+                    searchPlaceholder="Search technicians"
+                  />
+                </div>
+                {newGuestBannedTech && (
+                  <p className="flex items-center gap-1.5 text-[10.5px] font-semibold text-rust">
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                    {newGuestBannedTech.name} has stopped taking {newGuestClient?.name.split(' ')[0]}
+                  </p>
+                )}
+                <div className="flex justify-end gap-1.5">
+                  <button
+                    onClick={() => { setAddingGuest(false); setNewGuestClientId('') }}
+                    className="rounded-[8px] px-3 py-1.5 text-[11.5px] font-semibold text-ink-soft hover:bg-cream"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={addGuestToParty}
+                    disabled={!newGuestClientId || !newGuestServiceId}
+                    className="rounded-[8px] bg-clay px-3 py-1.5 text-[11.5px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                  >
+                    Add to party
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setAddingGuest(true)}
+                className="flex w-full items-center justify-center gap-1.5 rounded-[8px] border border-dashed border-line py-1.5 text-[11.5px] font-semibold text-ink-soft transition-colors hover:bg-cream"
+              >
+                <UserPlus className="h-3.5 w-3.5" /> Add guest to party
+              </button>
+            )}
+          </div>
         </div>
 
         {/* notes */}
@@ -596,6 +760,7 @@ export function AppointmentDetail({
                 draft.map((d) => ({ ...d, status: d.id === appt.id ? status : d.status, notes: d.id === appt.id ? notes || undefined : d.notes })),
                 removed,
                 dateKey !== originDateKey ? dateKey : undefined,
+                newGuests,
               )}
               className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2.5 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"
             >

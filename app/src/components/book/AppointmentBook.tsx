@@ -2616,7 +2616,7 @@ export function AppointmentBook() {
   // anymore, so cancel should read as available again
   const detailNetCollected = detailPayment ? netCollected(paymentSources(detailPayment), detailPayment.refunds) : 0
 
-  const saveDetail = (updated: Appointment[], removedIds: string[], moveToDayKey?: string) => {
+  const saveDetail = (updated: Appointment[], removedIds: string[], moveToDayKey?: string, added: Appointment[] = []) => {
     // the edit panel's day rail actually navigates the live calendar as the
     // salon browses (so they can see the board), so moveToDayKey — when set
     // — always equals the CURRENT live day; that means the whole pinned-tech
@@ -2628,13 +2628,27 @@ export function AppointmentBook() {
     const originBoard = dayApptsFor(originDay)
     const crossDay = !!moveToDayKey && moveToDayKey !== originDay
 
+    // adding a guest to a booking that isn't already a linked party mints a
+    // fresh parallelGroup id and stamps it onto both this client's own kept
+    // services and the new guest(s), so they actually become one real party
+    // together instead of two coincidentally-same-time bookings
+    const newGroupId = added.length > 0 && !detailAppt?.parallelGroup ? `pg${Date.now()}` : undefined
+    // everything this save touches, existing services plus any brand-new
+    // guest(s) — run through the exact same relocation / clash / confirm
+    // pipeline below so a new guest gets the same double-book and
+    // gender/banned checks as any other reassignment
+    const allInput = [
+      ...updated.map((u) => (newGroupId ? { ...u, parallelGroup: newGroupId } : u)),
+      ...added.map((g) => ({ ...g, parallelGroup: newGroupId ?? detailAppt?.parallelGroup ?? g.parallelGroup })),
+    ]
+
     // a service is "pinned" when the form has it set to an actual tech by
     // name, as opposed to First available / gender preference / issue — this
     // is what should trigger auto-relocation below, independent of whether
     // the separate "Request: Requested" flag was also flipped, since picking
     // someone by name IS asking for that specific tech
     const pinnedIds = new Set(
-      updated
+      allInput
         .filter((u) => !removedIds.includes(u.id) &&
           u.techId !== 'first' && u.techId !== 'pref-female' && u.techId !== 'pref-male' && u.techId !== 'issue')
         .map((u) => u.id),
@@ -2646,7 +2660,7 @@ export function AppointmentBook() {
     // trying to make room — they're being intentionally double-booked, and
     // the salon must confirm before this save commits
     const forcedDoubleIds = new Set<string>()
-    const keep = updated.filter((u) => !removedIds.includes(u.id)).map((u) => {
+    const keep = allInput.filter((u) => !removedIds.includes(u.id)).map((u) => {
       if (u.techId === 'first' || u.techId === 'pref-female' || u.techId === 'pref-male' || u.techId === 'issue') {
         const { techId: resolved, moves, doubled } = resolvePlaceholder(u.techId, u.serviceId, u.startMin, u.startMin + u.durationMin, new Set([u.id]))
         if (moves.length > 0) for (const m of moves) relocated.set(m.id, m)
@@ -2723,9 +2737,15 @@ export function AppointmentBook() {
             : `✓ Moved to ${dayLabel(date)}`)
         return
       }
-      commit(appts
-        .filter((a) => !removedIds.includes(a.id))
-        .map((a) => byId.get(a.id) ?? relocated.get(a.id) ?? a))
+      commit([
+        ...appts
+          .filter((a) => !removedIds.includes(a.id))
+          .map((a) => byId.get(a.id) ?? relocated.get(a.id) ?? a),
+        // finalKeep only ever updates ids already on the board above — a
+        // newly-added guest's id isn't one of them, so it needs appending
+        // here rather than being silently dropped
+        ...finalKeep.filter((u) => !appts.some((a) => a.id === u.id)),
+      ])
       setDetailId(null)
       showFlash(
         relocated.size > 0
@@ -4518,6 +4538,7 @@ export function AppointmentBook() {
           appt={detailAppt}
           group={detailGroup}
           partySize={detailPartySize}
+          party={detailParty}
           clients={clients}
           error={detailError}
           originDateKey={detailOriginDay ?? dateKey}
