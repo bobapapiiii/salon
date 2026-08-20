@@ -487,7 +487,8 @@ export function AppointmentBook() {
   // this is a hard stop: yesterday's drawer was never reconciled, so nothing
   // new should ring in against it (or against today, uncounted) until it's
   // actually closed out
-  const staleRegisterOpen = registerSessions.some((s) => s.closedAt == null && s.dateKey !== todayKey)
+  const staleRegisterSessions = registerSessions.filter((s) => s.closedAt == null && s.dateKey !== todayKey)
+  const staleRegisterOpen = staleRegisterSessions.length > 0
   const registers = useSettingsStore().registers
   const activeRegisters = registers.filter((r) => r.active)
   // which register today's shift runs on, asked once a day (see RegisterDayPrompt
@@ -2046,7 +2047,14 @@ export function AppointmentBook() {
     if (!staleRegisterOpen) return false
     if (ticketDateKey && ticketDateKey !== todayKey) return false
     if (a && estimateTicketTotal(a, source) <= 0.004) return false
-    showFlash('⚠ A previous day\'s register is still open — close it before taking payment')
+    // name which register(s) and day -- this checks every configured
+    // register, not just whichever one the salon normally uses, so a stray
+    // one left open from testing/setup can trip this without it being
+    // obvious which drawer is actually the problem
+    const names = staleRegisterSessions
+      .map((s) => `${s.registerName} (${dayLabel(new Date(s.dateKey + 'T12:00:00'))})`)
+      .join(', ')
+    showFlash(`⚠ ${names} still open from a previous day — close it in Manage Register before taking payment`)
     setRegisterOpen(true)
     return true
   }
