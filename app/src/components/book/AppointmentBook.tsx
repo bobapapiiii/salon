@@ -2252,23 +2252,31 @@ export function AppointmentBook() {
     }
   }
 
-  // POS sale, no appointments touched, just the payment record
-  const completePos = (r: { method: string; sources: PaymentSource[]; balanceDue: number; tip: number; subtotal: number; total: number; points: number; discount?: number; redeemed?: { name: string; points: number; value: number }; clientName: string; itemCount: number; lines?: { techId: string; price: number; customFields?: Record<string, string> }[]; tipByTech?: { techId: string; amount: number }[]; preferredTechPrefs?: { person: string; techId: string; categoryId: string }[] }) => {
+  // POS sale, no appointments touched, just the payment record. Now that POS
+  // can ring up a whole party (see PosPanel's own guest picker), this mirrors
+  // completeCheckout's party handling: every account-holding guest actually
+  // on the ticket gets a visit, and points go specifically to whoever was
+  // picked as the recipient, not just whoever's named on the receipt
+  const completePos = (r: { method: string; sources: PaymentSource[]; balanceDue: number; tip: number; subtotal: number; total: number; points: number; discount?: number; redeemed?: { name: string; points: number; value: number }; clientName: string; clientNames?: string[]; party?: number; pointsRecipient?: string | null; itemCount: number; lines?: { techId: string; price: number; customFields?: Record<string, string> }[]; tipByTech?: { techId: string; amount: number }[]; preferredTechPrefs?: { person: string; techId: string; categoryId: string }[] }) => {
     setPayments((x) => [...x, {
-      id: `pay${Date.now()}`, at: Date.now(), dateKey, clientName: r.clientName, itemCount: r.itemCount,
-      subtotal: r.subtotal, tip: r.tip, total: r.total, method: r.method, sources: r.sources, balanceDue: r.balanceDue, points: r.points, pos: true,
+      id: `pay${Date.now()}`, at: Date.now(), dateKey, clientName: r.clientName, clientNames: r.clientNames, party: r.party,
+      itemCount: r.itemCount, subtotal: r.subtotal, tip: r.tip, total: r.total, method: r.method, sources: r.sources,
+      balanceDue: r.balanceDue, points: r.points, pos: true, pointsRecipient: r.pointsRecipient,
       lines: r.lines?.filter((l) => l.techId !== ''),
       tipByTech: r.tipByTech,
     }])
-    setClients((cs) => cs.map((c) => (c.name === r.clientName ? { ...c, visits: c.visits + 1 } : c)))
-    const posClient = clients.find((c) => c.name === r.clientName)
+    const party = new Set(r.clientNames ?? [r.clientName])
+    // every account holder actually on the ticket gets a visit -- a
+    // name-only guest or "Guest sale" simply matches no ClientRecord
+    setClients((cs) => cs.map((c) => (party.has(c.name) ? { ...c, visits: c.visits + 1 } : c)))
+    const posClient = r.pointsRecipient ? clients.find((c) => c.name === r.pointsRecipient) : undefined
     if (posClient) {
       setPointsByClient((m) => ({ ...m, [posClient.id]: Math.max(0, (m[posClient.id] ?? 0) - (r.redeemed?.points ?? 0) + r.points) }))
     }
     // whoever's line was checked "save as preferred tech" gets it saved,
     // same as a regular checkout -- only ever set at all when a real client
     // was picked (a guest sale has no name to save a preference against)
-    applyPreferredTechPrefs(r.preferredTechPrefs, new Set([r.clientName]))
+    applyPreferredTechPrefs(r.preferredTechPrefs, party)
     showFlash(`✓ POS sale, $${r.total.toFixed(2)} (${r.method})`)
     setPosOpen(false)
   }
