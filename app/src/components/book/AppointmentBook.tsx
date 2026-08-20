@@ -1227,7 +1227,12 @@ export function AppointmentBook() {
         !ignore.has(a.id) && effTechOf(a) === tid &&
         overlaps(f, t, a.startMin, a.startMin + a.durationMin))
       if (!squatter) return moved // already clear
-      if (squatter.techRequested || visited.has(tid)) return null
+      // once a service has actually started, finished, or been paid for,
+      // its tech is locked in -- auto-moving it afterward would misattribute
+      // real work (and its commission) to whoever it got bumped to, who
+      // never actually serviced this client
+      const alreadyDelivered = squatter.status === 'in_service' || squatter.status === 'completed' || squatter.status === 'checked_out'
+      if (squatter.techRequested || alreadyDelivered || visited.has(tid)) return null
       const nextVisited = new Set(visited)
       nextVisited.add(tid)
       const sqFrom = squatter.startMin
