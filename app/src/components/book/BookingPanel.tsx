@@ -224,6 +224,10 @@ export function BookingPanel({
   const [newPhone, setNewPhone] = useState('')
   const [guests, setGuests] = useState<PanelGuest[]>([])
   const [activeGuest, setActiveGuest] = useState(0)
+  // the "add another guest" search stays hidden behind an explicit button until
+  // clicked -- an always-open search field next to the first client read as
+  // ambiguous to new users (unclear it was even for adding a second person)
+  const [addGuestOpen, setAddGuestOpen] = useState(false)
   const [svcsByGuest, setSvcsByGuest] = useState<string[][]>([[], []])
   const [parallelGuest, setParallelGuest] = useState<boolean[]>([false, false])
   const [techByService, setTechByService] = useState<Record<string, string>>(
@@ -865,21 +869,32 @@ export function BookingPanel({
                     </span>
                   </button>
                 ))}
+                {!addGuestOpen && (
+                  <button
+                    onClick={() => setAddGuestOpen(true)}
+                    className="flex items-center gap-1.5 rounded-[8px] border border-dashed border-input px-3 py-1.5 text-xs font-semibold text-ink-faint transition-colors hover:border-clay/40 hover:text-clay"
+                  >
+                    <UserPlus className="h-3.5 w-3.5" /> Add Client
+                  </button>
+                )}
               </div>
 
-              {/* add another guest */}
+              {/* add another guest, hidden behind the button above until clicked */}
+              {addGuestOpen && (
               <AddAnotherGuest
                 clients={clients}
                 guests={guests}
                 primaryName={guests[0]?.name ?? ''}
-                onPick={pickGuest}
-                onPickNameOnly={pickNameOnlyGuest}
+                onPick={(c) => { pickGuest(c); setAddGuestOpen(false) }}
+                onPickNameOnly={(name) => { pickNameOnlyGuest(name); setAddGuestOpen(false) }}
                 onCreate={(name, phone) => {
                   const c: ClientRecord = { id: `c${Date.now()}`, name, phone: phone || '(555) 000-0000', visits: 0 }
                   onAddClient(c)
                   pickGuest(c)
+                  setAddGuestOpen(false)
                 }}
               />
+              )}
 
               {/* tabs */}
               <div className="mb-3 mt-4 flex gap-4 border-b border-line text-sm">
@@ -1242,7 +1257,7 @@ function AddAnotherGuest({ clients, guests, primaryName, onPick, onPickNameOnly,
         value={q}
         onChange={(e) => { setQ(e.target.value); setOpen(true) }}
         onFocus={() => setOpen(true)}
-        placeholder={guests.length === 0 ? 'Search another guest' : 'Add another guest, name or phone'}
+        placeholder="Guest name or phone number"
         className="w-full rounded-[8px] border border-dashed border-input bg-background py-1.5 pl-8 pr-3 text-[12px] outline-none focus:ring-1 focus:ring-ring"
       />
       {open && q.trim() && (
