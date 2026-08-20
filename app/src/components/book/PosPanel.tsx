@@ -196,7 +196,14 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
     setGuests((gs) => [...gs, g])
     setActiveGuest(guests.length) // the new guest lands at this index
     setPosSelected((s) => new Set([...s, g.name]))
-    if (guests.length === 0) setRows((rs) => rs.map((r) => (r.person ? r : { ...r, person: g.name })))
+    if (guests.length === 0) {
+      // the first guest claims whatever rows aren't assigned to anyone yet
+      setRows((rs) => rs.map((r) => (r.person ? r : { ...r, person: g.name })))
+    } else {
+      // every guest needs at least one service -- start them with a blank
+      // prompt row instead of an empty tab with nothing to add to yet
+      setRows((rs) => [...rs, { id: `r${Date.now()}`, serviceId: "", techId: "", person: g.name }])
+    }
     setQ("")
     setSearching(false)
     setNewPhone("")
