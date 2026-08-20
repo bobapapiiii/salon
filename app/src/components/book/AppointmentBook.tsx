@@ -439,7 +439,7 @@ export function AppointmentBook() {
   const turnawayTitle = canLogTurnaway
     ? turnawaySummary ?? "Log a turnaway, a client we couldn't fit in"
     : `Turnaways can only be logged for today${turnawaySummary ? ` · ${turnawaySummary}` : ''}`
-  const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; /** when it was taken, to the minute — what buckets a sale into a register shift */ at?: number; clientName: string; /** every distinct client on this ticket (host + any party members/guests), so each of them sees this checkout in their own visit history, not just the host */ clientNames?: string[]; itemCount: number; subtotal: number; tip: number; total: number; method: string; /** the actual tender(s) taken against this ticket; older records fall back to method/total via paymentSources() */ sources?: PaymentSource[]; /** total minus what the sources add up to, >0 while a partial payment is still owed */ balanceDue?: number; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[]; /** money given back on this ticket, from a specific payment source, in full or in part */ refunds?: RefundRecord[]; /** who this ticket's points actually went to, if anyone -- a real ClientRecord, never a guest; kept on the payment so a later correction or refund reverses the same person even if clientName is a guest or the party's selection has since changed */ pointsRecipient?: string | null }[]>(sdata('payments-v2'), [])
+  const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; /** when it was taken, to the minute — what buckets a sale into a register shift */ at?: number; clientName: string; /** every distinct client on this ticket (host + any party members/guests), so each of them sees this checkout in their own visit history, not just the host */ clientNames?: string[]; itemCount: number; subtotal: number; tip: number; total: number; method: string; /** the actual tender(s) taken against this ticket; older records fall back to method/total via paymentSources() */ sources?: PaymentSource[]; /** total minus what the sources add up to, >0 while a partial payment is still owed */ balanceDue?: number; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number; /** salon-defined per-service notation (Color, etc.) -- POS-only, an appointment-backed checkout keeps this on the appointment itself */ customFields?: Record<string, string> }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[]; /** money given back on this ticket, from a specific payment source, in full or in part */ refunds?: RefundRecord[]; /** who this ticket's points actually went to, if anyone -- a real ClientRecord, never a guest; kept on the payment so a later correction or refund reverses the same person even if clientName is a guest or the party's selection has since changed */ pointsRecipient?: string | null }[]>(sdata('payments-v2'), [])
   // online waitlist (self-serve) + walk-in queue (front desk)
   const [waitlist, setWaitlist] = usePersistentState<QueueEntry[]>(sdata('waitlist-v1'), () => [
     { id: 'w1', name: 'Ava R.', serviceId: 'p-gel', phone: '(555) 220-1188', preferredTechId: getStaff().techs.find((t) => t.teamId === 'pedi')?.id, days: [1, 3, 5], fromMin: 360, toMin: 600, notes: 'Prefers after 2 PM', createdMin: DEMO_NOW_MIN - 25 },
@@ -2253,7 +2253,7 @@ export function AppointmentBook() {
   }
 
   // POS sale, no appointments touched, just the payment record
-  const completePos = (r: { method: string; sources: PaymentSource[]; balanceDue: number; tip: number; subtotal: number; total: number; points: number; discount?: number; redeemed?: { name: string; points: number; value: number }; clientName: string; itemCount: number; lines?: { techId: string; price: number }[]; tipByTech?: { techId: string; amount: number }[] }) => {
+  const completePos = (r: { method: string; sources: PaymentSource[]; balanceDue: number; tip: number; subtotal: number; total: number; points: number; discount?: number; redeemed?: { name: string; points: number; value: number }; clientName: string; itemCount: number; lines?: { techId: string; price: number; customFields?: Record<string, string> }[]; tipByTech?: { techId: string; amount: number }[]; preferredTechPrefs?: { person: string; techId: string; categoryId: string }[] }) => {
     setPayments((x) => [...x, {
       id: `pay${Date.now()}`, at: Date.now(), dateKey, clientName: r.clientName, itemCount: r.itemCount,
       subtotal: r.subtotal, tip: r.tip, total: r.total, method: r.method, sources: r.sources, balanceDue: r.balanceDue, points: r.points, pos: true,
@@ -2265,6 +2265,10 @@ export function AppointmentBook() {
     if (posClient) {
       setPointsByClient((m) => ({ ...m, [posClient.id]: Math.max(0, (m[posClient.id] ?? 0) - (r.redeemed?.points ?? 0) + r.points) }))
     }
+    // whoever's line was checked "save as preferred tech" gets it saved,
+    // same as a regular checkout -- only ever set at all when a real client
+    // was picked (a guest sale has no name to save a preference against)
+    applyPreferredTechPrefs(r.preferredTechPrefs, new Set([r.clientName]))
     showFlash(`✓ POS sale, $${r.total.toFixed(2)} (${r.method})`)
     setPosOpen(false)
   }

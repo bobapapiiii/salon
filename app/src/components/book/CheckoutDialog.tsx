@@ -4,7 +4,7 @@
 // edit (service, tech, time, price, added services) lands on the book instantly
 // and persists if the panel closes mid-edit. POS feeds it manual sale lines.
 import { useEffect, useMemo, useState } from "react";
-import { Banknote, Check, CreditCard, Plus, Printer, Receipt, Smartphone, X } from "lucide-react";
+import { Banknote, Check, ChevronLeft, CreditCard, Plus, Printer, Receipt, Smartphone, X } from "lucide-react";
 import type { Appointment } from "@/lib/booking-types";
 import { DAY_SLOTS, SLOT_MIN, fmtTime } from "@/lib/booking-types";
 import { getStaff } from "@/lib/staff-store";
@@ -103,12 +103,16 @@ export interface CheckoutDraftState {
 
 const money = (v: number) => `$${v.toFixed(2)}`;
 
-export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, hostName, editable, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, loyaltyBalance, pointsRecipients, accountNames, existingPrefs, draft, onDraft, existing }: {
+export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, onBack, people, selected, onTogglePerson, onSelectAll, hostName, editable, annotate, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, loyaltyBalance, pointsRecipients, accountNames, existingPrefs, draft, onDraft, existing }: {
   title: string;
   subtitle: string;
   lines: PaymentLine[];
   onComplete: (p: PaymentResult) => void;
   onClose: () => void;
+  /** shown as a back-chevron before the title -- lets the caller return to
+   *  whatever came before this panel (POS: back to the service-list build
+   *  step) instead of closing outright */
+  onBack?: () => void;
   /** party checkout: pick exactly who pays together on this ticket */
   people?: string[];
   selected?: Set<string>;
@@ -117,6 +121,12 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
   hostName?: string;
   /** checkout only: edit lines live (service, tech, time, price, remove) + add services */
   editable?: boolean;
+  /** show the salon-defined per-service fields (Color, etc.) and the "save
+   *  as preferred tech" checkbox on each line, same as `editable` does,
+   *  without turning on the rest of editable's live service/tech/time/price
+   *  editing -- POS builds/edits its lines in its own earlier step, it just
+   *  wants these two annotations available at payment time too */
+  annotate?: boolean;
   addedIds?: string[];
   onPatchLine?: (id: string, patch: Partial<Appointment>) => void;
   onRemoveLine?: (id: string) => void;
@@ -417,6 +427,10 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
   const renderLine = (l: PaymentLine) => {
     const isAdded = addedIds?.includes(l.id) ?? false;
     const isEditing = Boolean(editable && l.serviceId);
+    // the per-service fields + preferred-tech checkbox are offered under
+    // `annotate` too (POS), independent of the full live-editing UI above,
+    // which POS has no use for -- it builds/edits its lines in an earlier step
+    const showAnnotations = Boolean((editable || annotate) && l.serviceId);
     const qualified = l.serviceId ? getStaff().techs.filter((t) => t.skills.includes(l.serviceId!)) : [];
     return (
       <div key={l.id} className={`flex gap-3 border-b border-line/60 px-3.5 py-2.5 last:border-0 ${isEditing ? "items-start" : "items-center"}`}>
@@ -462,7 +476,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
             {isAdded && <span className="rounded-full bg-secondary px-1.5 text-[9.5px] font-bold text-muted-foreground">added</span>}
           </p>
           {/* salon-defined per-service fields (Color by default, more in Settings, Checkout) */}
-          {isEditing && settings.checkout.serviceFields.length > 0 && (
+          {showAnnotations && settings.checkout.serviceFields.length > 0 && (
             <div className="mt-1 flex flex-wrap items-center gap-1.5">
               {settings.checkout.serviceFields.map((f) => (
                 <label key={f.id} className="flex items-center gap-1">
@@ -477,7 +491,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
             </div>
           )}
           {/* read-only view of filled-in fields on non-editable lines */}
-          {!isEditing && settings.checkout.serviceFields.some((f) => l.customFields?.[f.id]?.trim()) && (
+          {!showAnnotations && settings.checkout.serviceFields.some((f) => l.customFields?.[f.id]?.trim()) && (
             <p className="mt-0.5 text-[10.5px] text-ink-faint">
               {settings.checkout.serviceFields
                 .filter((f) => l.customFields?.[f.id]?.trim())
@@ -489,7 +503,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
               preference -- offered on any editable line once it has a tech
               assigned; if this person doesn't have a profile yet, checking
               it creates a minimal one just to hold the preference */}
-          {isEditing && l.techId && l.person && (() => {
+          {showAnnotations && l.techId && l.person && (() => {
             const svc = l.serviceId ? svcById[l.serviceId] : undefined;
             const cat = svc ? catById[svc.categoryId] : undefined;
             const tech = getStaff().techs.find((t) => t.id === l.techId);
@@ -557,11 +571,18 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, peopl
     <div className="fixed inset-y-0 right-0 z-[94] flex w-[634px] max-w-[95vw] flex-col border-l border-line bg-popover shadow-2xl">
       {/* header */}
       <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
-        <div>
-          <h2 className="text-[16px] font-bold text-ink">{title}</h2>
-          <p className="text-[11.5px] text-ink-faint">{subtitle}</p>
+        <div className="flex min-w-0 items-center gap-2">
+          {onBack && (
+            <button onClick={onBack} title="Back" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-faint transition-colors hover:bg-cream hover:text-ink">
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+          )}
+          <div className="min-w-0">
+            <h2 className="truncate text-[16px] font-bold text-ink">{title}</h2>
+            <p className="truncate text-[11.5px] text-ink-faint">{subtitle}</p>
+          </div>
         </div>
-        <button onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-faint transition-colors hover:bg-cream hover:text-ink">
+        <button onClick={onClose} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink-faint transition-colors hover:bg-cream hover:text-ink">
           <X className="h-4 w-4" />
         </button>
       </div>

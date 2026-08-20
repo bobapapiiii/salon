@@ -19,13 +19,17 @@ interface SaleRow {
   id: string;
   serviceId: string;
   techId: string; // '' = no tech credited
+  /** salon-defined per-service notation (Color, etc.), keyed by field id --
+   *  same idea as an appointment's own customFields, just kept on the row
+   *  here since a POS sale has no appointment to hold it */
+  customFields?: Record<string, string>;
 }
 
 export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onClose }: {
   clients: ClientRecord[];
   pointsByClient: Record<string, number>;
   onAddClient: (c: ClientRecord) => void;
-  onComplete: (r: PaymentResult & { clientName: string; itemCount: number; lines: { techId: string; price: number }[] }) => void;
+  onComplete: (r: PaymentResult & { clientName: string; itemCount: number; lines: { techId: string; price: number; customFields?: Record<string, string> }[] }) => void;
   onClose: () => void;
 }) {
   // live catalog -- so a service just added or removed in Settings shows
@@ -34,7 +38,24 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   const categories = useCategoriesStore()
   // same order as the Settings service list
   const orderedSvcs = orderedServices(services, categories)
-  const { techs } = useStaffStore()
+  const { techs, roles } = useStaffStore()
+  // technician picker options for a service row: grouped under their job
+  // role (same roles/order as the calendar's own column groups), each
+  // group alphabetized by name; no avatar chip, this is a plain text list
+  const techOptionsFor = (qualified: typeof techs) => {
+    const used = new Set<string>()
+    const grouped = roles.flatMap((role) => {
+      const inRole = qualified.filter((t) => t.teamId === role.id).sort((a, b) => a.name.localeCompare(b.name))
+      inRole.forEach((t) => used.add(t.id))
+      return inRole.map((t) => ({ value: t.id, label: t.name, group: role.name }))
+    })
+    const rest = qualified.filter((t) => !used.has(t.id)).sort((a, b) => a.name.localeCompare(b.name))
+    return [
+      { value: "", label: "No tech credited" },
+      ...grouped,
+      ...rest.map((t) => ({ value: t.id, label: t.name, group: "Other" })),
+    ]
+  }
   const [step, setStep] = useState<"build" | "pay">("build")
   const [client, setClient] = useState<ClientRecord | null>(null)
   const [q, setQ] = useState("")
@@ -83,7 +104,15 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
         sub: tech ? `Tech: ${tech.name}` : "No tech credited",
         color: svc ? catById[svc.categoryId]?.line : undefined,
         price: svc?.price ?? 0,
+        // serviceId/person/customFields feed the same per-service Color
+        // field + "save as preferred tech" checkbox the regular checkout
+        // shows (see the `annotate` prop below) -- person is only set once
+        // a real client is picked, same as a guest sale has nobody to save
+        // a preference against
+        serviceId: r.serviceId,
         techId: r.techId || undefined,
+        person: client?.name,
+        customFields: r.customFields,
       }
     })
     return (
@@ -91,11 +120,15 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
         title={`POS: ${name}`}
         subtitle={`${rows.length} ${rows.length === 1 ? "item" : "items"}`}
         lines={lines}
+        onBack={() => setStep("build")}
+        annotate
+        onPatchLine={(id, patch) => patch.customFields && patchRow(id, { customFields: patch.customFields })}
+        accountNames={client ? [client.name] : []}
         onComplete={(p) => onComplete({
           ...p,
           clientName: name,
           itemCount: rows.length,
-          lines: rows.map((r) => ({ techId: r.techId, price: svcById[r.serviceId]?.price ?? 0 })),
+          lines: rows.map((r) => ({ techId: r.techId, price: svcById[r.serviceId]?.price ?? 0, customFields: r.customFields })),
         })}
         onClose={onClose}
         loyaltyBalance={client ? pointsByClient[client.id] ?? 0 : null}
@@ -203,7 +236,7 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
                     className="w-full"
                   />
                   <SearchSelect
-                    options={[{ value: "", label: "No tech credited" }, ...qualified.map((t) => ({ value: t.id, label: t.name, avatarText: t.initials }))]}
+                    options={techOptionsFor(qualified)}
                     value={r.techId}
                     onChange={(v) => patchRow(r.id, { techId: v })}
                     searchPlaceholder="Search technicians"
