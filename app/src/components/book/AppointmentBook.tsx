@@ -2034,15 +2034,16 @@ export function AppointmentBook() {
   // before anything NEW rings in, so this stops the action outright and
   // sends the salon straight to Manage Register to close it out. Returns
   // true when it blocked, so callers can bail out of their own handler.
-  // Deliberately narrow: only POS (a walk-up sale with no appointment behind
-  // it, so it's the one case with no other record of what happened) uses
-  // this today. Checking out or reopening an actual appointment never goes
-  // through here at all -- every one of those already has its own audit
-  // trail on the book regardless of the register, and gating them here kept
-  // creating dead ends (today's own ticket needed checking out to close the
-  // stale register, but checking it out was itself blocked by that same
-  // stale register). ticketDateKey/source are kept for a caller that wants
-  // the same $0-ticket / past-day exemptions this already supports
+  // Used by both POS and openCheckout (today's checkouts, not just walk-up
+  // POS sales -- new cash shouldn't ring in against either while a previous
+  // day's drawer sits unreconciled). The ticketDateKey exemption is what
+  // keeps this from becoming a dead end: openCheckout only actually blocks
+  // when the ticket's own day is TODAY, so resolveRegisterAppt can still
+  // jump straight to checking out the STALE session's own leftover
+  // appointments (passing that session's day, not today) to clear the way
+  // for closing it -- reopening an actual appointment's invoice doesn't go
+  // through here at all, since it's correcting an existing paid ticket, not
+  // ringing in new cash
   const blockIfStaleRegister = (a?: Appointment, ticketDateKey?: string, source?: Appointment[]) => {
     if (!staleRegisterOpen) return false
     if (ticketDateKey && ticketDateKey !== todayKey) return false
@@ -2063,6 +2064,18 @@ export function AppointmentBook() {
   // appointment's OWN day explicitly (see the 'checkout' case below) since
   // its rail can navigate the live calendar elsewhere while it's still open
   const openCheckout = (a: Appointment, groupOverride?: Appointment[], day: string = dateKey) => {
+    // groupOverride lets a caller pass an already-resolved group (e.g. the
+    // edit panel, whose day rail may have navigated the live calendar away
+    // from this appointment's own day within this same synchronous call)
+    // instead of re-deriving it from `appts`, which might not be it yet
+    const source = groupOverride ?? appts
+    // a stale register blocks new cash from ringing in against it, same as
+    // POS -- but blockIfStaleRegister only actually blocks when `day` is
+    // TODAY (its own ticketDateKey exemption). resolveRegisterAppt passes
+    // the STALE session's own day here when it jumps to check out one of
+    // that session's own leftover appointments, so that path stays exempt
+    // -- otherwise closing a stale register would deadlock on itself
+    if (blockIfStaleRegister(a, day, source)) return
     setDetailId(null)
     setBookingOpen(false) // right-side panels are exclusive, never stack
     setPosOpen(false)
@@ -2071,11 +2084,6 @@ export function AppointmentBook() {
     // a nudge, not a block — the sale still goes through, it just won't land in
     // any shift's cash count until a drawer is opened
     if (!anyRegisterOpen) showFlash('⚠ Register is closed — open it from Manage Register to track this cash')
-    // groupOverride lets a caller pass an already-resolved group (e.g. the
-    // edit panel, whose day rail may have navigated the live calendar away
-    // from this appointment's own day within this same synchronous call)
-    // instead of re-deriving it from `appts`, which might not be it yet
-    const source = groupOverride ?? appts
     const people = a.parallelGroup
       ? [...new Set(source.filter((x) => x.parallelGroup === a.parallelGroup && payable(x, day)).map((x) => x.clientName))]
       : []
