@@ -54,6 +54,9 @@ interface Props {
    *  that don't exist on the board yet, for the caller to insert alongside
    *  the usual update/remove */
   onSave: (updated: Appointment[], removedIds: string[], moveToDayKey?: string, added?: Appointment[]) => void
+  /** register a brand-new client record -- "create a full account" in the
+   *  add-guest picker below, same as New Appointment's own guest picker */
+  onAddClient: (c: ClientRecord) => void
   onAction: (a: DetailAction) => void
   /** book a fresh copy of this client's own services (same services, same
    *  techs) on the day/time picked in the rail below — a real rebook, not an
@@ -124,7 +127,7 @@ const REQUEST_HEART_COLOR: Record<string, string | undefined> = {
 
 export function AppointmentDetail({
   appt, partySize, party, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks,
-  findMakeRoomPlan, onRequestMakeRoom, onSave, onAction, onRebook, onViewProfile, onShowVisits, onClose,
+  findMakeRoomPlan, onRequestMakeRoom, onSave, onAddClient, onAction, onRebook, onViewProfile, onShowVisits, onClose,
   canCheckout, hasInvoice, invoiceBalanceDue, invoiceNetCollected,
 }: Props) {
   const increment = useSettingsStore().booking.increment
@@ -158,6 +161,7 @@ export function AppointmentDetail({
   const [rebookSlot, setRebookSlot] = useState<{ dateKey: string; startMin: number } | null>(null)
   const [addingGuest, setAddingGuest] = useState(false)
   const [guestQuery, setGuestQuery] = useState('')
+  const [newAccountPhone, setNewAccountPhone] = useState('')
 
   // checkout runs against today or any past day -- the service already
   // happened, it just hasn't been rung up yet. Only a future day is blocked,
@@ -254,6 +258,18 @@ export function AppointmentDetail({
     setActiveGuest(trimmed)
     setAddingGuest(false)
     setGuestQuery('')
+  }
+
+  // or a full account for someone who doesn't have one yet, phone required --
+  // same as New Appointment's own "create a full account" option
+  const addGuestNewAccount = (name: string, phone: string) => {
+    const trimmedName = name.trim()
+    const trimmedPhone = phone.trim()
+    if (!trimmedName || !trimmedPhone) return
+    const c: ClientRecord = { id: `c${Date.now()}`, name: trimmedName, phone: trimmedPhone, visits: 0 }
+    onAddClient(c)
+    addGuestClient(c)
+    setNewAccountPhone('')
   }
 
   const addService = (clientName: string) => {
@@ -482,6 +498,27 @@ export function AppointmentDetail({
                         <span className="block text-[10px] text-ink-faint">name only, no profile, links to {appt.clientName}</span>
                       </span>
                     </button>
+                    {/* or create a full account for them, phone required */}
+                    <div className="border-t border-line p-1.5">
+                      <div className="flex items-center gap-1">
+                        <UserPlus className="h-3.5 w-3.5 shrink-0 text-clay" />
+                        <input
+                          value={newAccountPhone}
+                          onChange={(e) => setNewAccountPhone(e.target.value)}
+                          placeholder={`New account "${guestQuery.trim()}", phone`}
+                          className="min-w-0 flex-1 rounded-[8px] border border-input bg-background px-1.5 py-1 text-[11px] outline-none"
+                        />
+                        <button
+                          type="button"
+                          disabled={!guestQuery.trim() || !newAccountPhone.trim()}
+                          onMouseDown={() => addGuestNewAccount(guestQuery, newAccountPhone)}
+                          className="rounded-[8px] bg-clay px-2 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-clay-deep disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Add
+                        </button>
+                      </div>
+                      <p className="mt-1 pl-5 text-[10px] text-ink-faint">phone required for an account, or use the guest option above</p>
+                    </div>
                   </div>
                 )}
               </div>

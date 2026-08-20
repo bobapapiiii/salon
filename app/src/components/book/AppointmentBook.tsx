@@ -4564,6 +4564,7 @@ export function AppointmentBook() {
           findMakeRoomPlan={(groups, s, ignoreIds) => findMakeRoomPlan(groups, s, ignoreIds)}
           onRequestMakeRoom={onRequestMakeRoom}
           onSave={saveDetail}
+          onAddClient={(c) => setClients((x) => [...x, c])}
           onAction={onDetailAction}
           onRebook={doRebook}
           onViewProfile={() => openProfile(detailAppt.clientName)}
