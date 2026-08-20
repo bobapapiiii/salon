@@ -71,6 +71,9 @@ export const paymentAt = (p: RegisterPayment): number => p.at ?? (Number(p.id.re
  *  strings so this page doesn't need the service catalog or staff roster */
 export interface RegisterOpenAppt {
   id: string
+  /** the appointment's own day -- ids reset per day, so resolving it (or
+   *  routing back to the right board) needs this alongside the id */
+  dateKey: string
   clientName: string
   serviceLabel: string
   techName: string
@@ -265,12 +268,16 @@ interface Props {
   userName: string
   /** today's business day key, the day a new session is stamped with */
   todayKey: string
-  /** today's appointments still needing checkout — closing is blocked while this list isn't empty */
-  openAppts: RegisterOpenAppt[]
-  /** today's tickets left with a balance due after a partial payment — closing is blocked while this list isn't empty too */
-  balanceDuePayments: RegisterBalanceDueItem[]
+  /** appointments still needing checkout on a given day — closing is blocked
+   *  while the list for the session actually being closed isn't empty. A
+   *  function, not a fixed list, since the session being closed isn't
+   *  necessarily today's (see staleRegisterOpen in AppointmentBook) */
+  openApptsFor: (day: string) => RegisterOpenAppt[]
+  /** tickets left with a balance due after a partial payment, for a given
+   *  day — closing is blocked while this list isn't empty too */
+  balanceDuePaymentsFor: (day: string) => RegisterBalanceDueItem[]
   /** jump straight to checking out this appointment (closes this page to do it) */
-  onResolveAppt: (id: string) => void
+  onResolveAppt: (id: string, day: string) => void
   /** jump straight to collecting what's still owed on this ticket (closes this page to do it) */
   onResolvePayment: (id: string) => void
   onOpenRegister: (s: RegisterSession) => void
@@ -279,7 +286,7 @@ interface Props {
 }
 
 export function RegisterPage({
-  open, registers, defaultRegisterId, sessions, payments, userName, todayKey, openAppts, balanceDuePayments,
+  open, registers, defaultRegisterId, sessions, payments, userName, todayKey, openApptsFor, balanceDuePaymentsFor,
   onResolveAppt, onResolvePayment, onOpenRegister, onCloseRegister, onClose,
 }: Props) {
   // active registers show in the picker; an inactive one still shows if it
@@ -298,6 +305,16 @@ export function RegisterPage({
 
   const selected = visibleRegisters.find((r) => r.id === selectedId) ?? null
   const active = selected ? sessions.find((s) => s.registerId === selected.id && s.closedAt == null) ?? null : null
+  // gated on the OPEN session's own day, not always today -- a session left
+  // open from a previous day closes against its own leftovers (see the
+  // openApptsFor/balanceDuePaymentsFor prop docs)
+  const openAppts = active ? openApptsFor(active.dateKey) : []
+  const balanceDuePayments = active ? balanceDuePaymentsFor(active.dateKey) : []
+  // "today" reads right for the normal same-day close; a stale session
+  // being closed a day (or more) late should say which day it's actually
+  // listing, so this doesn't look like it's blocking on unrelated live
+  // appointments that haven't happened yet
+  const closingDayLabel = active && active.dateKey !== todayKey ? dayLabelOf(active.dateKey) : 'today'
   const history = useMemo(
     () => (selected
       ? sessions.filter((s) => s.registerId === selected.id && s.closedAt != null).sort((a, b) => (b.closedAt ?? 0) - (a.closedAt ?? 0))
@@ -589,11 +606,11 @@ export function RegisterPage({
                       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amberw" />
                       <span>
                         {openAppts.length > 0 && (
-                          <>{openAppts.length} appointment{openAppts.length === 1 ? '' : 's'} today still {openAppts.length === 1 ? 'needs' : 'need'} to be checked out</>
+                          <>{openAppts.length} appointment{openAppts.length === 1 ? '' : 's'} {closingDayLabel} still {openAppts.length === 1 ? 'needs' : 'need'} to be checked out</>
                         )}
                         {openAppts.length > 0 && balanceDuePayments.length > 0 && <> and </>}
                         {balanceDuePayments.length > 0 && (
-                          <>{balanceDuePayments.length} ticket{balanceDuePayments.length === 1 ? '' : 's'} today still {balanceDuePayments.length === 1 ? 'has' : 'have'} a balance due</>
+                          <>{balanceDuePayments.length} ticket{balanceDuePayments.length === 1 ? '' : 's'} {closingDayLabel} still {balanceDuePayments.length === 1 ? 'has' : 'have'} a balance due</>
                         )}
                         {' '}before any register can close.
                       </span>
@@ -603,7 +620,7 @@ export function RegisterPage({
                         <button
                           key={`appt-${a.id}`}
                           type="button"
-                          onClick={() => onResolveAppt(a.id)}
+                          onClick={() => onResolveAppt(a.id, a.dateKey)}
                           title="Check out this appointment"
                           className="flex w-full items-center gap-2.5 rounded-[10px] border border-line bg-surface px-3 py-2 text-left transition-colors hover:border-clay hover:bg-clay-tint/30"
                         >

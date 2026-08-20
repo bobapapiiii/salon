@@ -2295,19 +2295,23 @@ export function AppointmentBook() {
 
   // jump straight from Manage Register's blocked-close list to resolving
   // whatever's on it -- deliberately bypasses blockIfStaleRegister above:
-  // clearing today's own blockers is the intended way out of that block,
-  // not a loophole around it, so it can't lock the salon out of itself
-  const resolveRegisterAppt = (apptId: string) => {
-    const a = (dateKey === todayKey ? appts : apptDays[todayKey] ?? []).find((x) => x.id === apptId)
+  // clearing that session's own blockers is the intended way out of that
+  // block, not a loophole around it, so it can't lock the salon out of
+  // itself. `day` is the appointment's own day (see openApptsFor), which is
+  // the session's day being closed -- not necessarily today, since a stale
+  // register left open from a previous day is closed against ITS OWN
+  // leftovers, not today's
+  const resolveRegisterAppt = (apptId: string, day: string) => {
+    const a = dayApptsFor(day).find((x) => x.id === apptId)
     if (!a) return
     setRegisterOpen(false)
     setFindTxOpen(false)
-    if (dateKey !== todayKey) goDay(new Date(todayKey + 'T12:00:00'))
-    // pass todayKey explicitly -- goDay's setDateKey hasn't taken effect yet
+    if (dateKey !== day) goDay(new Date(day + 'T12:00:00'))
+    // pass day explicitly -- goDay's setDateKey hasn't taken effect yet
     // within this same synchronous call, so openCheckout's own default
     // (the `dateKey` closure) could still read the day being browsed away
-    // from, not the today this list is actually about
-    openCheckout(a, undefined, todayKey)
+    // from, not the day this list is actually about
+    openCheckout(a, undefined, day)
   }
 
   const resolveRegisterPayment = (paymentId: string) => {
@@ -3615,36 +3619,38 @@ export function AppointmentBook() {
   const dayGuests = useMemo(() => new Set(appts.map((a) => a.clientName)).size, [appts])
   const dayValue = useMemo(() => appts.reduce((s, a) => s + (a.priceOverride ?? svcById[a.serviceId].price) + (a.addons ?? []).reduce((x, ad) => x + ad.price, 0), 0), [appts])
   const dayCollected = useMemo(() => payments.filter((p) => p.dateKey === dateKey).reduce((s, p) => s + p.total, 0), [payments, dateKey])
-  // today's appointments still needing checkout, regardless of which day the
-  // calendar happens to be showing right now -- Manage Register blocks
-  // closing any drawer until this list is empty, and lists each one out so
-  // it's a shortcut straight to checking it out instead of just a count
-  const openApptsToday: RegisterOpenAppt[] = useMemo(
-    () => (dateKey === todayKey ? appts : apptDays[todayKey] ?? [])
-      .filter((a) => payable(a, todayKey))
+  // a day's appointments still needing checkout -- Manage Register blocks
+  // closing a drawer until this list (for the SESSION being closed, not
+  // necessarily today) is empty, and lists each one out so it's a shortcut
+  // straight to checking it out instead of just a count. Deliberately a
+  // function of `day`, not hardcoded to todayKey: a register left open from
+  // a previous day (see staleRegisterOpen) is closed against ITS OWN day's
+  // leftovers -- gating it on today's still-in-progress appointments instead
+  // would mean it could never actually be satisfied, since today always has
+  // appointments that haven't happened yet
+  const openApptsFor = (day: string): RegisterOpenAppt[] =>
+    dayApptsFor(day)
+      .filter((a) => payable(a, day))
       .sort((a, b) => a.startMin - b.startMin)
       .map((a) => ({
         id: a.id,
+        dateKey: day,
         clientName: a.clientName,
         serviceLabel: svcById[a.serviceId]?.short ?? svcById[a.serviceId]?.name ?? 'Service',
         techName: techOf(a.techId).name,
         timeLabel: fmtTime(a.startMin),
-      })),
-    [appts, apptDays, dateKey, todayKey, payments],
-  )
-  // today's tickets that were only partially paid -- money is still owed, so
-  // these block closing a register too, alongside openApptsToday above
-  const balanceDuePaymentsToday: RegisterBalanceDueItem[] = useMemo(
-    () => payments
-      .filter((p) => p.dateKey === todayKey && balanceDue(p.total, paymentSources(p), p.refunds) > 0.004)
+      }))
+  // that day's tickets that were only partially paid -- money is still owed,
+  // so these block closing a register too, alongside openApptsFor above
+  const balanceDuePaymentsFor = (day: string): RegisterBalanceDueItem[] =>
+    payments
+      .filter((p) => p.dateKey === day && balanceDue(p.total, paymentSources(p), p.refunds) > 0.004)
       .map((p) => ({
         id: p.id,
         clientName: p.clientName,
         amount: balanceDue(p.total, paymentSources(p), p.refunds),
         total: p.total,
-      })),
-    [payments, todayKey],
-  )
+      }))
 
   const hours = Array.from({ length: DAY_SLOTS / 4 + 3 }, (_, i) => (i - 1) * 60)
 
@@ -4678,8 +4684,8 @@ export function AppointmentBook() {
         payments={payments}
         userName={sessionUser.name}
         todayKey={todayKey}
-        openAppts={openApptsToday}
-        balanceDuePayments={balanceDuePaymentsToday}
+        openApptsFor={openApptsFor}
+        balanceDuePaymentsFor={balanceDuePaymentsFor}
         onResolveAppt={resolveRegisterAppt}
         onResolvePayment={resolveRegisterPayment}
         onOpenRegister={(s) => {
