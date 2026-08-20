@@ -343,6 +343,11 @@ export function AppointmentBook() {
   }
   const [checkoutDraft, setCheckoutDraft] = usePersistentState<CheckoutDraft | null>(sdata('checkout-draft-v2'), null)
   const [posOpen, setPosOpen] = useState(false)
+  // bumped every time POS opens, keyed onto <PosPanel> below so each open
+  // is a guaranteed brand-new component instance -- otherwise whatever
+  // guests/services were on the ticket last time could still be sitting in
+  // its state if it closes and reopens without a full page reload
+  const [posSession, setPosSession] = useState(0)
   const [scheduleOpen, setScheduleOpen] = useState(false)
   // opened from a specific tech's own ⋯ menu rather than the general
   // Schedule shortcut -- pre-filters the team schedule panel to just them
@@ -3727,6 +3732,7 @@ export function AppointmentBook() {
           setBookingOpen(false)
           setFinderOpen(false)
           closeCheckout()
+          setPosSession((n) => n + 1)
           setPosOpen(true)
           if (!anyRegisterOpen) showFlash('⚠ Register is closed — open it from Manage Register to track this cash')
         }}
@@ -4756,6 +4762,7 @@ export function AppointmentBook() {
       {/* POS, ring up off-book sales */}
       {posOpen && (
         <PosPanel
+          key={posSession}
           clients={clients}
           pointsByClient={pointsByClient}
           onAddClient={(c) => setClients((x) => [...x, c])}
