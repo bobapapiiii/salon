@@ -851,27 +851,24 @@ export function BookingPanel({
                     <button
                       key={g.id}
                       onClick={() => setActiveGuest(i)}
-                      className={`flex items-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      className={`flex w-40 shrink-0 items-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-xs font-semibold transition-colors ${
                         activeGuest === i ? 'border-clay/60 bg-clay-tint text-ink' : 'border-line text-ink-faint hover:border-clay/40'
                       }`}
                       title={`Select services for ${g.name}`}
                     >
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-clay-tint text-[10px] font-bold text-clay">
-                        {g.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()}
-                      </span>
-                      {g.name}
+                      <span className="min-w-0 flex-1 truncate text-left">{g.name}</span>
                       {g.isGuest ? (
-                        <span className="rounded-full bg-cream px-1.5 text-[10px] font-semibold text-ink-faint">guest</span>
+                        <span className="shrink-0 rounded-full bg-cream px-1.5 text-[10px] font-semibold text-ink-faint">guest</span>
                       ) : isParty && hostIdx === i && (
-                        <span className="rounded-full bg-amberw-tint px-1.5 text-[10px] font-semibold text-amberw">host</span>
+                        <span className="shrink-0 rounded-full bg-amberw-tint px-1.5 text-[10px] font-semibold text-amberw">host</span>
                       )}
-                      <span className="rounded-full bg-olive-tint px-1.5 text-[10px] text-olive">
+                      <span className="shrink-0 rounded-full bg-olive-tint px-1.5 text-[10px] text-olive">
                         {(svcsByGuest[i] ?? []).length} svc
                       </span>
                       <span
                         role="button"
                         onClick={(e) => { e.stopPropagation(); removeGuest(i) }}
-                        className="hover:text-rust"
+                        className="shrink-0 hover:text-rust"
                         title={`Remove ${g.name}`}
                       >
                         <X className="h-3 w-3" />
