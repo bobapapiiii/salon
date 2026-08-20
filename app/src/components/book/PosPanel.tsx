@@ -4,8 +4,8 @@
 // guest, or create a full account on the spot), add service lines with a
 // tech each, then take payment in the shared PaymentFlow panel.
 import { useMemo, useState } from "react";
-import { Plus, Search, ShoppingBag, UserPlus, X } from "lucide-react";
-import type { ClientRecord } from "@/lib/booking-types";
+import { Calendar, Clock, Plus, Search, ShoppingBag, UserPlus, X } from "lucide-react";
+import { DAY_SLOTS, SLOT_MIN, fmtTime, type ClientRecord } from "@/lib/booking-types";
 import { useStaffStore } from "@/lib/staff-store";
 import { activeServices, orderedServices, serviceGroupLabel, svcById, useServicesStore } from '@/lib/services-store'
 import { catById, useCategoriesStore } from '@/lib/categories-store'
@@ -15,6 +15,15 @@ import { SearchSelect } from "./SearchSelect";
 
 const field =
   "w-full rounded-[8px] border border-input bg-background px-2 py-1.5 text-[12px] outline-none focus:ring-1 focus:ring-ring";
+
+// every guest's picked time is keyed by name; an anonymous/no-guest sale
+// uses this instead since there's no name to key off of
+const SOLO_KEY = "__solo__";
+// every quarter-hour slot from open to close -- POS deliberately doesn't
+// filter these by tech availability (see the panel's own time rail): this
+// is recording a walk-in that's already happening, not booking a future
+// slot, so there's nothing to warn or block on
+const TIME_SLOTS = Array.from({ length: DAY_SLOTS }, (_, i) => i * SLOT_MIN);
 
 interface SaleRow {
   id: string;
@@ -58,7 +67,18 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
      *  actually has an account to hold them */
     pointsRecipient?: string | null;
     itemCount: number;
-    lines: { techId: string; price: number; customFields?: Record<string, string> }[];
+    lines: {
+      serviceId: string;
+      techId: string;
+      person?: string;
+      price: number;
+      customFields?: Record<string, string>;
+      /** minutes from OPEN_MIN, same units as an Appointment's own startMin/
+       *  durationMin -- lets the sale land on the calendar as a real,
+       *  already-checked-out card instead of staying off-book */
+      startMin: number;
+      durationMin: number;
+    }[];
   }) => void;
   onClose: () => void;
 }) {
@@ -99,6 +119,10 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   // payment panel tracks) is visible up here instead of trapped in
   // PaymentFlow's own internal fallback state
   const [posDraft, setPosDraft] = useState<CheckoutDraftState>({ tipPct: 18, tipCustom: "", method: "Cash", note: "", redeemId: null, custom: {} })
+  // each guest's (or the solo sale's) picked start time, minutes from
+  // OPEN_MIN -- same right-side rail idea as New Appointment, required
+  // before checkout same as picking a service is
+  const [timeByGuest, setTimeByGuest] = useState<Record<string, number>>({})
   const [q, setQ] = useState("")
   const [searching, setSearching] = useState(false)
   const [newPhone, setNewPhone] = useState("")
@@ -121,11 +145,38 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   // clamp against a guest just having been removed
   const activeIdx = guests.length === 0 ? 0 : Math.min(activeGuest, guests.length - 1)
   const activeName = guests[activeIdx]?.name
+  const timeKey = activeName ?? SOLO_KEY
   const visibleRows = guests.length > 0 ? rows.filter((r) => r.person === activeName) : rows
   // every guest on the sale needs at least one *picked* service before
   // checking out -- a blank prompt row doesn't count
   const guestsMissingServices = guests.filter((g) => !rows.some((r) => r.person === g.name && r.serviceId))
   const hasBlankRow = rows.some((r) => !r.serviceId)
+  // same rule for time: every guest (or the solo sale) with a real service
+  // needs a picked start before checking out
+  const guestsMissingTime = guests.filter((g) => rows.some((r) => r.person === g.name && r.serviceId) && timeByGuest[g.name] == null)
+  const soloNeedsTime = guests.length === 0 && rows.some((r) => r.serviceId) && timeByGuest[SOLO_KEY] == null
+  // each guest's services stack back-to-back from their picked start, same
+  // idea as New Appointment's own sequential layout -- no availability
+  // filtering, this is recording something already happening
+  const rowTiming = useMemo(() => {
+    const out: Record<string, { startMin: number; durationMin: number }> = {}
+    const byPerson = new Map<string, SaleRow[]>()
+    for (const r of rows) {
+      if (!r.serviceId) continue
+      const key = r.person ?? SOLO_KEY
+      if (!byPerson.has(key)) byPerson.set(key, [])
+      byPerson.get(key)!.push(r)
+    }
+    for (const [key, list] of byPerson) {
+      let cursor = timeByGuest[key] ?? 0
+      for (const r of list) {
+        const dur = svcById[r.serviceId]?.durationMin ?? 30
+        out[r.id] = { startMin: cursor, durationMin: dur }
+        cursor += dur
+      }
+    }
+    return out
+  }, [rows, timeByGuest])
 
   // add a guest to the party and make them the active tab, same as New
   // Appointment's own guest picker -- the first guest on an otherwise-
@@ -238,7 +289,15 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
           party: selectedNames.length > 1 ? selectedNames.length : undefined,
           pointsRecipient,
           itemCount: included.length,
-          lines: included.map((r) => ({ techId: r.techId, price: svcById[r.serviceId]?.price ?? 0, customFields: r.customFields })),
+          lines: included.map((r) => ({
+            serviceId: r.serviceId,
+            techId: r.techId,
+            person: r.person,
+            price: svcById[r.serviceId]?.price ?? 0,
+            customFields: r.customFields,
+            startMin: rowTiming[r.id]?.startMin ?? 0,
+            durationMin: rowTiming[r.id]?.durationMin ?? (svcById[r.serviceId]?.durationMin ?? 30),
+          })),
         })}
         onClose={onClose}
         loyaltyBalance={pointsRecipient ? (() => { const c = clients.find((x) => x.name === pointsRecipient); return c ? pointsByClient[c.id] ?? 0 : 0 })() : null}
@@ -247,7 +306,7 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   }
 
   return (
-    <div className="fixed inset-y-0 right-0 z-[94] flex w-[634px] max-w-[95vw] flex-col border-l border-line bg-popover shadow-2xl">
+    <div className="fixed inset-y-0 right-0 z-[94] flex w-[820px] max-w-[95vw] flex-col border-l border-line bg-popover shadow-2xl">
       {/* header */}
       <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
         <div>
@@ -261,7 +320,8 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-5">
+      <div className="flex min-h-0 flex-1">
+      <div className="min-w-0 flex-1 overflow-y-auto p-5">
         {/* guests -- same three ways to add someone as New/Edit Appointment's
             own guest picker: search an existing client, a name-only guest
             with no profile, or create a full account on the spot */}
@@ -287,6 +347,9 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
                   <span className={`rounded-full px-1.5 text-[10px] ${count === 0 ? "bg-rust-tint text-rust" : "bg-olive-tint text-olive"}`}>
                     {count} svc
                   </span>
+                  {timeByGuest[g.name] != null && (
+                    <span className="rounded-full bg-clay-tint px-1.5 text-[10px] text-clay">{fmtTime(timeByGuest[g.name])}</span>
+                  )}
                   <span
                     role="button"
                     onClick={(e) => { e.stopPropagation(); removeGuest(g.id, g.name) }}
@@ -408,6 +471,34 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
         </div>
       </div>
 
+      {/* day + time rail -- same idea as New Appointment's own right-side
+          panel, just fixed to today since a POS sale is recording a walk-in
+          that's already here, not booking a future day */}
+      <div className="w-48 shrink-0 overflow-y-auto border-l border-line p-3">
+        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Day</div>
+        <div className="mb-3 flex items-center gap-1.5 rounded-[8px] border border-line px-2 py-1.5 text-[11px] font-semibold text-ink">
+          <Calendar className="h-3 w-3 shrink-0 text-ink-faint" /> Today
+        </div>
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+          Time for {activeName ?? "this sale"}
+        </div>
+        <div className="space-y-1">
+          {TIME_SLOTS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setTimeByGuest((m) => ({ ...m, [timeKey]: s }))}
+              className={`flex w-full items-center gap-1.5 rounded-[8px] border px-2 py-1.5 text-[12px] ${
+                timeByGuest[timeKey] === s ? "border-clay bg-clay-tint font-bold text-clay" : "border-line font-bold text-ink hover:bg-cream"
+              }`}
+            >
+              <Clock className="h-3 w-3 shrink-0" /> {fmtTime(s)}
+            </button>
+          ))}
+        </div>
+      </div>
+      </div>
+
       {/* footer */}
       <div className="border-t border-line px-5 py-3.5">
         <div className="mb-2.5 flex items-baseline justify-between">
@@ -421,9 +512,16 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
               : "Pick a service for every line before checking out."}
           </p>
         )}
+        {(guestsMissingServices.length === 0 && !hasBlankRow) && (guestsMissingTime.length > 0 || soloNeedsTime) && (
+          <p className="mb-2 text-[11px] font-semibold text-rust">
+            {guestsMissingTime.length > 0
+              ? `Pick a time for ${guestsMissingTime.map((g) => g.name).join(", ")} before checking out.`
+              : "Pick a time before checking out."}
+          </p>
+        )}
         <button
           onClick={() => setStep("pay")}
-          disabled={rows.length === 0 || hasBlankRow || guestsMissingServices.length > 0}
+          disabled={rows.length === 0 || hasBlankRow || guestsMissingServices.length > 0 || guestsMissingTime.length > 0 || soloNeedsTime}
           className="w-full rounded-xl bg-clay py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-clay-deep disabled:opacity-40"
         >
           Continue to payment →

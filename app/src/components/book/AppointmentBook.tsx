@@ -2257,18 +2257,42 @@ export function AppointmentBook() {
     }
   }
 
-  // POS sale, no appointments touched, just the payment record. Now that POS
-  // can ring up a whole party (see PosPanel's own guest picker), this mirrors
-  // completeCheckout's party handling: every account-holding guest actually
-  // on the ticket gets a visit, and points go specifically to whoever was
-  // picked as the recipient, not just whoever's named on the receipt
-  const completePos = (r: { method: string; sources: PaymentSource[]; balanceDue: number; tip: number; subtotal: number; total: number; points: number; discount?: number; redeemed?: { name: string; points: number; value: number }; clientName: string; clientNames?: string[]; party?: number; pointsRecipient?: string | null; itemCount: number; lines?: { techId: string; price: number; customFields?: Record<string, string> }[]; tipByTech?: { techId: string; amount: number }[]; preferredTechPrefs?: { person: string; techId: string; categoryId: string }[] }) => {
+  // POS sale. Now that POS can ring up a whole party (see PosPanel's own
+  // guest picker), this mirrors completeCheckout's party handling: every
+  // account-holding guest actually on the ticket gets a visit, and points
+  // go specifically to whoever was picked as the recipient, not just
+  // whoever's named on the receipt. Unlike before, this now also drops a
+  // real (already checked-out) Appointment card onto today's board for
+  // every line with a tech credited -- a tech-less line still rings up
+  // fine, it just has no column to land on, so no card gets made for it
+  const completePos = (r: { method: string; sources: PaymentSource[]; balanceDue: number; tip: number; subtotal: number; total: number; points: number; discount?: number; redeemed?: { name: string; points: number; value: number }; clientName: string; clientNames?: string[]; party?: number; pointsRecipient?: string | null; itemCount: number; lines?: { serviceId: string; techId: string; person?: string; price: number; customFields?: Record<string, string>; startMin: number; durationMin: number }[]; tipByTech?: { techId: string; amount: number }[]; preferredTechPrefs?: { person: string; techId: string; categoryId: string }[] }) => {
+    const hostClient = clients.find((c) => c.name === r.clientName)
+    const newAppts: Appointment[] = (r.lines ?? [])
+      .filter((l) => l.techId !== '')
+      .map((l, i) => ({
+        id: `a${Date.now()}-pos${i}`,
+        techId: l.techId,
+        clientName: l.person ?? r.clientName,
+        serviceId: l.serviceId,
+        startMin: l.startMin,
+        durationMin: l.durationMin,
+        status: 'checked_out' as const,
+        completedMin: DEMO_NOW_MIN,
+        customFields: l.customFields,
+        // a name-only guest has no profile of their own to hang off of --
+        // same as any other name-only guest, their visit links to the host
+        guestOf: clients.some((c) => c.name === (l.person ?? r.clientName)) ? undefined : hostClient?.id,
+        bookingSource: 'walk_in' as const,
+        log: [logEntry(`Rung up via POS, $${l.price.toFixed(2)} (${r.method})`)],
+      }))
+    if (newAppts.length > 0) commit([...appts, ...newAppts])
     setPayments((x) => [...x, {
       id: `pay${Date.now()}`, at: Date.now(), dateKey, clientName: r.clientName, clientNames: r.clientNames, party: r.party,
       itemCount: r.itemCount, subtotal: r.subtotal, tip: r.tip, total: r.total, method: r.method, sources: r.sources,
       balanceDue: r.balanceDue, points: r.points, pos: true, pointsRecipient: r.pointsRecipient,
-      lines: r.lines?.filter((l) => l.techId !== ''),
+      lines: r.lines?.filter((l) => l.techId !== '').map((l) => ({ techId: l.techId, price: l.price, customFields: l.customFields })),
       tipByTech: r.tipByTech,
+      apptIds: newAppts.length > 0 ? newAppts.map((a) => a.id) : undefined,
     }])
     const party = new Set(r.clientNames ?? [r.clientName])
     // every account holder actually on the ticket gets a visit -- a
