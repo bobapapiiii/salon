@@ -338,7 +338,7 @@ export function AvailabilityFinder({
                 {bannedTech && (
                   <p className="mt-1 flex items-center gap-1.5 pl-2 text-[10.5px] font-semibold text-rust">
                     <AlertTriangle className="h-3 w-3 shrink-0" />
-                    {bannedTech.name} has stopped taking {g.name.split(' ')[0]} — booking anyway is the salon's call
+                    {bannedTech.name} has stopped taking {g.name.split(' ')[0]}
                   </p>
                 )}
               </div>
