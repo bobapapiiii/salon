@@ -117,10 +117,11 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   // payment panel tracks) is visible up here instead of trapped in
   // PaymentFlow's own internal fallback state
   const [posDraft, setPosDraft] = useState<CheckoutDraftState>({ tipPct: 18, tipCustom: "", method: "Cash", note: "", redeemId: null, custom: {} })
-  // each guest's (or the solo sale's) picked start time, minutes from
-  // OPEN_MIN -- same right-side rail idea as New Appointment, required
-  // before checkout same as picking a service is
-  const [timeByGuest, setTimeByGuest] = useState<Record<string, number>>({})
+  // one shared start time for the whole sale -- every guest's services key
+  // off this same picked time (each guest can still choose parallel vs.
+  // back-to-back for their own multiple services), so staff pick a time
+  // once instead of re-picking it per guest
+  const [saleTime, setSaleTime] = useState<number | null>(null)
   // whether a guest's (or the solo sale's) multiple services all start
   // together (parallel, e.g. one tech on nails while another does toes) or
   // stack one after another -- unlike New Appointment, POS defaults this
@@ -157,17 +158,17 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   // a tech is always required once a service is picked -- there's always
   // someone actually doing the work
   const hasNoTechRow = rows.some((r) => r.serviceId && !r.techId)
-  // same rule for time: every guest (or the solo sale) with a real service
-  // needs a picked start before checking out
-  const guestsMissingTime = guests.filter((g) => rows.some((r) => r.person === g.name && r.serviceId) && timeByGuest[g.name] == null)
-  const soloNeedsTime = guests.length === 0 && rows.some((r) => r.serviceId) && timeByGuest[SOLO_KEY] == null
-  // each guest's services either all start together (parallel -- each
-  // keeps its own real duration, so it ends whenever it ends, same idea as
-  // New Appointment's "shared start") or stack back-to-back one after
-  // another -- no availability filtering either way, this is recording
-  // something already happening, not booking a future slot
+  // same rule for time: the sale needs a picked start (once, for
+  // everyone) before checking out, same as a service does
+  const needsTime = rows.some((r) => r.serviceId) && saleTime == null
+  // every guest's services start from that one shared time -- each keeps
+  // running its own parallel-vs-back-to-back layout from there, same idea
+  // as New Appointment's "shared start" for parallel services. No
+  // availability filtering either way, this is recording something
+  // already happening, not booking a future slot
   const rowTiming = useMemo(() => {
     const out: Record<string, { startMin: number; durationMin: number }> = {}
+    if (saleTime == null) return out
     const byPerson = new Map<string, SaleRow[]>()
     for (const r of rows) {
       if (!r.serviceId) continue
@@ -176,17 +177,16 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
       byPerson.get(key)!.push(r)
     }
     for (const [key, list] of byPerson) {
-      const start = timeByGuest[key] ?? 0
       const parallel = parallelGuest[key] ?? true
-      let cursor = start
+      let cursor = saleTime
       for (const r of list) {
         const dur = svcById[r.serviceId]?.durationMin ?? 30
-        out[r.id] = { startMin: parallel ? start : cursor, durationMin: dur }
+        out[r.id] = { startMin: parallel ? saleTime : cursor, durationMin: dur }
         if (!parallel) cursor += dur
       }
     }
     return out
-  }, [rows, timeByGuest, parallelGuest])
+  }, [rows, saleTime, parallelGuest])
 
   // add a guest to the party and make them the active tab, same as New
   // Appointment's own guest picker -- the first guest on an otherwise-
@@ -323,7 +323,7 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   }
 
   return (
-    <div className="fixed inset-y-0 right-0 z-[94] flex w-[820px] max-w-[95vw] flex-col border-l border-line bg-popover shadow-2xl">
+    <div className="fixed inset-y-0 right-0 z-[94] flex w-[634px] max-w-[95vw] flex-col border-l border-line bg-popover shadow-2xl">
       {/* header */}
       <div className="flex items-center justify-between border-b border-line px-5 py-3.5">
         <div>
@@ -364,9 +364,6 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
                   <span className={`rounded-full px-1.5 text-[10px] ${count === 0 ? "bg-rust-tint text-rust" : "bg-olive-tint text-olive"}`}>
                     {count} svc
                   </span>
-                  {timeByGuest[g.name] != null && (
-                    <span className="rounded-full bg-clay-tint px-1.5 text-[10px] text-clay">{fmtTime(timeByGuest[g.name])}</span>
-                  )}
                   <span
                     role="button"
                     onClick={(e) => { e.stopPropagation(); removeGuest(g.id, g.name) }}
@@ -513,23 +510,25 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
 
       {/* day + time rail -- same idea as New Appointment's own right-side
           panel, just fixed to today since a POS sale is recording a walk-in
-          that's already here, not booking a future day */}
+          that's already here, not booking a future day. One shared time
+          for the whole sale -- every guest's services key off this same
+          pick, no re-picking it per guest */}
       <div className="w-48 shrink-0 overflow-y-auto border-l border-line p-3">
         <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Day</div>
         <div className="mb-3 flex items-center gap-1.5 rounded-[8px] border border-line px-2 py-1.5 text-[11px] font-semibold text-ink">
           <Calendar className="h-3 w-3 shrink-0 text-ink-faint" /> Today
         </div>
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
-          Time for {activeName ?? "this sale"}
+          Time for everyone
         </div>
         <div className="space-y-1">
           {TIME_SLOTS.map((s) => (
             <button
               key={s}
               type="button"
-              onClick={() => setTimeByGuest((m) => ({ ...m, [timeKey]: s }))}
+              onClick={() => setSaleTime(s)}
               className={`flex w-full items-center gap-1.5 rounded-[8px] border px-2 py-1.5 text-[12px] ${
-                timeByGuest[timeKey] === s ? "border-clay bg-clay-tint font-bold text-clay" : "border-line font-bold text-ink hover:bg-cream"
+                saleTime === s ? "border-clay bg-clay-tint font-bold text-clay" : "border-line font-bold text-ink hover:bg-cream"
               }`}
             >
               <Clock className="h-3 w-3 shrink-0" /> {fmtTime(s)}
@@ -557,16 +556,14 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
             Pick a technician for every line before checking out.
           </p>
         )}
-        {(guestsMissingServices.length === 0 && !hasBlankRow && !hasNoTechRow) && (guestsMissingTime.length > 0 || soloNeedsTime) && (
+        {(guestsMissingServices.length === 0 && !hasBlankRow && !hasNoTechRow) && needsTime && (
           <p className="mb-2 text-[11px] font-semibold text-rust">
-            {guestsMissingTime.length > 0
-              ? `Pick a time for ${guestsMissingTime.map((g) => g.name).join(", ")} before checking out.`
-              : "Pick a time before checking out."}
+            Pick a time before checking out.
           </p>
         )}
         <button
           onClick={() => setStep("pay")}
-          disabled={rows.length === 0 || hasBlankRow || hasNoTechRow || guestsMissingServices.length > 0 || guestsMissingTime.length > 0 || soloNeedsTime}
+          disabled={rows.length === 0 || hasBlankRow || hasNoTechRow || guestsMissingServices.length > 0 || needsTime}
           className="w-full rounded-xl bg-clay py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-clay-deep disabled:opacity-40"
         >
           Continue to payment →
