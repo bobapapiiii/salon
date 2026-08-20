@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  AlertTriangle, Calendar, CalendarX, Check, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, History, Link2, Mail, MessageSquare, Phone, Printer, Receipt, RefreshCw, ScrollText, Undo2, UserPlus, Users, X,
+  AlertTriangle, Calendar, CalendarX, Check, ChevronLeft, ChevronRight, ClipboardCopy, Clock, CreditCard, Heart, History, Link2, Mail, MessageSquare, Phone, Plus, Printer, Receipt, RefreshCw, ScrollText, Undo2, UserPlus, Users, X,
 } from 'lucide-react'
 import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { CLOSE_MIN, OPEN_MIN, fmtTime } from '@/lib/booking-types'
@@ -23,14 +23,13 @@ export type DetailAction = 'cancel' | 'copy' | 'sendtext' | 'checkout' | 'log' |
 
 interface Props {
   appt: Appointment
-  group: Appointment[]
   /** how many distinct clients share this booking's time slot (a real party
-   *  checking out together) — NOT how many services `group` has, which is
-   *  just this one client's own linked services (e.g. gel mani + gel pedi) */
+   *  checking out together) */
   partySize: number
   /** every appointment sharing this booking's parallelGroup, across every
-   *  guest (unlike `group`, which is only this one client's own services) —
-   *  used to show and manage the rest of the party from this same panel */
+   *  guest — the chips row above the service list picks which guest's own
+   *  services are currently shown/editable below, same as the New
+   *  Appointment panel's guest chips */
   party: Appointment[]
   clients: ClientRecord[]
   error: string | null
@@ -50,9 +49,10 @@ interface Props {
   findMakeRoomPlan: (groups: SlotGroup[], startMin: number, ignoreIds?: Set<string>) => Appointment[] | null
   /** confirm and apply a make-room plan found above, then run `thenSelect` */
   onRequestMakeRoom: (moves: Appointment[], startMin: number, thenSelect: () => void) => void
-  /** `added` is any brand-new guest(s) picked from the Party section below —
-   *  real appointment records with fresh ids that don't exist on the board
-   *  yet, for the caller to insert alongside the usual update/remove */
+  /** `added` is any brand-new guest(s) or service(s) staged via the party
+   *  chips / "Add service" below — real appointment records with fresh ids
+   *  that don't exist on the board yet, for the caller to insert alongside
+   *  the usual update/remove */
   onSave: (updated: Appointment[], removedIds: string[], moveToDayKey?: string, added?: Appointment[]) => void
   onAction: (a: DetailAction) => void
   /** book a fresh copy of this client's own services (same services, same
@@ -123,7 +123,7 @@ const REQUEST_HEART_COLOR: Record<string, string | undefined> = {
 }
 
 export function AppointmentDetail({
-  appt, group, partySize, party, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks,
+  appt, partySize, party, clients, error, originDateKey, dateKey, onPreviewDay, dayAppts, dayBlocks,
   findMakeRoomPlan, onRequestMakeRoom, onSave, onAction, onRebook, onViewProfile, onShowVisits, onClose,
   canCheckout, hasInvoice, invoiceBalanceDue, invoiceNetCollected,
 }: Props) {
@@ -137,8 +137,17 @@ export function AppointmentDetail({
   const svcOptions = orderedServices(services, categories).map((s) => ({ value: s.id, label: s.name, group: serviceGroupLabel(s, categories) }))
   const { roles, techs: allTechs } = useStaffStore()
   const techs = boardTechs(allTechs)
-  const [draft, setDraft] = useState<Appointment[]>(group.map((g) => ({ ...g })))
+  // every appointment in the party, editable regardless of which guest it
+  // belongs to -- the chips row above the service list (like the New
+  // Appointment panel's own guest chips) picks which guest's services show
+  // in the editable list below. `originalIds` is a frozen snapshot of which
+  // of these already existed on the board when the panel opened, so Save
+  // can split the working set back into "update" vs. "insert" without
+  // re-deriving that on every edit
+  const [draft, setDraft] = useState<Appointment[]>(party.map((p) => ({ ...p })))
+  const [originalIds] = useState(() => new Set(party.map((p) => p.id)))
   const [removed, setRemoved] = useState<string[]>([])
+  const [activeGuest, setActiveGuest] = useState(appt.clientName)
   const [status, setStatus] = useState(appt.status)
   const [notes, setNotes] = useState(appt.notes ?? '')
   const [dayPickerAnchor, setDayPickerAnchor] = useState<DOMRect | null>(null)
@@ -147,17 +156,8 @@ export function AppointmentDetail({
   // distinct from the rail's normal job of moving *this* appointment
   const [rebooking, setRebooking] = useState(false)
   const [rebookSlot, setRebookSlot] = useState<{ dateKey: string; startMin: number } | null>(null)
-
-  // ── party management: the rest of the guests sharing this booking's time
-  // slot, with the ability to remove one (reuses the existing `removed`
-  // array — it already filters against the whole day's board, not just this
-  // client's own services) or add someone new (staged locally until Save,
-  // same as every other edit here) ──
   const [addingGuest, setAddingGuest] = useState(false)
-  const [newGuests, setNewGuests] = useState<Appointment[]>([])
   const [newGuestClientId, setNewGuestClientId] = useState('')
-  const [newGuestServiceId, setNewGuestServiceId] = useState(services[0]?.id ?? '')
-  const [newGuestTechId, setNewGuestTechId] = useState('first')
 
   // checkout runs against today or any past day -- the service already
   // happened, it just hasn't been rung up yet. Only a future day is blocked,
@@ -166,55 +166,87 @@ export function AppointmentDetail({
   // still-recorded payment for correction or refund
   const canCheckoutDay = originDateKey <= dayKeyOf(new Date())
   const client = clients.find((c) => c.name === appt.clientName)
+  const liveDraft = draft.filter((d) => !removed.includes(d.id))
   const setSvc = (id: string, patch: Partial<Appointment>) =>
     setDraft((d) => d.map((x) => (x.id === id ? { ...x, ...patch } : x)))
 
-  // other guests already in this party, grouped by name -- excludes this
-  // client (shown separately above) and anyone already marked `removed`, so
-  // a removal disappears from the list immediately instead of waiting for Save
-  const otherGuests = useMemo(() => {
-    const byName = new Map<string, string[]>()
-    for (const a of party) {
-      if (a.clientName === appt.clientName || removed.includes(a.id)) continue
-      byName.set(a.clientName, [...(byName.get(a.clientName) ?? []), a.id])
-    }
-    return [...byName.entries()].map(([clientName, ids]) => ({ clientName, ids }))
-  }, [party, appt.clientName, removed])
-  // clients not already accounted for in this party (current, other guests,
-  // or already staged to be added) -- the add-guest picker only offers
+  // every guest still in the party (this client first, then everyone else in
+  // first-seen order) -- the chips row uses this to switch which guest's
+  // services show in the editable list below, same as the New Appointment
+  // panel's own guest chips
+  const guestNames = useMemo(() => {
+    const order: string[] = []
+    for (const d of liveDraft) if (!order.includes(d.clientName)) order.push(d.clientName)
+    return order.sort((a, b) => (a === appt.clientName ? -1 : b === appt.clientName ? 1 : 0))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, removed, appt.clientName])
+  const activeSvcs = liveDraft.filter((d) => d.clientName === activeGuest)
+  // clients not already in this party -- the add-guest picker only offers
   // someone genuinely new
-  const partyNames = new Set([appt.clientName, ...otherGuests.map((g) => g.clientName), ...newGuests.map((g) => g.clientName)])
-  const availableClients = clients.filter((c) => !partyNames.has(c.name))
-  const newGuestClient = clients.find((c) => c.id === newGuestClientId)
-  // same "tech's own call" flag as the per-service warning below, shown
-  // before adding rather than blocking it -- saving anyway is still the
-  // salon's call
-  const newGuestBannedTech = newGuestClient
-    ? techs.find((t) => t.id === newGuestTechId && (t.bannedClientIds ?? []).includes(newGuestClient.id))
-    : undefined
+  const availableClients = clients.filter((c) => !guestNames.includes(c.name))
 
-  const addGuestToParty = () => {
-    if (!newGuestClient || !newGuestServiceId) return
-    const svc = svcById[newGuestServiceId]
-    setNewGuests((gs) => [...gs, {
-      id: `a${Date.now()}-party${gs.length}`,
-      techId: newGuestTechId,
-      clientName: newGuestClient.name,
-      serviceId: newGuestServiceId,
-      startMin: groupStart ?? appt.startMin,
+  // dropping a guest entirely (the chip's X, not a per-service remove): ids
+  // that already existed on the board go through the normal `removed` array
+  // (Save filters those out generically, across the whole day); ids only
+  // staged locally this session -- never actually saved -- can just be
+  // dropped outright
+  const removeGuest = (name: string) => {
+    if (name === appt.clientName) return
+    const ids = liveDraft.filter((d) => d.clientName === name).map((d) => d.id)
+    setRemoved((r) => [...r, ...ids.filter((id) => originalIds.has(id))])
+    setDraft((d) => d.filter((x) => !(x.clientName === name && !originalIds.has(x.id))))
+    if (activeGuest === name) setActiveGuest(appt.clientName)
+  }
+
+  // adding someone new to the party stages a real draft appointment right in
+  // `draft`, with one default service so it's immediately visible and
+  // editable below -- same as adding another service to whoever's already
+  // active, both stay purely local until Save actually commits them
+  const addGuest = (clientId: string) => {
+    const c = clients.find((x) => x.id === clientId)
+    const svc = services[0]
+    if (!c || !svc) return
+    setDraft((d) => [...d, {
+      id: `a${Date.now()}-party${d.length}`,
+      techId: 'first',
+      clientName: c.name,
+      serviceId: svc.id,
+      startMin: appt.startMin,
       durationMin: svc.durationMin,
       status: 'booked',
       bookingSource: 'front_desk',
       parallelGroup: appt.parallelGroup,
-      techRequested: newGuestTechId !== 'first' && newGuestTechId !== 'pref-female' && newGuestTechId !== 'pref-male' && newGuestTechId !== 'issue' ? true : undefined,
-      requestedTechChoice: newGuestTechId === 'pref-female' || newGuestTechId === 'pref-male' ? newGuestTechId : undefined,
-      issue: newGuestTechId === 'issue' ? true : undefined,
     }])
+    setActiveGuest(c.name)
     setAddingGuest(false)
     setNewGuestClientId('')
-    setNewGuestServiceId(services[0]?.id ?? '')
-    setNewGuestTechId('first')
   }
+
+  const addService = (clientName: string) => {
+    const svc = services[0]
+    if (!svc) return
+    setDraft((d) => [...d, {
+      id: `a${Date.now()}-svc${d.length}`,
+      techId: 'first',
+      clientName,
+      serviceId: svc.id,
+      startMin: appt.startMin,
+      durationMin: svc.durationMin,
+      status: 'booked',
+      bookingSource: 'front_desk',
+      parallelGroup: appt.parallelGroup,
+    }])
+  }
+
+  // Save's `updated` must only contain ids that already exist on the board
+  // (saveDetail's relocation/gender/banned pipeline compares against the
+  // board to tell what's actually changing); anything staged this session --
+  // a new guest, or a new service on anyone -- goes through `added` instead,
+  // so it's inserted rather than matched against an id that was never there
+  const splitForSave = (list: Appointment[]) => ({
+    updated: list.filter((d) => originalIds.has(d.id)),
+    added: list.filter((d) => !originalIds.has(d.id)),
+  })
 
   // changing the Status dropdown applies to every one of this client's own
   // linked services (mirrors the right-click Confirm/Check in/etc. actions,
@@ -224,28 +256,33 @@ export function AppointmentDetail({
   // actually goes through, so a pending double-book/gender-mismatch
   // confirmation still keeps the panel's error state visible instead of
   // being masked by an unconditional close here
+  // the Status dropdown always applies to appt.clientName's own services
+  // specifically, never the rest of the party -- each guest's status is
+  // tracked independently (one checked in, another still just booked)
   const applyStatus = (v: Appointment['status']) => {
     setStatus(v)
-    onSave(
-      draft.map((d) => ({ ...d, status: v, notes: d.id === appt.id ? notes || undefined : d.notes })),
-      removed,
-      dateKey !== originDateKey ? dateKey : undefined,
-      newGuests,
-    )
+    const kept = liveDraft.map((d) => ({
+      ...d,
+      status: d.clientName === appt.clientName ? v : d.status,
+      notes: d.id === appt.id ? notes || undefined : d.notes,
+    }))
+    const { updated, added } = splitForSave(kept)
+    onSave(updated, removed, dateKey !== originDateKey ? dateKey : undefined, added)
   }
 
-  const total = draft.filter((d) => !removed.includes(d.id)).reduce((s, d) => s + svcById[d.serviceId].price, 0)
+  const total = activeSvcs.reduce((s, d) => s + svcById[d.serviceId].price, 0)
 
   // ── day & time rail, same slot-finding mechanism as booking a new appointment.
-  // `dateKey` is the day the calendar behind this panel is showing right now —
-  // browsing it via the rail below actually navigates that calendar (onPreviewDay)
-  // so the salon can see the board, while `originDateKey` stays fixed at the
+  // scoped to whichever guest is active via the chips above, so switching
+  // guests re-targets the rail at their own services. `dateKey` is the day
+  // the calendar behind this panel is showing right now — browsing it via
+  // the rail below actually navigates that calendar (onPreviewDay) so the
+  // salon can see the board, while `originDateKey` stays fixed at the
   // appointment's real day so Save knows whether this is actually a move ──
-  const activeServices = draft.filter((d) => !removed.includes(d.id))
-  const svcIds = activeServices.map((d) => d.serviceId)
-  const isParallelGroup = activeServices.length > 1 && activeServices.every((d) => d.startMin === activeServices[0].startMin)
-  const groupStart = activeServices[0]?.startMin
-  const selfIds = new Set(group.map((g) => g.id))
+  const svcIds = activeSvcs.map((d) => d.serviceId)
+  const isParallelGroup = activeSvcs.length > 1 && activeSvcs.every((d) => d.startMin === activeSvcs[0].startMin)
+  const groupStart = activeSvcs[0]?.startMin
+  const selfIds = new Set(activeSvcs.map((d) => d.id))
   // each slot is 'open' (fits as-is), 'movable' (fits if a non-requested
   // booking blocking it gets relocated), or 'blocked' — findMakeRoomPlan
   // only runs for slots that don't already fit, and ignores this
@@ -263,7 +300,7 @@ export function AppointmentDetail({
 
   const applySlot = (s: number) => {
     const items = layoutItems(svcIds, isParallelGroup)
-    activeServices.forEach((d, i) => setSvc(d.id, { startMin: s + (items[i]?.offset ?? 0) }))
+    activeSvcs.forEach((d, i) => setSvc(d.id, { startMin: s + (items[i]?.offset ?? 0) }))
   }
 
   const shiftDay = (delta: number) => {
@@ -327,13 +364,75 @@ export function AppointmentDetail({
           </select>
         </div>
 
+        {/* party — every guest sharing this booking, as a row of chips, same
+            as the New Appointment panel. Click a chip to edit that guest's
+            own services below; the X drops them from the party entirely
+            (this client's own chip has none — you can't remove yourself).
+            Adding someone new stages them here with one default service,
+            ready to edit like any other row the moment they're selected */}
+        <div>
+          <label className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+            <Users className="h-3 w-3" /> Party{guestNames.length > 1 ? ` (${guestNames.length})` : ''}
+          </label>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {guestNames.map((name) => (
+              <div
+                key={name}
+                className={`flex items-center gap-1 rounded-full border py-1 pl-2.5 pr-1 text-[12px] font-semibold ${
+                  activeGuest === name ? 'border-clay bg-clay-tint text-clay' : 'border-line text-ink hover:bg-cream'
+                }`}
+              >
+                <button type="button" onClick={() => setActiveGuest(name)} className="flex items-center gap-1">
+                  {name}
+                  <span className={`font-normal ${activeGuest === name ? 'text-clay/70' : 'text-ink-faint'}`}>
+                    {liveDraft.filter((d) => d.clientName === name).length} svc
+                  </span>
+                </button>
+                {name !== appt.clientName && (
+                  <button
+                    type="button"
+                    onClick={() => removeGuest(name)}
+                    title={`Remove ${name} from this party`}
+                    className="rounded-full p-0.5 text-ink-faint hover:text-rust"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            ))}
+            {addingGuest ? (
+              <div className="flex items-center gap-1 rounded-full border border-dashed border-clay/40 bg-clay-tint/20 py-0.5 pl-1 pr-1">
+                <SearchSelect
+                  options={availableClients.map((c) => ({ value: c.id, label: c.name, sublabel: c.phone }))}
+                  value={newGuestClientId}
+                  onChange={(v) => { setNewGuestClientId(v); addGuest(v) }}
+                  placeholder="Choose a client"
+                  searchPlaceholder="Search clients"
+                  className="w-44"
+                />
+                <button type="button" onClick={() => setAddingGuest(false)} className="shrink-0 text-ink-faint hover:text-rust">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAddingGuest(true)}
+                className="flex items-center gap-1 rounded-full border border-dashed border-line py-1 pl-2 pr-2.5 text-[12px] font-semibold text-ink-soft hover:bg-cream"
+              >
+                <UserPlus className="h-3 w-3" /> Add guest
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* services */}
         <div>
           <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
-            Service details{group.length > 1 ? ` (${draft.length - removed.length})` : ''}
+            Service details{guestNames.length > 1 ? ` — ${activeGuest}` : ''}{activeSvcs.length > 1 ? ` (${activeSvcs.length})` : ''}
           </label>
           <div className="space-y-2">
-            {draft.filter((d) => !removed.includes(d.id)).map((d) => {
+            {activeSvcs.map((d) => {
               const isRequested = !!d.techRequested
               const requestKind =
                 d.techId === 'pref-female' || d.techId === 'pref-male' || d.techId === 'issue' ? d.techId
@@ -343,8 +442,11 @@ export function AppointmentDetail({
               const heartColor = REQUEST_HEART_COLOR[requestKind]
               // the tech's own call, not the client's -- still bookable, just
               // flagged so the front desk sees it before going ahead (see
-              // Settings → Techs → Clients not taken)
-              const bannedTech = client ? techs.find((t) => t.id === d.techId && (t.bannedClientIds ?? []).includes(client.id)) : undefined
+              // Settings → Techs → Clients not taken). Looked up against
+              // THIS row's own guest, not always appt.clientName, since the
+              // active guest can be anyone in the party now
+              const rowClient = clients.find((c) => c.name === d.clientName)
+              const bannedTech = rowClient ? techs.find((t) => t.id === d.techId && (t.bannedClientIds ?? []).includes(rowClient.id)) : undefined
               return (
                 <div key={d.id} className={`rounded-xl border p-2.5 ${isRequested ? 'border-clay/30 bg-clay-tint/30' : 'border-line'}`}>
                   <div className="flex items-center gap-2">
@@ -359,7 +461,7 @@ export function AppointmentDetail({
                       className="min-w-0 flex-1"
                     />
                     <span className="tnum shrink-0 text-sm font-bold text-ink">${svcById[d.serviceId].price}</span>
-                    {draft.length - removed.length > 1 && (
+                    {activeSvcs.length > 1 && (
                       <button onClick={() => setRemoved((r) => [...r, d.id])} className="shrink-0 text-ink-faint hover:text-rust">
                         <X className="h-3.5 w-3.5" />
                       </button>
@@ -389,7 +491,7 @@ export function AppointmentDetail({
                   {bannedTech && (
                     <p className="mt-1.5 flex items-center gap-1.5 text-[10.5px] font-semibold text-rust">
                       <AlertTriangle className="h-3 w-3 shrink-0" />
-                      {bannedTech.name} has stopped taking {appt.clientName.split(' ')[0]}
+                      {bannedTech.name} has stopped taking {d.clientName.split(' ')[0]}
                     </p>
                   )}
                   <div className="mt-1.5 flex items-center gap-2">
@@ -426,105 +528,14 @@ export function AppointmentDetail({
               )
             })}
           </div>
+          <button
+            type="button"
+            onClick={() => addService(activeGuest)}
+            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-[8px] border border-dashed border-line py-1.5 text-[11.5px] font-semibold text-ink-soft transition-colors hover:bg-cream"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add service
+          </button>
           <div className="mt-1 text-right text-[11px] font-semibold text-ink-faint">Total <span className="tnum text-ink">${total.toFixed(2)}</span></div>
-        </div>
-
-        {/* party — the rest of the guests sharing this booking's time slot,
-            if any, plus a way to add or remove someone without leaving this
-            panel for the from-scratch New Appointment flow. Removing reuses
-            the same `removed` array as removing one of this client's own
-            services; adding stages a real draft appointment locally until
-            Save actually commits it */}
-        <div>
-          <label className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
-            <Users className="h-3 w-3" /> Party
-          </label>
-          <div className="space-y-1.5">
-            {otherGuests.map((g) => (
-              <div key={g.clientName} className="flex items-center justify-between gap-2 rounded-[8px] border border-line px-2.5 py-1.5">
-                <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-ink">{g.clientName}</span>
-                <span className="shrink-0 text-[10.5px] text-ink-faint">{g.ids.length} svc</span>
-                <button
-                  onClick={() => setRemoved((r) => [...r, ...g.ids])}
-                  title={`Remove ${g.clientName} from this party`}
-                  className="shrink-0 text-ink-faint hover:text-rust"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
-            {newGuests.map((g, i) => (
-              <div key={g.id} className="flex items-center justify-between gap-2 rounded-[8px] border border-clay/30 bg-clay-tint/20 px-2.5 py-1.5">
-                <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-ink">{g.clientName}</span>
-                <span className="shrink-0 text-[10.5px] font-semibold text-clay">pending · {svcById[g.serviceId].name}</span>
-                <button
-                  onClick={() => setNewGuests((gs) => gs.filter((_, j) => j !== i))}
-                  title={`Undo adding ${g.clientName}`}
-                  className="shrink-0 text-ink-faint hover:text-rust"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
-            {addingGuest ? (
-              <div className="space-y-1.5 rounded-[8px] border border-clay/30 bg-clay-tint/20 p-2">
-                <SearchSelect
-                  options={availableClients.map((c) => ({ value: c.id, label: c.name, sublabel: c.phone }))}
-                  value={newGuestClientId}
-                  onChange={setNewGuestClientId}
-                  placeholder="Choose a client"
-                  searchPlaceholder="Search clients"
-                />
-                <div className="grid grid-cols-2 gap-1.5">
-                  <SearchSelect
-                    options={svcOptions}
-                    value={newGuestServiceId}
-                    onChange={setNewGuestServiceId}
-                    searchPlaceholder="Search services"
-                  />
-                  <SearchSelect
-                    options={[
-                      { value: 'first', label: 'First available' },
-                      ...roles.flatMap((role) => techs.filter((t) => t.teamId === role.id).sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({
-                        value: t.id, label: t.name, group: role.name,
-                      }))),
-                    ]}
-                    value={newGuestTechId}
-                    onChange={setNewGuestTechId}
-                    searchPlaceholder="Search technicians"
-                  />
-                </div>
-                {newGuestBannedTech && (
-                  <p className="flex items-center gap-1.5 text-[10.5px] font-semibold text-rust">
-                    <AlertTriangle className="h-3 w-3 shrink-0" />
-                    {newGuestBannedTech.name} has stopped taking {newGuestClient?.name.split(' ')[0]}
-                  </p>
-                )}
-                <div className="flex justify-end gap-1.5">
-                  <button
-                    onClick={() => { setAddingGuest(false); setNewGuestClientId('') }}
-                    className="rounded-[8px] px-3 py-1.5 text-[11.5px] font-semibold text-ink-soft hover:bg-cream"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={addGuestToParty}
-                    disabled={!newGuestClientId || !newGuestServiceId}
-                    className="rounded-[8px] bg-clay px-3 py-1.5 text-[11.5px] font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-                  >
-                    Add to party
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                onClick={() => setAddingGuest(true)}
-                className="flex w-full items-center justify-center gap-1.5 rounded-[8px] border border-dashed border-line py-1.5 text-[11.5px] font-semibold text-ink-soft transition-colors hover:bg-cream"
-              >
-                <UserPlus className="h-3.5 w-3.5" /> Add guest to party
-              </button>
-            )}
-          </div>
         </div>
 
         {/* notes */}
@@ -756,12 +767,15 @@ export function AppointmentDetail({
               </div>
             )}
             <button
-              onClick={() => onSave(
-                draft.map((d) => ({ ...d, status: d.id === appt.id ? status : d.status, notes: d.id === appt.id ? notes || undefined : d.notes })),
-                removed,
-                dateKey !== originDateKey ? dateKey : undefined,
-                newGuests,
-              )}
+              onClick={() => {
+                const kept = liveDraft.map((d) => ({
+                  ...d,
+                  status: d.id === appt.id ? status : d.status,
+                  notes: d.id === appt.id ? notes || undefined : d.notes,
+                }))
+                const { updated, added } = splitForSave(kept)
+                onSave(updated, removed, dateKey !== originDateKey ? dateKey : undefined, added)
+              }}
               className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-clay py-2.5 text-sm font-semibold text-white shadow-sh-1 transition-colors hover:bg-clay-deep"
             >
               <Clock className="h-4 w-4" /> {dateKey !== originDateKey ? `Save & move to ${dayLabelOf(dateKey)}` : 'Save changes'}

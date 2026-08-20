@@ -4536,7 +4536,6 @@ export function AppointmentBook() {
       {detailAppt && (
         <AppointmentDetail
           appt={detailAppt}
-          group={detailGroup}
           partySize={detailPartySize}
           party={detailParty}
           clients={clients}
