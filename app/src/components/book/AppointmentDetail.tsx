@@ -320,7 +320,7 @@ export function AppointmentDetail({
     onSave(updated, removed, dateKey !== originDateKey ? dateKey : undefined, added)
   }
 
-  const total = activeSvcs.reduce((s, d) => s + svcById[d.serviceId].price, 0)
+  const total = activeSvcs.reduce((s, d) => s + svcById[d.serviceId].price + (d.addons ?? []).reduce((s2, a) => s2 + a.price, 0), 0)
 
   // ── day & time rail, same slot-finding mechanism as booking a new appointment.
   // scoped to whichever guest is active via the chips above, so switching
@@ -559,6 +559,9 @@ export function AppointmentDetail({
               // active guest can be anyone in the party now
               const rowClient = clients.find((c) => c.name === d.clientName)
               const bannedTech = rowClient ? techs.find((t) => t.id === d.techId && (t.bannedClientIds ?? []).includes(rowClient.id)) : undefined
+              const svc = svcById[d.serviceId]
+              const rowAddons = d.addons ?? []
+              const addonsTotal = rowAddons.reduce((s, a) => s + a.price, 0)
               return (
                 <div key={d.id} className={`rounded-xl border p-2.5 ${isRequested ? 'border-clay/30 bg-clay-tint/30' : 'border-line'}`}>
                   <div className="flex items-center gap-2">
@@ -566,13 +569,14 @@ export function AppointmentDetail({
                       options={svcOptions}
                       value={d.serviceId}
                       onChange={(v) => {
-                        const svc = svcById[v]
-                        setSvc(d.id, { serviceId: svc.id, durationMin: svc.durationMin })
+                        const newSvc = svcById[v]
+                        // a different service invalidates any add-ons picked for the old one
+                        setSvc(d.id, { serviceId: newSvc.id, durationMin: newSvc.durationMin, addons: undefined })
                       }}
                       searchPlaceholder="Search services"
                       className="min-w-0 flex-1"
                     />
-                    <span className="tnum shrink-0 text-sm font-bold text-ink">${svcById[d.serviceId].price}</span>
+                    <span className="tnum shrink-0 text-sm font-bold text-ink">${svc.price + addonsTotal}</span>
                     {activeSvcs.length > 1 && (
                       <button onClick={() => setRemoved((r) => [...r, d.id])} className="shrink-0 text-ink-faint hover:text-rust">
                         <X className="h-3.5 w-3.5" />
@@ -600,6 +604,30 @@ export function AppointmentDetail({
                       searchPlaceholder="Search technicians"
                     />
                   </div>
+                  {/* add-ons for this service, if the catalog offers any -- picking one
+                      doesn't touch Duration above, same as it doesn't auto-recompute
+                      elsewhere in this panel; bump it by hand if the extra time matters */}
+                  {(svc.addons?.length ?? 0) > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {svc.addons!.map((a) => {
+                        const has = rowAddons.some((x) => x.id === a.id)
+                        return (
+                          <button
+                            key={a.id}
+                            type="button"
+                            onClick={() => setSvc(d.id, {
+                              addons: has ? rowAddons.filter((x) => x.id !== a.id) : [...rowAddons, a],
+                            })}
+                            className={`shrink-0 rounded-[8px] border px-2 py-0.5 text-[10.5px] font-bold transition-colors ${
+                              has ? 'border-clay/60 bg-clay-tint text-clay' : 'border-line text-ink-faint hover:border-clay/40'
+                            }`}
+                          >
+                            + {a.name} · {a.mins}m · ${a.price}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
                   {bannedTech && (
                     <p className="mt-1.5 flex items-center gap-1.5 text-[10.5px] font-semibold text-rust">
                       <AlertTriangle className="h-3 w-3 shrink-0" />
