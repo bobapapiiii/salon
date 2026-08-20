@@ -4,7 +4,7 @@
 // guest, or create a full account on the spot), add service lines with a
 // tech each, then take payment in the shared PaymentFlow panel.
 import { useMemo, useState } from "react";
-import { Calendar, Clock, Plus, Search, ShoppingBag, UserPlus, X } from "lucide-react";
+import { Calendar, Clock, Plus, Search, ShoppingBag, UserPlus, X, Zap } from "lucide-react";
 import { DAY_SLOTS, SLOT_MIN, fmtTime, type ClientRecord } from "@/lib/booking-types";
 import { useStaffStore } from "@/lib/staff-store";
 import { activeServices, orderedServices, serviceGroupLabel, svcById, useServicesStore } from '@/lib/services-store'
@@ -91,7 +91,9 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   const { techs, roles } = useStaffStore()
   // technician picker options for a service row: grouped under their job
   // role (same roles/order as the calendar's own column groups), each
-  // group alphabetized by name; no avatar chip, this is a plain text list
+  // group alphabetized by name; no avatar chip, this is a plain text list.
+  // A tech is always required -- there's always someone actually doing the
+  // service -- so there's no "no tech credited" option to fall back to
   const techOptionsFor = (qualified: typeof techs) => {
     const used = new Set<string>()
     const grouped = roles.flatMap((role) => {
@@ -100,11 +102,7 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
       return inRole.map((t) => ({ value: t.id, label: t.name, group: role.name }))
     })
     const rest = qualified.filter((t) => !used.has(t.id)).sort((a, b) => a.name.localeCompare(b.name))
-    return [
-      { value: "", label: "No tech credited" },
-      ...grouped,
-      ...rest.map((t) => ({ value: t.id, label: t.name, group: "Other" })),
-    ]
+    return [...grouped, ...rest.map((t) => ({ value: t.id, label: t.name, group: "Other" }))]
   }
   const [step, setStep] = useState<"build" | "pay">("build")
   const [guests, setGuests] = useState<PosGuest[]>([])
@@ -123,6 +121,11 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   // OPEN_MIN -- same right-side rail idea as New Appointment, required
   // before checkout same as picking a service is
   const [timeByGuest, setTimeByGuest] = useState<Record<string, number>>({})
+  // whether a guest's (or the solo sale's) multiple services all start
+  // together (parallel, e.g. one tech on nails while another does toes) or
+  // stack one after another -- unlike New Appointment, POS defaults this
+  // to parallel since that's how a walk-in party usually actually runs
+  const [parallelGuest, setParallelGuest] = useState<Record<string, boolean>>({})
   const [q, setQ] = useState("")
   const [searching, setSearching] = useState(false)
   const [newPhone, setNewPhone] = useState("")
@@ -151,13 +154,18 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   // checking out -- a blank prompt row doesn't count
   const guestsMissingServices = guests.filter((g) => !rows.some((r) => r.person === g.name && r.serviceId))
   const hasBlankRow = rows.some((r) => !r.serviceId)
+  // a tech is always required once a service is picked -- there's always
+  // someone actually doing the work
+  const hasNoTechRow = rows.some((r) => r.serviceId && !r.techId)
   // same rule for time: every guest (or the solo sale) with a real service
   // needs a picked start before checking out
   const guestsMissingTime = guests.filter((g) => rows.some((r) => r.person === g.name && r.serviceId) && timeByGuest[g.name] == null)
   const soloNeedsTime = guests.length === 0 && rows.some((r) => r.serviceId) && timeByGuest[SOLO_KEY] == null
-  // each guest's services stack back-to-back from their picked start, same
-  // idea as New Appointment's own sequential layout -- no availability
-  // filtering, this is recording something already happening
+  // each guest's services either all start together (parallel -- each
+  // keeps its own real duration, so it ends whenever it ends, same idea as
+  // New Appointment's "shared start") or stack back-to-back one after
+  // another -- no availability filtering either way, this is recording
+  // something already happening, not booking a future slot
   const rowTiming = useMemo(() => {
     const out: Record<string, { startMin: number; durationMin: number }> = {}
     const byPerson = new Map<string, SaleRow[]>()
@@ -168,15 +176,17 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
       byPerson.get(key)!.push(r)
     }
     for (const [key, list] of byPerson) {
-      let cursor = timeByGuest[key] ?? 0
+      const start = timeByGuest[key] ?? 0
+      const parallel = parallelGuest[key] ?? true
+      let cursor = start
       for (const r of list) {
         const dur = svcById[r.serviceId]?.durationMin ?? 30
-        out[r.id] = { startMin: cursor, durationMin: dur }
-        cursor += dur
+        out[r.id] = { startMin: parallel ? start : cursor, durationMin: dur }
+        if (!parallel) cursor += dur
       }
     }
     return out
-  }, [rows, timeByGuest])
+  }, [rows, timeByGuest, parallelGuest])
 
   // add a guest to the party and make them the active tab, same as New
   // Appointment's own guest picker -- the first guest on an otherwise-
@@ -252,7 +262,7 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
       return {
         id: r.id,
         label: svc?.name ?? r.serviceId,
-        sub: tech ? `Tech: ${tech.name}` : "No tech credited",
+        sub: tech ? `Tech: ${tech.name}` : undefined,
         color: svc ? catById[svc.categoryId]?.line : undefined,
         price: svc?.price ?? 0,
         // serviceId/person/customFields feed the same per-service Color
@@ -428,6 +438,28 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
             <Plus className="h-3 w-3" /> Add service
           </button>
         </div>
+        {/* parallel vs. back-to-back -- only meaningful once this guest has
+            more than one service; defaults to parallel since that's how a
+            walk-in party usually actually runs (different techs at once),
+            same idea as New Appointment's own toggle but opposite default */}
+        {visibleRows.filter((r) => r.serviceId).length >= 2 && (
+          (parallelGuest[timeKey] ?? true) ? (
+            <div className="mb-2 flex items-center gap-2 rounded-xl border border-clay/40 bg-clay-tint/40 px-3 py-2 text-[12px] text-ink">
+              <Zap className="h-3.5 w-3.5 shrink-0 text-clay" />
+              <span className="flex-1">Services will run <b>in parallel</b>, same start time.</span>
+              <button type="button" onClick={() => setParallelGuest((p) => ({ ...p, [timeKey]: false }))} className="shrink-0 font-semibold text-clay underline">
+                Split back-to-back
+              </button>
+            </div>
+          ) : (
+            <div className="mb-2 rounded-xl border border-line bg-cream px-3 py-2 text-[12px] text-ink-faint">
+              Services are stacked back-to-back.{" "}
+              <button type="button" onClick={() => setParallelGuest((p) => ({ ...p, [timeKey]: true }))} className="font-semibold text-clay underline">
+                Run in parallel
+              </button>
+            </div>
+          )
+        )}
         {visibleRows.length === 0 && (
           <p className="rounded-[10px] border border-dashed border-line py-4 text-center text-[12px] text-ink-faint">
             {activeName ? `No services yet for ${activeName}` : "No services yet"} -- add one above.
@@ -453,6 +485,7 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
                     options={techOptionsFor(qualified)}
                     value={r.techId}
                     onChange={(v) => patchRow(r.id, { techId: v })}
+                    placeholder="Select a technician"
                     searchPlaceholder="Search technicians"
                     className="w-full"
                   />
@@ -512,7 +545,12 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
               : "Pick a service for every line before checking out."}
           </p>
         )}
-        {(guestsMissingServices.length === 0 && !hasBlankRow) && (guestsMissingTime.length > 0 || soloNeedsTime) && (
+        {(guestsMissingServices.length === 0 && !hasBlankRow) && hasNoTechRow && (
+          <p className="mb-2 text-[11px] font-semibold text-rust">
+            Pick a technician for every line before checking out.
+          </p>
+        )}
+        {(guestsMissingServices.length === 0 && !hasBlankRow && !hasNoTechRow) && (guestsMissingTime.length > 0 || soloNeedsTime) && (
           <p className="mb-2 text-[11px] font-semibold text-rust">
             {guestsMissingTime.length > 0
               ? `Pick a time for ${guestsMissingTime.map((g) => g.name).join(", ")} before checking out.`
@@ -521,7 +559,7 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
         )}
         <button
           onClick={() => setStep("pay")}
-          disabled={rows.length === 0 || hasBlankRow || guestsMissingServices.length > 0 || guestsMissingTime.length > 0 || soloNeedsTime}
+          disabled={rows.length === 0 || hasBlankRow || hasNoTechRow || guestsMissingServices.length > 0 || guestsMissingTime.length > 0 || soloNeedsTime}
           className="w-full rounded-xl bg-clay py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-clay-deep disabled:opacity-40"
         >
           Continue to payment →
