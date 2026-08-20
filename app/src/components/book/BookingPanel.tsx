@@ -228,6 +228,7 @@ export function BookingPanel({
   // clicked -- an always-open search field next to the first client read as
   // ambiguous to new users (unclear it was even for adding a second person)
   const [addGuestOpen, setAddGuestOpen] = useState(false)
+  const [svcQuery, setSvcQuery] = useState('')
   const [svcsByGuest, setSvcsByGuest] = useState<string[][]>([[], []])
   const [parallelGuest, setParallelGuest] = useState<boolean[]>([false, false])
   const [techByService, setTechByService] = useState<Record<string, string>>(
@@ -246,28 +247,38 @@ export function BookingPanel({
   // add-ons picked per service: key `${gi}:${serviceId}` → snapshots
   const [addonsByService, setAddonsByService] = useState<Record<string, ServiceAddon[]>>({})
 
+  // shares gridRow's exact column template (defined below) so the chips land
+  // in the same "right" column as the technician dropdown above them, instead
+  // of starting back at the row's left edge
   const addonChips = (gi: number, svcId: string) => {
     const svc = svcById[svcId]
     if (!svc?.addons?.length) return null
     const key = `${gi}:${svcId}`
     const on = addonsByService[key] ?? []
     return (
-      <div className="mt-1.5 flex flex-wrap gap-1">
-        {svc.addons.map((a) => {
-          const has = on.some((x) => x.id === a.id)
-          return (
-            <button
-              key={a.id}
-              type="button"
-              onClick={() => setAddonsByService((m) => ({ ...m, [key]: has ? on.filter((x) => x.id !== a.id) : [...on, a] }))}
-              className={`rounded-[8px] border px-2 py-0.5 text-[10.5px] font-bold transition-colors ${
-                has ? 'border-clay/60 bg-clay-tint text-clay' : 'border-line text-ink-faint hover:border-clay/40'
-              }`}
-            >
-              + {a.name} · {a.mins}m · ${a.price}
-            </button>
-          )
-        })}
+      <div className="mt-1.5">
+        {gridRow(
+          null,
+          null,
+          null,
+          <div className="flex flex-wrap gap-1">
+            {svc.addons.map((a) => {
+              const has = on.some((x) => x.id === a.id)
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => setAddonsByService((m) => ({ ...m, [key]: has ? on.filter((x) => x.id !== a.id) : [...on, a] }))}
+                  className={`rounded-[8px] border px-2 py-0.5 text-[10.5px] font-bold transition-colors ${
+                    has ? 'border-clay/60 bg-clay-tint text-clay' : 'border-line text-ink-faint hover:border-clay/40'
+                  }`}
+                >
+                  + {a.name} · {a.mins}m · ${a.price}
+                </button>
+              )
+            })}
+          </div>,
+        )}
       </div>
     )
   }
@@ -914,34 +925,50 @@ export function BookingPanel({
                     <div className="pb-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
                       Services for {guests[activeGuest]?.name}
                     </div>
-                    {orderedSvcs.map((s, i) => {
-                      const group = serviceGroupLabel(s, categories)
-                      const showHeader = group !== undefined && (i === 0 || group !== serviceGroupLabel(orderedSvcs[i - 1], categories))
-                      const selected = (svcsByGuest[activeGuest] ?? []).includes(s.id)
-                      return (
-                        <div key={s.id}>
-                          {showHeader && (
-                            <div className={`px-1 pb-1 text-[10px] font-bold uppercase tracking-wide text-ink-faint ${i === 0 ? '' : 'pt-2.5'}`}>
-                              {group}
-                            </div>
-                          )}
-                          <button
-                            onClick={() => toggleService(s.id)}
-                            className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm ${
-                              selected ? 'border-clay/60 bg-clay-tint/30' : 'border-transparent hover:border-line hover:bg-cream'
-                            }`}
-                          >
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate font-semibold text-ink">{s.name}</span>
-                              <span className="block text-[11px] text-ink-faint">${s.price} · {s.durationMin}min</span>
-                            </span>
-                            <span className={`flex h-5 w-5 items-center justify-center rounded-full border ${selected ? 'border-clay bg-clay text-white' : 'border-line'}`}>
-                              {selected ? <Check className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
-                            </span>
-                          </button>
-                        </div>
-                      )
-                    })}
+                    <div className="relative mb-2">
+                      <Search className="pointer-events-none absolute left-2.5 top-[9px] h-3.5 w-3.5 text-ink-faint" />
+                      <input
+                        value={svcQuery}
+                        onChange={(e) => setSvcQuery(e.target.value)}
+                        placeholder="Search services"
+                        className="w-full rounded-[8px] border border-input bg-background py-1.5 pl-8 pr-3 text-[13px] outline-none focus:ring-1 focus:ring-ring"
+                      />
+                    </div>
+                    {(() => {
+                      const query = svcQuery.trim().toLowerCase()
+                      const filteredSvcs = query ? orderedSvcs.filter((s) => s.name.toLowerCase().includes(query)) : orderedSvcs
+                      if (filteredSvcs.length === 0) {
+                        return <div className="py-6 text-center text-sm text-ink-faint">No services match "{svcQuery.trim()}"</div>
+                      }
+                      return filteredSvcs.map((s, i) => {
+                        const group = serviceGroupLabel(s, categories)
+                        const showHeader = group !== undefined && (i === 0 || group !== serviceGroupLabel(filteredSvcs[i - 1], categories))
+                        const selected = (svcsByGuest[activeGuest] ?? []).includes(s.id)
+                        return (
+                          <div key={s.id}>
+                            {showHeader && (
+                              <div className={`px-1 pb-1 text-[10px] font-bold uppercase tracking-wide text-ink-faint ${i === 0 ? '' : 'pt-2.5'}`}>
+                                {group}
+                              </div>
+                            )}
+                            <button
+                              onClick={() => toggleService(s.id)}
+                              className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm ${
+                                selected ? 'border-clay/60 bg-clay-tint/30' : 'border-transparent hover:border-line hover:bg-cream'
+                              }`}
+                            >
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate font-semibold text-ink">{s.name}</span>
+                                <span className="block text-[11px] text-ink-faint">${s.price} · {s.durationMin}min</span>
+                              </span>
+                              <span className={`flex h-5 w-5 items-center justify-center rounded-full border ${selected ? 'border-clay bg-clay text-white' : 'border-line'}`}>
+                                {selected ? <Check className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                              </span>
+                            </button>
+                          </div>
+                        )
+                      })
+                    })()}
                   </div>
                 </>
               )}
