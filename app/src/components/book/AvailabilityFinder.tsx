@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
 import {
-  AlertTriangle, Calendar, CalendarSearch, Check, ChevronLeft, ChevronRight, Clock, Plus, Search, UserPlus, X,
+  AlertTriangle, Calendar, CalendarSearch, Check, ChevronLeft, ChevronRight, Clock, Heart, Plus, Search, UserPlus, X,
 } from 'lucide-react'
 import type { Appointment, ClientRecord, TimeBlock } from '@/lib/booking-types'
 import { fmtTime } from '@/lib/booking-types'
 import { boardTechs, useStaffStore } from '@/lib/staff-store'
 import { activeServices, orderedServices, serviceGroupLabel, svcById, useServicesStore } from '@/lib/services-store'
-import { useCategoriesStore } from '@/lib/categories-store'
+import { catById, useCategoriesStore } from '@/lib/categories-store'
 import { DatePickerPopover } from './LegendPopover'
 import { layoutItems, allSlotsFor, type BookedService, type SlotGroup } from './BookingPanel'
 import { SearchSelect } from './SearchSelect'
@@ -246,17 +246,45 @@ export function AvailabilityFinder({
       </div>
 
       {g.clientId ? (
-        <div className="mb-3 flex items-center gap-2 rounded-[8px] bg-cream px-2.5 py-1.5">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-clay-tint text-[10px] font-bold text-clay">
-            {initials(g.name)}
-          </span>
-          <div className="min-w-0 flex-1">
-            <button onClick={() => onViewProfile(g.name)} className="block truncate text-[13px] font-bold text-ink hover:text-clay" title="Open guest profile">
-              {g.name}
-            </button>
-            {g.phone && <span className="block text-[10.5px] text-ink-faint">{g.phone}</span>}
+        <div className="mb-3 rounded-[8px] bg-cream px-2.5 py-1.5">
+          <div className="flex items-center gap-2">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-clay-tint text-[10px] font-bold text-clay">
+              {initials(g.name)}
+            </span>
+            <div className="min-w-0 flex-1">
+              <button onClick={() => onViewProfile(g.name)} className="block truncate text-[13px] font-bold text-ink hover:text-clay" title="Open guest profile">
+                {g.name}
+              </button>
+              {g.phone && <span className="block text-[10.5px] text-ink-faint">{g.phone}</span>}
+            </div>
+            <button onClick={() => clearClient(g.id)} className="shrink-0 text-[10.5px] font-semibold text-clay hover:underline">Change</button>
           </div>
-          <button onClick={() => clearClient(g.id)} className="shrink-0 text-[10.5px] font-semibold text-clay hover:underline">Change</button>
+          {/* this guest's standing tech preferences, set on their client
+              profile — a reminder while picking services here, same as the
+              new-appointment panel shows */}
+          {(() => {
+            const client = clients.find((c) => c.id === g.clientId)
+            const prefs = (client?.preferredTechs ?? []).filter((p) => p.categoryIds.length > 0)
+            if (prefs.length === 0) return null
+            return (
+              <div className="mt-1.5 space-y-1 border-t border-line/60 pt-1.5">
+                {prefs.map((p) => {
+                  const tech = techs.find((t) => t.id === p.techId)
+                  if (!tech) return null
+                  return (
+                    <div key={p.id} className="flex items-center gap-1.5 text-[11px] text-ink-soft">
+                      <Heart className="h-3 w-3 shrink-0 text-clay" style={{ fill: 'currentColor' }} />
+                      <span className="min-w-0 truncate">
+                        <b className="font-semibold text-ink">{tech.name}</b>
+                        {' — '}
+                        {p.categoryIds.map((id) => catById[id]?.name ?? id).join(', ')}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
         </div>
       ) : (
         <div className="mb-3">
