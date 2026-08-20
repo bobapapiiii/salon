@@ -275,6 +275,10 @@ export function AppointmentDetail({
                 : d.requestedTechChoice === 'pref-female' || d.requestedTechChoice === 'pref-male' ? d.requestedTechChoice
                 : 'any'
               const heartColor = REQUEST_HEART_COLOR[requestKind]
+              // the tech's own call, not the client's -- still bookable, just
+              // flagged so the front desk sees it before going ahead (see
+              // Settings → Techs → Clients not taken)
+              const bannedTech = client ? techs.find((t) => t.id === d.techId && (t.bannedClientIds ?? []).includes(client.id)) : undefined
               return (
                 <div key={d.id} className={`rounded-xl border p-2.5 ${isRequested ? 'border-clay/30 bg-clay-tint/30' : 'border-line'}`}>
                   <div className="flex items-center gap-2">
@@ -316,6 +320,12 @@ export function AppointmentDetail({
                       searchPlaceholder="Search technicians"
                     />
                   </div>
+                  {bannedTech && (
+                    <p className="mt-1.5 flex items-center gap-1.5 text-[10.5px] font-semibold text-rust">
+                      <AlertTriangle className="h-3 w-3 shrink-0" />
+                      {bannedTech.name} has stopped taking {appt.clientName.split(' ')[0]} — saving anyway is the salon's call
+                    </p>
+                  )}
                   <div className="mt-1.5 flex items-center gap-2">
                     <span className="flex shrink-0 items-center gap-1 text-[10.5px] font-bold uppercase tracking-wide text-ink-faint">
                       {heartColor && <Heart className="h-3 w-3 shrink-0" style={{ color: heartColor, fill: heartColor }} />}

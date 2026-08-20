@@ -366,6 +366,10 @@ export function AppointmentBook() {
   const [pendingOverlap, setPendingOverlap] = useState<{ techId: string; timeLabel: string; apply: () => void } | null>(null)
   const [pendingTechRequest, setPendingTechRequest] = useState<{ fromName: string; toName: string; clientName: string; apply: () => void } | null>(null)
   const [pendingGenderMismatch, setPendingGenderMismatch] = useState<{ pref: 'female' | 'male'; toName: string; clientName: string; apply: () => void } | null>(null)
+  // moving an appointment onto a tech who's banned this client (see Settings
+  // → Techs → Clients not taken) — the tech's own call, still overridable by
+  // the salon, but never applied silently
+  const [pendingBannedClient, setPendingBannedClient] = useState<{ techName: string; clientName: string; apply: () => void } | null>(null)
   const blocksRef = useRef<TimeBlock[]>([])
   blocksRef.current = blocksByDay[dateKey] ?? []
   // blocks drag like appointments, but self-contained (no conflict rules)
@@ -1507,7 +1511,7 @@ export function AppointmentBook() {
 
   const continueAfterPrompts = (
     d: DragState, moving: MovingItem[], firstErr: string | null, relocated: Map<string, Appointment> = new Map(),
-    confirmed: { techRequest?: boolean; genderMismatch?: boolean } = {},
+    confirmed: { techRequest?: boolean; genderMismatch?: boolean; bannedClient?: boolean } = {},
   ) => {
     // moving a requested-tech service onto a DIFFERENT tech always confirms first
     if (!firstErr && !confirmed.techRequest && d.kind === 'appt' && d.mode === 'move') {
@@ -1536,6 +1540,24 @@ export function AppointmentBook() {
             toName: target.name,
             clientName: primary.clientName,
             apply: () => continueAfterPrompts(d, moving, null, relocated, { ...confirmed, genderMismatch: true }),
+          })
+          return
+        }
+      }
+    }
+    // moving onto a tech who's banned this client (their own call, set on
+    // their profile) always confirms first — see Settings → Techs → Clients
+    // not taken
+    if (!firstErr && !confirmed.bannedClient && d.kind === 'appt' && d.mode === 'move') {
+      const primary = appts.find((a) => a.id === d.primaryId)
+      if (primary && d.targetTechId !== primary.techId) {
+        const target = techOf(d.targetTechId)
+        const clientId = clients.find((c) => c.name === primary.clientName)?.id
+        if (clientId && (target.bannedClientIds ?? []).includes(clientId)) {
+          setPendingBannedClient({
+            techName: target.name,
+            clientName: primary.clientName,
+            apply: () => continueAfterPrompts(d, moving, null, relocated, { ...confirmed, bannedClient: true }),
           })
           return
         }
@@ -2740,6 +2762,27 @@ export function AppointmentBook() {
       }
       doSave(finalKeep)
     }
+    // reassigning a service to a tech who's banned this client always confirms
+    // first — the tech's own call, set on their profile (Settings → Techs →
+    // Clients not taken), never applied silently
+    const afterBannedCheck = (finalKeep: Appointment[] = keep) => {
+      const bannedAssignment = finalKeep.find((u) => {
+        const orig = originBoard.find((a) => a.id === u.id)
+        if (!orig || orig.techId === u.techId) return false
+        const clientId = clients.find((c) => c.name === u.clientName)?.id
+        if (!clientId) return false
+        return (techOf(u.techId).bannedClientIds ?? []).includes(clientId)
+      })
+      if (bannedAssignment) {
+        setPendingBannedClient({
+          techName: techOf(bannedAssignment.techId).name,
+          clientName: bannedAssignment.clientName,
+          apply: () => afterGenderCheck(finalKeep),
+        })
+        return
+      }
+      afterGenderCheck(finalKeep)
+    }
     // reassigning a gender-preferred service to a tech of the other gender always confirms first —
     // unless the salon already okayed a gender mismatch for this exact appointment before
     const genderMismatch = keep.find((u) => {
@@ -2756,11 +2799,11 @@ export function AppointmentBook() {
         pref: genderMismatch.requestedTechChoice === 'pref-female' ? 'female' : 'male',
         toName: techOf(genderMismatch.techId).name,
         clientName: genderMismatch.clientName,
-        apply: () => afterGenderCheck(keep.map((u) => (u.id === genderMismatch.id ? { ...u, genderMismatchOk: true } : u))),
+        apply: () => afterBannedCheck(keep.map((u) => (u.id === genderMismatch.id ? { ...u, genderMismatchOk: true } : u))),
       })
       return
     }
-    afterGenderCheck()
+    afterBannedCheck()
   }
 
   // the payment covering the edit panel's current appointment/group, shaped
@@ -4336,6 +4379,17 @@ export function AppointmentBook() {
           confirmLabel={`Move to ${pendingGenderMismatch.toName}`}
           onConfirm={pendingGenderMismatch.apply}
           onClose={() => setPendingGenderMismatch(null)}
+        />
+      )}
+
+      {/* moving an appointment onto a tech who's banned this client always confirms */}
+      {pendingBannedClient && (
+        <ConfirmDialog
+          title={`${pendingBannedClient.techName} has stopped taking ${pendingBannedClient.clientName}`}
+          body={`This tech marked ${pendingBannedClient.clientName} as a client they no longer want to take (Settings → Techs → Clients not taken). Move the appointment to ${pendingBannedClient.techName} anyway?`}
+          confirmLabel={`Move to ${pendingBannedClient.techName}`}
+          onConfirm={pendingBannedClient.apply}
+          onClose={() => setPendingBannedClient(null)}
         />
       )}
 
