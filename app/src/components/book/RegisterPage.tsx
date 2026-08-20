@@ -418,6 +418,24 @@ export function RegisterPage({
     resetForms()
   }
 
+  // close a session nobody physically counted -- an automatic sweep of a
+  // leftover session, or a force-close of an orphaned one. Expected cash is
+  // still worked out from the payments actually taken while it was open
+  // (sessionPayments keys off timestamps, not registerId, so this works
+  // even for an orphan with no matching register); counted cash and
+  // variance are left unset rather than defaulting to 0/"Balanced", since
+  // nobody actually counted a drawer for it
+  const sweepClose = (s: RegisterSession, note: string) => {
+    const list = sessionPayments(s, payments)
+    onCloseRegister(s.id, {
+      closedAt: Date.now(),
+      closedBy: userName,
+      expectedCash: Math.round((s.openingFloat + cashTakenIn(list)) * 100) / 100,
+      tenders: tenderBreakdown(list),
+      closingNote: note,
+    })
+  }
+
   const doClose = () => {
     if (!active) return
     onCloseRegister(active.id, {
@@ -430,6 +448,18 @@ export function RegisterPage({
       closingNote: closeNote.trim() || undefined,
       tenders,
     })
+    // closing today's register also sweeps up anything else still open --
+    // a previous day's forgotten register, or an orphaned session with no
+    // matching registerId -- so finishing a close-out always leaves
+    // nothing dangling behind to silently re-trip the stale-register block
+    // later (see orphanSessions above for how one of these got stuck once
+    // already). A different register genuinely open TODAY is left alone,
+    // since multi-register salons can run more than one drawer at once.
+    for (const s of sessions) {
+      if (s.id === active.id || s.closedAt != null) continue
+      if (s.dateKey === todayKey && registers.some((r) => r.id === s.registerId)) continue
+      sweepClose(s, `Auto-closed when ${selected?.name ?? 'another register'} closed on ${dayLabelOf(todayKey)} — no physical count taken, verify against the drawer if this is unexpected`)
+    }
     resetForms()
   }
 
@@ -503,14 +533,7 @@ export function RegisterPage({
                         </span>
                         <button
                           type="button"
-                          onClick={() => onCloseRegister(s.id, {
-                            closedAt: Date.now(),
-                            closedBy: userName,
-                            countedCash: 0,
-                            expectedCash: 0,
-                            variance: 0,
-                            closingNote: 'Force-closed — orphaned session, no matching register configured',
-                          })}
+                          onClick={() => sweepClose(s, 'Force-closed — orphaned session, no matching register configured')}
                           className="shrink-0 rounded-[8px] bg-rust px-2.5 py-1 text-[11px] font-bold text-white transition-colors hover:opacity-90"
                         >
                           Force close
