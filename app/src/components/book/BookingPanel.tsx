@@ -838,7 +838,7 @@ export function BookingPanel({
             <>
               {/* guest chips + add guest -- sticky so they stay visible while the
                   services list below scrolls */}
-              <div className="sticky top-0 z-10 bg-popover pb-3">
+              <div className="sticky top-0 z-10 bg-white pb-3">
                 {/* guest chips, click to edit that guest's services; X removes */}
                 <div className="flex flex-wrap gap-2">
                   {guests.map((g, i) => (
