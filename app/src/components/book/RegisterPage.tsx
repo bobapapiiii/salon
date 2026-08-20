@@ -305,6 +305,16 @@ export function RegisterPage({
 
   const selected = visibleRegisters.find((r) => r.id === selectedId) ?? null
   const active = selected ? sessions.find((s) => s.registerId === selected.id && s.closedAt == null) ?? null : null
+  // sessions left open against a registerId that doesn't match anything
+  // configured -- old demo data, a register removed while its shift was
+  // still open, or similar. Invisible to the picker/history above since
+  // both key off registers.id, so without this they'd sit open forever
+  // and keep tripping the stale-register block in POS/checkout with no
+  // way to actually close them
+  const orphanSessions = useMemo(
+    () => sessions.filter((s) => s.closedAt == null && !registers.some((r) => r.id === s.registerId)),
+    [sessions, registers],
+  )
   // gated on the OPEN session's own day, not always today -- a session left
   // open from a previous day closes against its own leftovers (see the
   // openApptsFor/balanceDuePaymentsFor prop docs)
@@ -467,6 +477,51 @@ export function RegisterPage({
       {/* ══ body ══ */}
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
         <div className="mx-auto w-full max-w-3xl space-y-4">
+
+          {/* ── a shift stuck open against a register id nothing matches --
+              force-closeable right here since the normal open/close flow
+              above can never reach it (see orphanSessions above) ── */}
+          {orphanSessions.length > 0 && (
+            <div className="rounded-2xl border border-rust/40 bg-rust-tint/50 p-4">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-rust" />
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-[13.5px] font-bold text-ink">
+                    {orphanSessions.length === 1
+                      ? 'An unrecognized register session is still open'
+                      : `${orphanSessions.length} unrecognized register sessions are still open`}
+                  </h2>
+                  <p className="mt-0.5 text-[12px] text-ink-soft">
+                    These don't match any register in Settings, so they can't be closed the normal way above.
+                    Force-close them to clear the block on checkout and POS.
+                  </p>
+                  <div className="mt-2.5 space-y-1.5">
+                    {orphanSessions.map((s) => (
+                      <div key={s.id} className="flex items-center justify-between gap-2 rounded-[8px] border border-line bg-surface px-3 py-2">
+                        <span className="min-w-0 truncate text-[12px] text-ink">
+                          <b className="font-bold">{s.registerName || 'Unknown register'}</b> · open since {dayLabelOf(s.dateKey)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onCloseRegister(s.id, {
+                            closedAt: Date.now(),
+                            closedBy: userName,
+                            countedCash: 0,
+                            expectedCash: 0,
+                            variance: 0,
+                            closingNote: 'Force-closed — orphaned session, no matching register configured',
+                          })}
+                          className="shrink-0 rounded-[8px] bg-rust px-2.5 py-1 text-[11px] font-bold text-white transition-colors hover:opacity-90"
+                        >
+                          Force close
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ── switch between registers, only shown once there's more than one ── */}
           {visibleRegisters.length > 1 && (
