@@ -420,7 +420,12 @@ export function AppointmentDetail({
             (this client's own chip has none — you can't remove yourself).
             Adding someone new stages them here with one default service,
             ready to edit like any other row the moment they're selected */}
-        <div>
+        <div
+          className="relative"
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) { setAddingGuest(false); setGuestQuery('') }
+          }}
+        >
           <label className="mb-1 flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
             <Users className="h-3 w-3" /> Party{guestNames.length > 1 ? ` (${guestNames.length})` : ''}
           </label>
@@ -451,76 +456,21 @@ export function AppointmentDetail({
               </div>
             ))}
             {addingGuest ? (
-              <div
-                className="relative"
-                onBlur={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) { setAddingGuest(false); setGuestQuery('') }
-                }}
-              >
-                <div className="flex items-center gap-1 rounded-[8px] border border-dashed border-clay/40 bg-clay-tint/20 py-0.5 pl-1 pr-1">
-                  <input
-                    autoFocus
-                    value={guestQuery}
-                    onChange={(e) => setGuestQuery(e.target.value)}
-                    placeholder="Guest name or phone number"
-                    className="w-40 bg-transparent px-1.5 py-1 text-[12px] outline-none"
-                  />
-                  <button
-                    type="button"
-                    onMouseDown={() => { setAddingGuest(false); setGuestQuery('') }}
-                    className="shrink-0 text-ink-faint hover:text-rust"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-                {guestQuery.trim() && (
-                  <div className="absolute left-0 top-full z-20 mt-1 w-56 overflow-hidden rounded-[8px] border border-line bg-popover shadow-xl">
-                    {guestMatches.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onMouseDown={() => addGuestClient(c)}
-                        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] hover:bg-cream"
-                      >
-                        <span className="min-w-0 flex-1 truncate font-semibold text-ink">{c.name}</span>
-                        <span className="shrink-0 text-[10px] text-ink-faint">{c.phone}</span>
-                      </button>
-                    ))}
-                    {/* name-only guest, no profile, linked to appt.clientName */}
-                    <button
-                      type="button"
-                      onMouseDown={() => addGuestNameOnly(guestQuery)}
-                      className="flex w-full items-center gap-2 border-t border-line bg-clay-tint/20 px-2.5 py-2 text-left text-[12px] hover:bg-clay-tint/40"
-                    >
-                      <UserPlus className="h-3.5 w-3.5 shrink-0 text-clay" />
-                      <span className="min-w-0 flex-1">
-                        <span className="font-semibold text-ink">Add &ldquo;{guestQuery.trim()}&rdquo; as guest</span>
-                        <span className="block text-[10px] text-ink-faint">name only, no profile, links to {appt.clientName}</span>
-                      </span>
-                    </button>
-                    {/* or create a full account for them, phone required */}
-                    <div className="border-t border-line p-1.5">
-                      <div className="flex items-center gap-1">
-                        <UserPlus className="h-3.5 w-3.5 shrink-0 text-clay" />
-                        <input
-                          value={newAccountPhone}
-                          onChange={(e) => setNewAccountPhone(e.target.value)}
-                          placeholder={`New account "${guestQuery.trim()}", phone`}
-                          className="min-w-0 flex-1 rounded-[8px] border border-input bg-background px-1.5 py-1 text-[11px] outline-none"
-                        />
-                        <button
-                          type="button"
-                          disabled={!guestQuery.trim() || !newAccountPhone.trim()}
-                          onMouseDown={() => addGuestNewAccount(guestQuery, newAccountPhone)}
-                          className="rounded-[8px] bg-clay px-2 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-clay-deep disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          Add
-                        </button>
-                      </div>
-                      <p className="mt-1 pl-5 text-[10px] text-ink-faint">phone required for an account, or use the guest option above</p>
-                    </div>
-                  </div>
-                )}
+              <div className="flex items-center gap-1 rounded-[8px] border border-dashed border-clay/40 bg-clay-tint/20 py-0.5 pl-1 pr-1">
+                <input
+                  autoFocus
+                  value={guestQuery}
+                  onChange={(e) => setGuestQuery(e.target.value)}
+                  placeholder="Guest name or phone number"
+                  className="w-40 bg-transparent px-1.5 py-1 text-[12px] outline-none"
+                />
+                <button
+                  type="button"
+                  onMouseDown={() => { setAddingGuest(false); setGuestQuery('') }}
+                  className="shrink-0 text-ink-faint hover:text-rust"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
               </div>
             ) : (
               <button
@@ -532,6 +482,60 @@ export function AppointmentDetail({
               </button>
             )}
           </div>
+          {/* anchored to the whole Party block, not just the input -- a
+              fixed-width dropdown pinned to the input's own left edge could
+              land anywhere once the chip row wraps, and was spilling out
+              past the left column and over the day/time rail to the right.
+              left-0/right-0 here keeps it inside the column no matter where
+              the input ends up */}
+          {addingGuest && guestQuery.trim() && (
+            <div className="absolute left-0 right-0 top-full z-20 mt-1 overflow-hidden rounded-[8px] border border-line bg-popover shadow-xl">
+              {guestMatches.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onMouseDown={() => addGuestClient(c)}
+                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] hover:bg-cream"
+                >
+                  <span className="min-w-0 flex-1 truncate font-semibold text-ink">{c.name}</span>
+                  <span className="shrink-0 text-[10px] text-ink-faint">{c.phone}</span>
+                </button>
+              ))}
+              {/* name-only guest, no profile, linked to appt.clientName */}
+              <button
+                type="button"
+                onMouseDown={() => addGuestNameOnly(guestQuery)}
+                className="flex w-full items-center gap-2 border-t border-line bg-clay-tint/20 px-2.5 py-2 text-left text-[12px] hover:bg-clay-tint/40"
+              >
+                <UserPlus className="h-3.5 w-3.5 shrink-0 text-clay" />
+                <span className="min-w-0 flex-1">
+                  <span className="font-semibold text-ink">Add &ldquo;{guestQuery.trim()}&rdquo; as guest</span>
+                  <span className="block text-[10px] text-ink-faint">name only, no profile, links to {appt.clientName}</span>
+                </span>
+              </button>
+              {/* or create a full account for them, phone required */}
+              <div className="border-t border-line p-1.5">
+                <div className="flex items-center gap-1">
+                  <UserPlus className="h-3.5 w-3.5 shrink-0 text-clay" />
+                  <input
+                    value={newAccountPhone}
+                    onChange={(e) => setNewAccountPhone(e.target.value)}
+                    placeholder={`New account "${guestQuery.trim()}", phone`}
+                    className="min-w-0 flex-1 rounded-[8px] border border-input bg-background px-1.5 py-1 text-[11px] outline-none"
+                  />
+                  <button
+                    type="button"
+                    disabled={!guestQuery.trim() || !newAccountPhone.trim()}
+                    onMouseDown={() => addGuestNewAccount(guestQuery, newAccountPhone)}
+                    className="rounded-[8px] bg-clay px-2 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-clay-deep disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Add
+                  </button>
+                </div>
+                <p className="mt-1 pl-5 text-[10px] text-ink-faint">phone required for an account, or use the guest option above</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* services */}
