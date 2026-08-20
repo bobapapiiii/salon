@@ -662,7 +662,7 @@ function TechsSection({ techs, roles, selTech, clients, onSelectTech, onAddTech,
   const TIME_OPTS = Array.from({ length: DAY_SLOTS + 1 }, (_, i) => i * SLOT_MIN);
   const WEEK = [1, 2, 3, 4, 5, 6, 0]; // Mon to Sun
   const DAY_LABEL = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-  const [tab, setTab] = useState<"profile" | "services">("profile");
+  const [tab, setTab] = useState<"profile" | "services" | "banned">("profile");
 
   const uploadPhoto = (file: File | undefined, id: string) => {
     if (!file) return;
@@ -781,7 +781,7 @@ function TechsSection({ techs, roles, selTech, clients, onSelectTech, onAddTech,
         {selTech ? (
           <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
             <div className="mb-3 flex shrink-0 gap-1 border-b border-[#EDE7EE]">
-              {(["profile", "services"] as const).map((t) => (
+              {(["profile", "services", "banned"] as const).map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -789,7 +789,7 @@ function TechsSection({ techs, roles, selTech, clients, onSelectTech, onAddTech,
                     tab === t ? "border-[#5B54D6] text-slate-900" : "border-transparent text-slate-400 hover:text-slate-600"
                   }`}
                 >
-                  {t === "profile" ? "Profile" : "Services & pricing"}
+                  {t === "profile" ? "Profile" : t === "services" ? "Services & pricing" : "Banned Clients"}
                 </button>
               ))}
             </div>
@@ -950,9 +950,6 @@ function TechsSection({ techs, roles, selTech, clients, onSelectTech, onAddTech,
             {/* temporary time off */}
             <TimeOffCard selTech={selTech} onPatchTech={onPatchTech} />
 
-            {/* clients this tech no longer wants to take */}
-            <BannedClientsCard selTech={selTech} clients={clients} onPatchTech={onPatchTech} />
-
             {/* danger zone */}
             <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-4">
               <p className="text-[12px] font-bold text-rose-600">Danger zone</p>
@@ -996,8 +993,12 @@ function TechsSection({ techs, roles, selTech, clients, onSelectTech, onAddTech,
               )}
             </div>
           </div>
-            ) : (
+            ) : tab === "services" ? (
               <ServiceOverridesEditor selTech={selTech} roles={roles} onPatchTech={onPatchTech} />
+            ) : (
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+                <BannedClientsCard selTech={selTech} clients={clients} onPatchTech={onPatchTech} />
+              </div>
             )}
           </div>
         ) : (
@@ -2472,7 +2473,7 @@ function BannedClientsCard({ selTech, clients, onPatchTech }: {
 
   return (
     <div className={card}>
-      <p className="text-[12px] font-bold text-slate-800">Clients not taken</p>
+      <p className="text-[12px] font-bold text-slate-800">Banned Clients</p>
       <p className="mb-2.5 text-[10.5px] text-slate-400">
         Their own call, not the client&rsquo;s — booking one of these clients with them still goes through, but always shows a warning first
       </p>
