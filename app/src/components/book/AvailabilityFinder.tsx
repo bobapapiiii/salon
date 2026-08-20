@@ -273,7 +273,7 @@ export function AvailabilityFinder({
                   if (!tech) return null
                   return (
                     <div key={p.id} className="flex items-center gap-1.5 text-[11px] text-ink-soft">
-                      <Heart className="h-3 w-3 shrink-0 text-clay" style={{ fill: 'currentColor' }} />
+                      <Heart className="h-3 w-3 shrink-0" style={{ color: '#16A34A', fill: '#16A34A' }} />
                       <span className="min-w-0 truncate">
                         <b className="font-semibold text-ink">{tech.name}</b>
                         {' — '}
