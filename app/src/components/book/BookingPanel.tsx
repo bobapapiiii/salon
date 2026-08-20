@@ -857,10 +857,8 @@ export function BookingPanel({
                       title={`Select services for ${g.name}`}
                     >
                       {g.name}
-                      {g.isGuest ? (
+                      {g.isGuest && (
                         <span className="rounded-full bg-cream px-1.5 text-[10px] font-semibold text-ink-faint">guest</span>
-                      ) : isParty && hostIdx === i && (
-                        <span className="rounded-full bg-amberw-tint px-1.5 text-[10px] font-semibold text-amberw">host</span>
                       )}
                       <span className="rounded-full bg-olive-tint px-1.5 text-[10px] text-olive">
                         {(svcsByGuest[i] ?? []).length} svc
