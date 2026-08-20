@@ -95,6 +95,11 @@ export interface Tech {
   loginEnabled?: boolean
   /** demo portal sign-in PIN */
   pin?: string
+  /** client ids this tech no longer wants to take -- their own call, set on
+   *  their profile in Settings → Techs. Booking them still shows a warning
+   *  the salon can choose to book through anyway; it's never silently
+   *  bypassed and never overridable from a client-facing flow */
+  bannedClientIds?: string[]
 }
 
 export interface ServiceCategory {

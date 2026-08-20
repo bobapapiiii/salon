@@ -302,33 +302,45 @@ export function AvailabilityFinder({
           {g.services.map((s) => {
             const svc = svcById[s.serviceId]
             const qualified = techs.filter((t) => t.skills.includes(s.serviceId))
+            // the tech's own call, not the client's -- still bookable, just
+            // flagged so the front desk sees it before going ahead (see
+            // Settings → Techs → Clients not taken)
+            const bannedTech = g.clientId ? techs.find((t) => t.id === s.techChoice && (t.bannedClientIds ?? []).includes(g.clientId!)) : undefined
             return (
-              <div key={s.serviceId} className="flex items-center gap-1.5 rounded-[8px] border border-line px-2 py-1.5">
-                <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-ink">
-                  {svc?.name ?? s.serviceId}
-                  <span className="ml-1 font-normal text-ink-faint">${svc?.price} · {svc?.durationMin}m</span>
-                </span>
-                <SearchSelect
-                  options={[
-                    { value: '', label: 'Any tech' },
-                    { value: 'pref-female', label: 'Female preferred' },
-                    { value: 'pref-male', label: 'Male preferred' },
-                    ...roles.flatMap((role) => qualified.filter((t) => t.teamId === role.id).sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({
-                      value: t.id, label: t.name, group: role.name,
-                    }))),
-                  ]}
-                  value={s.techChoice}
-                  onChange={(v) => setTechChoice(g.id, s.serviceId, v)}
-                  searchPlaceholder="Search technicians"
-                  className="w-[136px] shrink-0"
-                />
-                <button
-                  onClick={() => removeService(g.id, s.serviceId)}
-                  title="Remove service"
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-cream hover:text-rust"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
+              <div key={s.serviceId}>
+                <div className="flex items-center gap-1.5 rounded-[8px] border border-line px-2 py-1.5">
+                  <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-ink">
+                    {svc?.name ?? s.serviceId}
+                    <span className="ml-1 font-normal text-ink-faint">${svc?.price} · {svc?.durationMin}m</span>
+                  </span>
+                  <SearchSelect
+                    options={[
+                      { value: '', label: 'Any tech' },
+                      { value: 'pref-female', label: 'Female preferred' },
+                      { value: 'pref-male', label: 'Male preferred' },
+                      ...roles.flatMap((role) => qualified.filter((t) => t.teamId === role.id).sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({
+                        value: t.id, label: t.name, group: role.name,
+                      }))),
+                    ]}
+                    value={s.techChoice}
+                    onChange={(v) => setTechChoice(g.id, s.serviceId, v)}
+                    searchPlaceholder="Search technicians"
+                    className="w-[136px] shrink-0"
+                  />
+                  <button
+                    onClick={() => removeService(g.id, s.serviceId)}
+                    title="Remove service"
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-cream hover:text-rust"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                {bannedTech && (
+                  <p className="mt-1 flex items-center gap-1.5 pl-2 text-[10.5px] font-semibold text-rust">
+                    <AlertTriangle className="h-3 w-3 shrink-0" />
+                    {bannedTech.name} has stopped taking {g.name.split(' ')[0]} — booking anyway is the salon's call
+                  </p>
+                )}
               </div>
             )
           })}

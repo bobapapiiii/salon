@@ -4556,6 +4556,7 @@ export function AppointmentBook() {
         onSection={(id) => navigate(`/settings/${id}`)}
         onClose={() => navigate('/')}
         focusTechId={(location.state as { techId?: string } | null)?.techId ?? null}
+        clients={clients}
       />
 
       {/* job cards, printable tickets for the day, bucketed by booking interval */}

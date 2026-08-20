@@ -518,35 +518,50 @@ export function BookingPanel({
     const key = `${gi}:${svcId}`
     const type = typeByService[key] ?? 'any'
     const tech = techByService[key] ?? (gi === 0 && preTech ? preTech : 'first')
-    return gridRow(
-      null,
-      <Sel
-        value={type}
-        onChange={(v) => setTypeByService((m) => ({ ...m, [key]: v }))}
-        title="Request type"
-        className="w-full"
-      >
-        <option value="any">Any tech</option>
-        <option value="requested">Requested</option>
-        <option value="pref-female">Female preferred</option>
-        <option value="pref-male">Male preferred</option>
-        <option value="issue">Issue</option>
-      </Sel>,
-      null,
-      <SearchSelect
-        options={[
-          ...(type !== 'requested' ? [{ value: 'first', label: 'First available' }] : []),
-          ...roles.flatMap((role) => techs.filter((t) => t.teamId === role.id && t.skills.includes(svcId)).sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({
-            value: t.id, label: t.name, group: role.name,
-          }))),
-        ]}
-        value={tech}
-        disabled={type !== 'any' && type !== 'requested'}
-        onChange={(v) => setTechByService((m) => ({ ...m, [key]: v }))}
-        placeholder={type === 'requested' ? 'Choose technician…' : 'First available'}
-        searchPlaceholder="Search technicians"
-        className="min-w-0 w-full"
-      />,
+    // the tech's own call, not the client's -- still bookable, just flagged
+    // so the front desk sees it before going ahead (see Settings → Techs →
+    // Clients not taken)
+    const guestClientId = guests[gi]?.clientId
+    const bannedTech = guestClientId ? techs.find((t) => t.id === tech && (t.bannedClientIds ?? []).includes(guestClientId)) : undefined
+    return (
+      <>
+        {gridRow(
+          null,
+          <Sel
+            value={type}
+            onChange={(v) => setTypeByService((m) => ({ ...m, [key]: v }))}
+            title="Request type"
+            className="w-full"
+          >
+            <option value="any">Any tech</option>
+            <option value="requested">Requested</option>
+            <option value="pref-female">Female preferred</option>
+            <option value="pref-male">Male preferred</option>
+            <option value="issue">Issue</option>
+          </Sel>,
+          null,
+          <SearchSelect
+            options={[
+              ...(type !== 'requested' ? [{ value: 'first', label: 'First available' }] : []),
+              ...roles.flatMap((role) => techs.filter((t) => t.teamId === role.id && t.skills.includes(svcId)).sort((a, b) => a.name.localeCompare(b.name)).map((t) => ({
+                value: t.id, label: t.name, group: role.name,
+              }))),
+            ]}
+            value={tech}
+            disabled={type !== 'any' && type !== 'requested'}
+            onChange={(v) => setTechByService((m) => ({ ...m, [key]: v }))}
+            placeholder={type === 'requested' ? 'Choose technician…' : 'First available'}
+            searchPlaceholder="Search technicians"
+            className="min-w-0 w-full"
+          />,
+        )}
+        {bannedTech && (
+          <p className="mt-1 flex items-center gap-1.5 pl-[18px] text-[10.5px] font-semibold text-rust">
+            <AlertTriangle className="h-3 w-3 shrink-0" />
+            {bannedTech.name} has stopped taking {guests[gi]?.name.split(' ')[0]} — booking anyway is the salon's call
+          </p>
+        )}
+      </>
     )
   }
 

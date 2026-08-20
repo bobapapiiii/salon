@@ -18,7 +18,7 @@ import { addCategory, catById, setCategories, useCategoriesStore } from "../../l
 import type { ServiceAddon } from "../../lib/booking-types";
 import { ALL_METHODS, setSettings, useSettingsStore, type RegisterConfig, type Redemption } from "../../lib/settings-store";
 import { sdata, usePersistentState } from "../../lib/persist";
-import type { Appointment, Service, ServiceCategory, TechDocument, TechTimeOff, WeeklyDay } from "../../lib/booking-types";
+import type { Appointment, ClientRecord, Service, ServiceCategory, TechDocument, TechTimeOff, WeeklyDay } from "../../lib/booking-types";
 import { DAY_SLOTS, SLOT_MIN, fmtTime } from "../../lib/booking-types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ReportsSection } from "./ReportsSection";
@@ -81,6 +81,7 @@ interface DraftTech {
   timeOff: TechTimeOff[];
   serviceOverrides: Record<string, { durationMin?: number; price?: number; online?: boolean }>;
   extraSkills: string[];
+  bannedClientIds: string[];
   archived: boolean;
 }
 const newPin = () => String(Math.floor(1000 + Math.random() * 9000));
@@ -101,13 +102,15 @@ const SECTIONS: { id: SectionId; label: string; blurb: string; icon: typeof Stor
   { id: "reports", label: "Reports", blurb: "Sales, techs & clients", icon: BarChart3 },
 ];
 
-export function SettingsPage({ open, section, onSection, onClose, focusTechId }: {
+export function SettingsPage({ open, section, onSection, onClose, focusTechId, clients }: {
   open: boolean;
   section: SectionId;
   onSection: (id: SectionId) => void;
   onClose: () => void;
   /** deep-link from the calendar, preselect this technician */
   focusTechId?: string | null;
+  /** for a tech's own "clients I no longer want to take" list */
+  clients: ClientRecord[];
 }) {
   const staff = useStaffStore();
   const [roles, setRoles] = useState<JobRole[] | null>(null);
@@ -137,6 +140,7 @@ export function SettingsPage({ open, section, onSection, onClose, focusTechId }:
       timeOff: (t.timeOff ?? []).map((x) => ({ ...x })),
       serviceOverrides: Object.fromEntries(Object.entries(t.serviceOverrides ?? {}).map(([k, v]) => [k, { ...v }])),
       extraSkills: [...(t.extraSkills ?? [])],
+      bannedClientIds: [...(t.bannedClientIds ?? [])],
       archived: t.archived ?? false,
     })));
     setSelRoleId(staff.roles[0]?.id ?? null);
@@ -204,6 +208,7 @@ export function SettingsPage({ open, section, onSection, onClose, focusTechId }:
             timeOff: t.timeOff.length > 0 ? t.timeOff : undefined,
             serviceOverrides: Object.keys(t.serviceOverrides).length > 0 ? t.serviceOverrides : undefined,
             extraSkills: t.extraSkills.length > 0 ? t.extraSkills : undefined,
+            bannedClientIds: t.bannedClientIds.length > 0 ? t.bannedClientIds : undefined,
             archived: t.archived || (t.endDate !== "" && t.endDate <= todayKey()) || undefined,
           };
           if (prev) return { ...prev, name: fullName, teamId, ...details };
@@ -273,6 +278,7 @@ export function SettingsPage({ open, section, onSection, onClose, focusTechId }:
       weekly: {}, address: "", city: "", state: "", zip: "", country: "United States", documents: [], timeOff: [],
       serviceOverrides: {},
       extraSkills: [],
+      bannedClientIds: [],
       archived: false,
     };
     // not committed yet -- a blank-named tech is filtered out of the store
@@ -330,7 +336,7 @@ export function SettingsPage({ open, section, onSection, onClose, focusTechId }:
           )}
           {section === "techs" && (
             <TechsSection
-              techs={techs} roles={roles} selTech={selTech}
+              techs={techs} roles={roles} selTech={selTech} clients={clients}
               onSelectTech={setSelTechId} onAddTech={addTech} onPatchTech={patchTech}
               onDeleteTech={(id) => {
                 const next = techs.filter((t) => t.id !== id);
@@ -637,10 +643,11 @@ function RolesSection({ roles, techCountByRole, selRole, onSelectRole, onAddRole
 }
 
 // ─── Technicians ─────────────────────────────────────────────────────────────
-function TechsSection({ techs, roles, selTech, onSelectTech, onAddTech, onPatchTech, onDeleteTech }: {
+function TechsSection({ techs, roles, selTech, clients, onSelectTech, onAddTech, onPatchTech, onDeleteTech }: {
   techs: DraftTech[];
   roles: JobRole[];
   selTech: DraftTech | undefined;
+  clients: ClientRecord[];
   onSelectTech: (id: string) => void;
   onAddTech: () => void;
   onPatchTech: (id: string, patch: Partial<DraftTech>) => void;
@@ -942,6 +949,9 @@ function TechsSection({ techs, roles, selTech, onSelectTech, onAddTech, onPatchT
 
             {/* temporary time off */}
             <TimeOffCard selTech={selTech} onPatchTech={onPatchTech} />
+
+            {/* clients this tech no longer wants to take */}
+            <BannedClientsCard selTech={selTech} clients={clients} onPatchTech={onPatchTech} />
 
             {/* danger zone */}
             <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-4">
@@ -2436,6 +2446,73 @@ function TimeOffCard({ selTech, onPatchTech }: {
           onClose={() => setDeleteId(null)}
         />
       )}
+    </div>
+  );
+}
+
+// ─── clients this tech no longer wants to take -- their own call, not the
+// client's. Booking one of these still goes through; every booking flow
+// that assigns a tech just shows a warning first, which only the salon
+// (not a client-facing flow) can click past. ──
+function BannedClientsCard({ selTech, clients, onPatchTech }: {
+  selTech: DraftTech;
+  clients: ClientRecord[];
+  onPatchTech: (id: string, patch: Partial<DraftTech>) => void;
+}) {
+  const bannedClients = selTech.bannedClientIds
+    .map((id) => clients.find((c) => c.id === id))
+    .filter((c): c is ClientRecord => c != null);
+
+  const addBan = (clientId: string) => {
+    if (!clientId || selTech.bannedClientIds.includes(clientId)) return;
+    onPatchTech(selTech.id, { bannedClientIds: [...selTech.bannedClientIds, clientId] });
+  };
+  const removeBan = (clientId: string) =>
+    onPatchTech(selTech.id, { bannedClientIds: selTech.bannedClientIds.filter((id) => id !== clientId) });
+
+  return (
+    <div className={card}>
+      <p className="text-[12px] font-bold text-slate-800">Clients not taken</p>
+      <p className="mb-2.5 text-[10.5px] text-slate-400">
+        Their own call, not the client&rsquo;s — booking one of these clients with them still goes through, but always shows a warning first
+      </p>
+
+      <div className="space-y-1">
+        {bannedClients.length === 0 && (
+          <p className="rounded-lg border border-dashed border-[#D8D0D9] px-3 py-3 text-center text-[11px] text-slate-400">No clients blocked</p>
+        )}
+        {bannedClients.map((c) => (
+          <div key={c.id} className="flex items-center gap-2.5 rounded-lg border border-[#EDE7EE] bg-white px-2.5 py-1.5">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-rose-50 text-[10px] font-bold text-rose-500">
+              {c.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12px] font-semibold text-slate-800">{c.name}</span>
+              {c.phone && <span className="block text-[10px] text-slate-400">{c.phone}</span>}
+            </span>
+            <button
+              onClick={() => removeBan(c.id)}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-rose-50 hover:text-rose-500"
+              title="Unblock this client"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-2">
+        <SearchSelect
+          options={clients
+            .filter((c) => !selTech.bannedClientIds.includes(c.id))
+            .map((c) => ({ value: c.id, label: c.name, sublabel: c.phone }))}
+          value=""
+          onChange={(v) => v && addBan(v)}
+          placeholder="+ Block a client…"
+          searchPlaceholder="Search clients"
+          className="w-full"
+        />
+      </div>
     </div>
   );
 }
