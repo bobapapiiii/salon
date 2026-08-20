@@ -247,18 +247,18 @@ export function BookingPanel({
   // add-ons picked per service: key `${gi}:${serviceId}` → snapshots
   const [addonsByService, setAddonsByService] = useState<Record<string, ServiceAddon[]>>({})
 
-  // 162px = the exact left offset gridRow's "right" column starts at (icon
-  // slot 12px + gap 6px + request-type column 112px + gap 6px + "for" column
-  // 20px + gap 6px) -- lines the chips up under the technician dropdown above
-  // them without confining them to that column's width, which squeezed a row
-  // of chips into a narrow strip and wrapped them across several lines
+  // 18px = the exact left offset gridRow's "left" column starts at (icon slot
+  // 12px + gap 6px) -- lines the chips up under the request-type dropdown
+  // ("Any tech") instead of the technician name dropdown next to it, and
+  // stays on one line (scrolling sideways if a lot of add-ons don't fit)
+  // rather than wrapping across several
   const addonChips = (gi: number, svcId: string) => {
     const svc = svcById[svcId]
     if (!svc?.addons?.length) return null
     const key = `${gi}:${svcId}`
     const on = addonsByService[key] ?? []
     return (
-      <div className="mt-1.5 flex flex-wrap gap-1 pl-[162px]">
+      <div className="mt-1.5 flex flex-nowrap gap-1 overflow-x-auto pl-[18px]">
         {svc.addons.map((a) => {
           const has = on.some((x) => x.id === a.id)
           return (
@@ -266,7 +266,7 @@ export function BookingPanel({
               key={a.id}
               type="button"
               onClick={() => setAddonsByService((m) => ({ ...m, [key]: has ? on.filter((x) => x.id !== a.id) : [...on, a] }))}
-              className={`rounded-[8px] border px-2 py-0.5 text-[10.5px] font-bold transition-colors ${
+              className={`shrink-0 whitespace-nowrap rounded-[8px] border px-2 py-0.5 text-[10.5px] font-bold transition-colors ${
                 has ? 'border-clay/60 bg-clay-tint text-clay' : 'border-line text-ink-faint hover:border-clay/40'
               }`}
             >
