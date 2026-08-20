@@ -838,7 +838,12 @@ export function BookingPanel({
             <>
               {/* guest chips + add guest -- sticky so they stay visible while the
                   services list below scrolls */}
-              <div className="sticky top-0 z-10 bg-white pb-3">
+              {/* -mt-4/-mx-4 + top-4 pull this out to the scroll container's true
+                  edges and back the same amount with padding, so its white bg
+                  also covers the container's own top padding -- otherwise the
+                  services list scrolls up visible through that gap above the
+                  sticky bar */}
+              <div className="sticky -top-4 -mx-4 -mt-4 z-10 bg-white px-4 pt-4 pb-3">
                 {/* guest chips, click to edit that guest's services; X removes */}
                 <div className="flex flex-wrap gap-2">
                   {guests.map((g, i) => (
