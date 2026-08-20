@@ -378,7 +378,7 @@ export function AppointmentDetail({
             {guestNames.map((name) => (
               <div
                 key={name}
-                className={`flex items-center gap-1 rounded-full border py-1 pl-2.5 pr-1 text-[12px] font-semibold ${
+                className={`flex items-center gap-1 rounded-[8px] border py-1 pl-2.5 pr-1 text-[12px] font-semibold ${
                   activeGuest === name ? 'border-clay bg-clay-tint text-clay' : 'border-line text-ink hover:bg-cream'
                 }`}
               >
@@ -393,7 +393,7 @@ export function AppointmentDetail({
                     type="button"
                     onClick={() => removeGuest(name)}
                     title={`Remove ${name} from this party`}
-                    className="rounded-full p-0.5 text-ink-faint hover:text-rust"
+                    className="rounded-[6px] p-0.5 text-ink-faint hover:text-rust"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -401,7 +401,7 @@ export function AppointmentDetail({
               </div>
             ))}
             {addingGuest ? (
-              <div className="flex items-center gap-1 rounded-full border border-dashed border-clay/40 bg-clay-tint/20 py-0.5 pl-1 pr-1">
+              <div className="flex items-center gap-1 rounded-[8px] border border-dashed border-clay/40 bg-clay-tint/20 py-0.5 pl-1 pr-1">
                 <SearchSelect
                   options={availableClients.map((c) => ({ value: c.id, label: c.name, sublabel: c.phone }))}
                   value={newGuestClientId}
@@ -418,7 +418,7 @@ export function AppointmentDetail({
               <button
                 type="button"
                 onClick={() => setAddingGuest(true)}
-                className="flex items-center gap-1 rounded-full border border-dashed border-line py-1 pl-2 pr-2.5 text-[12px] font-semibold text-ink-soft hover:bg-cream"
+                className="flex items-center gap-1 rounded-[8px] border border-dashed border-line py-1 pl-2 pr-2.5 text-[12px] font-semibold text-ink-soft hover:bg-cream"
               >
                 <UserPlus className="h-3 w-3" /> Add guest
               </button>
