@@ -88,6 +88,9 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
   }
   const [step, setStep] = useState<"build" | "pay">("build")
   const [guests, setGuests] = useState<PosGuest[]>([])
+  // which guest's services the build step shows -- click a chip to switch,
+  // same as New Appointment's own guest tabs
+  const [activeGuest, setActiveGuest] = useState(0)
   // who's actually paying together on this transaction -- same idea as the
   // regular checkout's "Paying together" chips, defaults to everyone on the
   // sale, toggled at the payment step
@@ -113,14 +116,18 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
 
   const subtotal = rows.reduce((s, r) => s + (svcById[r.serviceId]?.price ?? 0), 0)
   const money = (v: number) => `$${v.toFixed(2)}`
+  // clamp against a guest just having been removed
+  const activeIdx = guests.length === 0 ? 0 : Math.min(activeGuest, guests.length - 1)
+  const activeName = guests[activeIdx]?.name
+  const visibleRows = guests.length > 0 ? rows.filter((r) => r.person === activeName) : rows
 
-  // add a guest to the party -- the first guest on an otherwise-anonymous
-  // sale claims whatever rows aren't assigned to anyone yet; a second (or
-  // later) guest starts with none, assigned explicitly via each row's own
-  // guest picker below
+  // add a guest to the party and make them the active tab, same as New
+  // Appointment's own guest picker -- the first guest on an otherwise-
+  // anonymous sale claims whatever rows aren't assigned to anyone yet
   const attachGuest = (g: PosGuest) => {
     if (guests.some((x) => x.name === g.name)) { setQ(""); setSearching(false); return }
     setGuests((gs) => [...gs, g])
+    setActiveGuest(guests.length) // the new guest lands at this index
     setPosSelected((s) => new Set([...s, g.name]))
     if (guests.length === 0) setRows((rs) => rs.map((r) => (r.person ? r : { ...r, person: g.name })))
     setQ("")
@@ -140,11 +147,17 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
     onAddClient(c)
     attachGuest({ id: `g${Date.now()}`, clientId: c.id, name: c.name, isGuest: false })
   }
+  // removing a guest drops their services with them, same as New
+  // Appointment -- a blank row takes their place if that emptied the sale
+  // entirely, so the panel never shows nothing to add to
   const removeGuest = (id: string, name: string) => {
     setGuests((gs) => gs.filter((x) => x.id !== id))
     setPosSelected((s) => { const n = new Set(s); n.delete(name); return n })
-    // unassign rather than delete their rows -- no line items silently vanish
-    setRows((rs) => rs.map((r) => (r.person === name ? { ...r, person: undefined } : r)))
+    setRows((rs) => {
+      const next = rs.filter((r) => r.person !== name)
+      return next.length > 0 ? next : [{ id: `r${Date.now()}`, serviceId: services[0]?.id ?? "", techId: "" }]
+    })
+    setActiveGuest(0)
   }
   // never let the selection go empty -- at least one payer stays on the ticket
   const toggleGuestSelected = (name: string) =>
@@ -155,7 +168,7 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
       return n
     })
 
-  const addRow = () => setRows((r) => [...r, { id: `r${Date.now()}`, serviceId: services[0]?.id ?? "", techId: "", person: guests[guests.length - 1]?.name }])
+  const addRow = () => setRows((r) => [...r, { id: `r${Date.now()}`, serviceId: services[0]?.id ?? "", techId: "", person: activeName }])
   const patchRow = (id: string, patch: Partial<SaleRow>) => setRows((r) => r.map((x) => (x.id === id ? { ...x, ...patch } : x)))
   const removeRow = (id: string) => setRows((r) => r.filter((x) => x.id !== id))
 
@@ -248,16 +261,35 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
             with no profile, or create a full account on the spot */}
         <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Guests</p>
         {guests.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-1.5">
-            {guests.map((g) => (
-              <span key={g.id} className="flex items-center gap-1.5 rounded-[8px] border border-clay/40 bg-clay-tint py-1 pl-2.5 pr-1.5 text-[12px] font-semibold text-clay">
-                {g.name}
-                {g.isGuest && <span className="rounded-[6px] bg-clay/15 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide text-clay/80">guest</span>}
-                <button type="button" onClick={() => removeGuest(g.id, g.name)} className="flex h-4 w-4 shrink-0 items-center justify-center rounded-[6px] text-clay/70 transition-colors hover:bg-clay/20 hover:text-rust" title="Remove">
-                  <X className="h-3 w-3" />
+          // click a chip to switch whose services show below, same
+          // click-to-select tabs as New Appointment's own guest chips
+          <div className="mb-2 flex flex-wrap gap-2">
+            {guests.map((g, i) => {
+              const count = rows.filter((r) => r.person === g.name).length
+              return (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => setActiveGuest(i)}
+                  title={`Select services for ${g.name}`}
+                  className={`flex items-center gap-1.5 rounded-[8px] border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    activeIdx === i ? "border-clay/60 bg-clay-tint text-ink" : "border-line text-ink-faint hover:border-clay/40"
+                  }`}
+                >
+                  {g.name}
+                  {g.isGuest && <span className="rounded-full bg-cream px-1.5 text-[10px] font-semibold text-ink-faint">guest</span>}
+                  <span className="rounded-full bg-olive-tint px-1.5 text-[10px] text-olive">{count} svc</span>
+                  <span
+                    role="button"
+                    onClick={(e) => { e.stopPropagation(); removeGuest(g.id, g.name) }}
+                    className="hover:text-rust"
+                    title={`Remove ${g.name}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </span>
                 </button>
-              </span>
-            ))}
+              )
+            })}
           </div>
         )}
         <div className="relative">
@@ -315,15 +347,23 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
             : "Add another guest, or continue with this party."}
         </p>
 
-        {/* service rows */}
+        {/* service rows -- scoped to whichever guest chip is active above,
+            same as New Appointment's own "Services for {name}" list */}
         <div className="mb-1.5 mt-5 flex items-center justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">Services</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+            {activeName ? `Services for ${activeName}` : "Services"}
+          </p>
           <button onClick={addRow} className="flex items-center gap-1 rounded-[6px] px-1.5 py-0.5 text-[11px] font-bold text-clay hover:bg-clay-tint">
             <Plus className="h-3 w-3" /> Add service
           </button>
         </div>
+        {visibleRows.length === 0 && (
+          <p className="rounded-[10px] border border-dashed border-line py-4 text-center text-[12px] text-ink-faint">
+            {activeName ? `No services yet for ${activeName}` : "No services yet"} -- add one above.
+          </p>
+        )}
         <div className="space-y-2">
-          {rows.map((r) => {
+          {visibleRows.map((r) => {
             const svc = svcById[r.serviceId]
             const qualified = techs.filter((t) => t.skills.includes(r.serviceId))
             return (
@@ -344,24 +384,10 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
                     searchPlaceholder="Search technicians"
                     className="w-full"
                   />
-                  {/* which guest this line belongs to -- only once there's
-                      someone to choose between; a solo guest (or no guest at
-                      all) needs no picker, every row is already theirs */}
-                  {guests.length > 1 && (
-                    <SearchSelect
-                      options={guests.map((g) => ({ value: g.name, label: g.name }))}
-                      value={r.person ?? ""}
-                      onChange={(v) => patchRow(r.id, { person: v || undefined })}
-                      placeholder="Whose service? (shared if left blank)"
-                      searchPlaceholder="Search guests"
-                      className="w-full"
-                    />
-                  )}
                 </div>
                 <span className="tnum w-12 shrink-0 text-right text-[12.5px] font-semibold">{money(svc?.price ?? 0)}</span>
                 <button
                   onClick={() => removeRow(r.id)}
-                  disabled={rows.length === 1}
                   className="shrink-0 text-ink-faint transition-colors hover:text-rust disabled:opacity-30"
                   title="Remove line"
                 >
