@@ -2718,6 +2718,22 @@ export function AppointmentBook() {
     if (err) { setDetailError(err); return }
     const doSave = (finalKeep: Appointment[] = keep) => {
       const byId = new Map(finalKeep.map((u) => [u.id, u]))
+      // register any newly-added name-only guest under the client whose
+      // profile they're linked to (guestOf), same as booking a brand-new
+      // appointment does — deduped by name, so re-saving never doubles them up
+      const guestOfAdds = added.filter((a) => a.guestOf)
+      if (guestOfAdds.length > 0) {
+        setClients((cs) => cs.map((c) => {
+          const names = guestOfAdds.filter((a) => a.guestOf === c.id).map((a) => a.clientName)
+          if (names.length === 0) return c
+          const have = new Set((c.guests ?? []).map((g) => g.name.toLowerCase()))
+          const merged = [...(c.guests ?? [])]
+          names.forEach((n) => {
+            if (!have.has(n.toLowerCase())) merged.push({ id: `g${Date.now()}-${merged.length}`, name: n })
+          })
+          return merged.length === (c.guests ?? []).length ? c : { ...c, guests: merged }
+        }))
+      }
       if (crossDay) {
         // finalKeep's ids live on originDay, not today's board — drop them
         // from there and append them (already resolved above against the

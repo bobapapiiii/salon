@@ -157,7 +157,7 @@ export function AppointmentDetail({
   const [rebooking, setRebooking] = useState(false)
   const [rebookSlot, setRebookSlot] = useState<{ dateKey: string; startMin: number } | null>(null)
   const [addingGuest, setAddingGuest] = useState(false)
-  const [newGuestClientId, setNewGuestClientId] = useState('')
+  const [guestQuery, setGuestQuery] = useState('')
 
   // checkout runs against today or any past day -- the service already
   // happened, it just hasn't been rung up yet. Only a future day is blocked,
@@ -184,6 +184,17 @@ export function AppointmentDetail({
   // clients not already in this party -- the add-guest picker only offers
   // someone genuinely new
   const availableClients = clients.filter((c) => !guestNames.includes(c.name))
+  // matches while typing in the add-guest search -- same search shape as
+  // BookingPanel's own AddAnotherGuest (name or phone digits)
+  const guestMatches = useMemo(() => {
+    const q = guestQuery.trim().toLowerCase()
+    if (!q) return []
+    const digits = guestQuery.replace(/\D/g, '')
+    return availableClients
+      .filter((c) => c.name.toLowerCase().includes(q) || (digits && c.phone.replace(/\D/g, '').includes(digits)))
+      .slice(0, 5)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guestQuery, availableClients])
 
   // dropping a guest entirely (the chip's X, not a per-service remove): ids
   // that already existed on the board go through the normal `removed` array
@@ -202,10 +213,9 @@ export function AppointmentDetail({
   // `draft`, with one default service so it's immediately visible and
   // editable below -- same as adding another service to whoever's already
   // active, both stay purely local until Save actually commits them
-  const addGuest = (clientId: string) => {
-    const c = clients.find((x) => x.id === clientId)
+  const addGuestClient = (c: ClientRecord) => {
     const svc = services[0]
-    if (!c || !svc) return
+    if (!svc) return
     setDraft((d) => [...d, {
       id: `a${Date.now()}-party${d.length}`,
       techId: 'first',
@@ -219,7 +229,31 @@ export function AppointmentDetail({
     }])
     setActiveGuest(c.name)
     setAddingGuest(false)
-    setNewGuestClientId('')
+    setGuestQuery('')
+  }
+
+  // a guest with no profile of their own -- name only, linked to this
+  // client's profile (same as a name-only guest added from New Appointment,
+  // shows up under their Guests tab once Save actually registers it)
+  const addGuestNameOnly = (name: string) => {
+    const trimmed = name.trim()
+    const svc = services[0]
+    if (!trimmed || !svc || guestNames.some((n) => n.toLowerCase() === trimmed.toLowerCase())) return
+    setDraft((d) => [...d, {
+      id: `a${Date.now()}-party${d.length}`,
+      techId: 'first',
+      clientName: trimmed,
+      serviceId: svc.id,
+      startMin: appt.startMin,
+      durationMin: svc.durationMin,
+      status: 'booked',
+      bookingSource: 'front_desk',
+      parallelGroup: appt.parallelGroup,
+      guestOf: client?.id,
+    }])
+    setActiveGuest(trimmed)
+    setAddingGuest(false)
+    setGuestQuery('')
   }
 
   const addService = (clientName: string) => {
@@ -401,18 +435,55 @@ export function AppointmentDetail({
               </div>
             ))}
             {addingGuest ? (
-              <div className="flex items-center gap-1 rounded-[8px] border border-dashed border-clay/40 bg-clay-tint/20 py-0.5 pl-1 pr-1">
-                <SearchSelect
-                  options={availableClients.map((c) => ({ value: c.id, label: c.name, sublabel: c.phone }))}
-                  value={newGuestClientId}
-                  onChange={(v) => { setNewGuestClientId(v); addGuest(v) }}
-                  placeholder="Choose a client"
-                  searchPlaceholder="Search clients"
-                  className="w-44"
-                />
-                <button type="button" onClick={() => setAddingGuest(false)} className="shrink-0 text-ink-faint hover:text-rust">
-                  <X className="h-3.5 w-3.5" />
-                </button>
+              <div
+                className="relative"
+                onBlur={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget as Node | null)) { setAddingGuest(false); setGuestQuery('') }
+                }}
+              >
+                <div className="flex items-center gap-1 rounded-[8px] border border-dashed border-clay/40 bg-clay-tint/20 py-0.5 pl-1 pr-1">
+                  <input
+                    autoFocus
+                    value={guestQuery}
+                    onChange={(e) => setGuestQuery(e.target.value)}
+                    placeholder="Guest name or phone number"
+                    className="w-40 bg-transparent px-1.5 py-1 text-[12px] outline-none"
+                  />
+                  <button
+                    type="button"
+                    onMouseDown={() => { setAddingGuest(false); setGuestQuery('') }}
+                    className="shrink-0 text-ink-faint hover:text-rust"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                {guestQuery.trim() && (
+                  <div className="absolute left-0 top-full z-20 mt-1 w-56 overflow-hidden rounded-[8px] border border-line bg-popover shadow-xl">
+                    {guestMatches.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onMouseDown={() => addGuestClient(c)}
+                        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] hover:bg-cream"
+                      >
+                        <span className="min-w-0 flex-1 truncate font-semibold text-ink">{c.name}</span>
+                        <span className="shrink-0 text-[10px] text-ink-faint">{c.phone}</span>
+                      </button>
+                    ))}
+                    {/* name-only guest, no profile, linked to appt.clientName */}
+                    <button
+                      type="button"
+                      onMouseDown={() => addGuestNameOnly(guestQuery)}
+                      className="flex w-full items-center gap-2 border-t border-line bg-clay-tint/20 px-2.5 py-2 text-left text-[12px] hover:bg-clay-tint/40"
+                    >
+                      <UserPlus className="h-3.5 w-3.5 shrink-0 text-clay" />
+                      <span className="min-w-0 flex-1">
+                        <span className="font-semibold text-ink">Add &ldquo;{guestQuery.trim()}&rdquo; as guest</span>
+                        <span className="block text-[10px] text-ink-faint">name only, no profile, links to {appt.clientName}</span>
+                      </span>
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <button
