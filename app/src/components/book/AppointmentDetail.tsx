@@ -13,6 +13,14 @@ import { DatePickerPopover } from './LegendPopover'
 import { SearchSelect } from './SearchSelect'
 
 const DURATIONS = [15, 30, 45, 60, 75, 90, 105, 120, 150, 180]
+// an add-on's minutes can push the real duration off that fixed grid (e.g.
+// base 45 + a 20-minute add-on = 65) -- the value wouldn't match any
+// <option> and the browser would silently fall back to showing 15m even
+// though the underlying duration is correct. Always including the actual
+// current value as an option keeps the display honest (mirrors New
+// Appointment's own durOptions helper)
+const durOptions = (current: number) =>
+  (DURATIONS.includes(current) ? DURATIONS : [...DURATIONS, current].sort((a, b) => a - b))
 
 /** shared style for the Actions/Payment grid buttons, so every tile in
  *  those sections reads as one consistent family regardless of label length */
@@ -590,7 +598,7 @@ export function AppointmentDetail({
                     </select>
                     <select value={d.durationMin} onChange={(e) => setSvc(d.id, { durationMin: Number(e.target.value) })}
                       className="rounded-[8px] border border-input bg-background px-1.5 py-1 text-xs outline-none">
-                      {DURATIONS.map((x) => <option key={x} value={x}>{x}m</option>)}
+                      {durOptions(d.durationMin).map((x) => <option key={x} value={x}>{x}m</option>)}
                     </select>
                     <SearchSelect
                       options={[
@@ -617,6 +625,9 @@ export function AppointmentDetail({
                             type="button"
                             onClick={() => setSvc(d.id, {
                               addons: has ? rowAddons.filter((x) => x.id !== a.id) : [...rowAddons, a],
+                              // adding time on, taking it back off when removed -- so
+                              // Duration always reflects whatever add-ons are picked
+                              durationMin: Math.max(5, d.durationMin + (has ? -a.mins : a.mins)),
                             })}
                             className={`shrink-0 rounded-[8px] border px-2 py-0.5 text-[10.5px] font-bold transition-colors ${
                               has ? 'border-clay/60 bg-clay-tint text-clay' : 'border-line text-ink-faint hover:border-clay/40'
