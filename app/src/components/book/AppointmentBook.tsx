@@ -3127,6 +3127,10 @@ export function AppointmentBook() {
                 color: svc ? catById[svc.categoryId]?.line : undefined,
                 // salon-entered per-service notation from checkout (polish color, etc.)
                 customFields: a.customFields,
+                // who this line was actually for -- a party ticket (or a
+                // multi-guest POS sale) mixes everyone's services on one
+                // payment, so each line needs to say whose it was
+                person: a.clientName,
               }
             })
           : [{ name: 'POS sale', price: p.total, techName: 'Front desk' }]

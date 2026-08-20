@@ -75,6 +75,10 @@ export interface VisitLine {
   /** salon-entered per-service notation from checkout (polish color, etc.),
    *  keyed by the checkout field id -- see settings.checkout.serviceFields */
   customFields?: Record<string, string>
+  /** who this line was actually for -- matters once a visit covers more
+   *  than one person (a party checkout, POS ringing up several guests at
+   *  once), so it's clear which services belong to which client */
+  person?: string
 }
 
 interface PastVisit {
@@ -821,6 +825,10 @@ export function LastVisitsDialog({ client, realVisits, onClose }: {
                       techName: h.techName,
                       color: h.serviceIds?.[0] ? catById[svcById[h.serviceIds[0]]?.categoryId ?? '']?.line : undefined,
                     }]
+                // a party visit -- more than one distinct person across
+                // these lines -- needs each service labeled with who it was
+                // actually for; a solo visit doesn't (it's obviously all theirs)
+                const isParty = new Set(lines.map((l) => l.person).filter(Boolean)).size > 1
                 return (
                   <div key={`${h.invoice}-${i}`} className="overflow-hidden rounded-lg border border-border">
                     <div className="flex items-center justify-between bg-secondary/40 px-3.5 py-2">
@@ -836,7 +844,14 @@ export function LastVisitsDialog({ client, realVisits, onClose }: {
                         <div key={`${l.serviceId ?? l.name}-${li}`} className="flex items-center gap-2.5 border-b border-border/60 px-3.5 py-2.5 last:border-0">
                           <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: l.color ?? '#94a3b8' }} />
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-[13px] font-medium text-foreground">{l.name}</p>
+                            <p className="truncate text-[13px] font-medium text-foreground">
+                              {l.name}
+                              {isParty && l.person && (
+                                <span className="ml-1.5 rounded-full bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-sky-600">
+                                  {l.person}
+                                </span>
+                              )}
+                            </p>
                             <p className="text-[11px] text-muted-foreground">Technician: {l.techName}</p>
                             {notes && <p className="text-[11px] text-muted-foreground">{notes}</p>}
                           </div>
