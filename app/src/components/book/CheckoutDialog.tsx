@@ -12,7 +12,8 @@ import { useSettingsStore } from "@/lib/settings-store";
 import { activeServices, orderedServices, serviceGroupLabel, svcById, useServicesStore } from "@/lib/services-store";
 import { catById, useCategoriesStore } from "@/lib/categories-store";
 import { paymentSources, refundedBySource, round2, techServiceTotals, techTipTotals, totalRefunded, type PaymentSource, type PaymentWithSources, type RefundRecord } from "@/lib/payments";
-import { SALON_ID, getCurrentUser } from "@/lib/session";
+import { SALON_ID } from "@/lib/session";
+import { getCurrentUser } from "@/lib/current-user";
 import {
   canApplyManualDiscount, logManualDiscount, normalizePromoCode,
   redemptionCounts, useDiscountsStore, type DiscountChannel,

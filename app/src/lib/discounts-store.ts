@@ -6,7 +6,7 @@
 // log every mutating action writes to.
 import { useSyncExternalStore } from "react";
 import { sdata } from "./persist";
-import { getCurrentUser, type SessionUser } from "./session";
+import { getCurrentUser, type SessionUser } from "./current-user";
 
 // ── types ─────────────────────────────────────────────────────────────────
 
