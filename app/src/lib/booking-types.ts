@@ -204,6 +204,12 @@ export interface Appointment {
    *  service dragged in later for the same walk-in guest can be linked to the first
    *  via a shared parallelGroup instead of landing as a separate, unlinked booking */
   walkinOrigin?: string
+  /** links this appointment to a request created via the public online-booking
+   *  API (server/) -- lets the sync in AppointmentBook.tsx avoid inserting the
+   *  same backend booking twice, and lets approving/declining it here push the
+   *  decision back. undefined for every appointment that originated locally
+   *  (front desk, walk-in, demo data). See HANDOFF.md #10. */
+  onlineRequestId?: string
 }
 
 export const logEntry = (text: string) => ({ at: Date.now(), text })

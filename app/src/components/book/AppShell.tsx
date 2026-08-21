@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
-  ArrowRightLeft, Banknote, Bell, CalendarDays, CalendarPlus, CalendarX, Check, CheckCircle2, ClipboardList, Clock, ListPlus,
+  ArrowRightLeft, Banknote, Bell, CalendarDays, CalendarPlus, CalendarX, Check, CheckCircle2, ClipboardList, Clock, Globe, ListPlus,
   PhoneOff, Receipt, Search, Settings, UserX, XCircle,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -177,6 +177,7 @@ const KIND_META: Record<NotificationKind, { icon: LucideIcon; color: string }> =
   cancelled: { icon: CalendarX, color: '#B3402F' },
   no_show: { icon: UserX, color: '#B3402F' },
   waitlist_joined: { icon: ListPlus, color: '#D99B26' },
+  online_request: { icon: Globe, color: '#5E83CE' },
   online_approved: { icon: CheckCircle2, color: '#2FA883' },
   online_declined: { icon: XCircle, color: '#B3402F' },
   turnaway: { icon: PhoneOff, color: '#D99B26' },

@@ -9,7 +9,12 @@ import {
 import { CLIENTS, SERVICES, generateDay } from '@/lib/mock-data'
 import { boardTechs, getStaff, isArchived, moveRole, roleColor, uid, useStaffStore } from '@/lib/staff-store'
 import { sdata, setCodec, upref, usePersistentState } from '@/lib/persist'
-import { svcById } from '@/lib/services-store'
+import { getServices, svcById } from '@/lib/services-store'
+import { ApiError, approveOnlineRequest as apiApproveOnlineRequest, declineOnlineRequest as apiDeclineOnlineRequest, fetchBookingFeed } from '@/lib/booking-api'
+import {
+  buildConfirmedAppointment, buildRequestedAppointment, collectKnownOnlineRequestIds,
+  getStoredStaffToken, resolveServiceForRow, resolveTechForRow,
+} from '@/lib/online-booking-sync'
 import { Toolbar } from './Toolbar'
 import { ApptContextMenu, ConfirmCancelDialog, type MenuAction } from './ApptMenus'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -294,6 +299,15 @@ export function AppointmentBook() {
   const date = useMemo(() => new Date(dateKey + 'T12:00:00'), [dateKey])
   const [apptDays, setApptDays] = usePersistentState<Record<string, Appointment[]>>(sdata('appts-v2'), {})
   const [appts, setAppts] = useState<Appointment[]>(() => backfillStageTimestamps(apptDays[dateKey] ?? generateDay(dateKey)))
+  // always-latest refs for the online-booking poll further down, which runs
+  // on a timer outside React's normal render cycle (same "ref mirrors state
+  // every render" pattern as blocksRef/dragRef elsewhere in this file)
+  const apptDaysRef = useRef(apptDays)
+  apptDaysRef.current = apptDays
+  const apptsRef = useRef(appts)
+  apptsRef.current = appts
+  const dateKeyRef = useRef(dateKey)
+  dateKeyRef.current = dateKey
   const [scale, setScaleRaw] = usePersistentState<Scale>(upref('ui-scale'), { colW: 112, ppm: 1.15 })
   const [density, setDensity] = usePersistentState<15 | 30 | 60 | null>(upref('ui-density'), null)
   const [colorMode, setColorMode] = usePersistentState<'category' | 'status'>(upref('ui-colormode'), 'status')
@@ -3249,6 +3263,108 @@ export function AppointmentBook() {
     showFlash('✓ Guest profile saved')
   }
 
+  // ── online booking sync (server/) ───────────────────────────────────────
+  // Pulls pending + already-confirmed bookings from the new backend
+  // (server/) onto this calendar on a timer, so staff never have to check
+  // two separate places for what needs their attention. Requires having
+  // signed in once via Settings → Online requests (see online-booking-
+  // sync.ts's getStoredStaffToken) -- silently does nothing until that's
+  // done. Tech/service are matched by name against this salon's catalog
+  // (the backend and the frontend keep separate catalogs today, see
+  // server/README.md); a request whose tech or service name doesn't match
+  // anything here is skipped rather than guessed at, and logged to the
+  // console so it's not a silent black hole. See HANDOFF.md #10.
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      const token = getStoredStaffToken()
+      if (!token) return
+      let feed: Awaited<ReturnType<typeof fetchBookingFeed>>['requests']
+      try {
+        feed = (await fetchBookingFeed(token)).requests
+      } catch {
+        return // offline, server unreachable, or token expired -- retry next tick
+      }
+      if (cancelled || feed.length === 0) return
+
+      const known = collectKnownOnlineRequestIds(apptDaysRef.current, dateKeyRef.current, apptsRef.current)
+      const fresh = feed.filter((r) => !known.has(r.id))
+      if (fresh.length === 0) return
+
+      const poolTechs = getStaff().techs
+      const poolServices = getServices()
+      const byDay = new Map<string, Appointment[]>()
+      let skipped = 0
+      for (const row of fresh) {
+        const tech = resolveTechForRow(row, poolTechs)
+        const service = resolveServiceForRow(row, poolServices)
+        if (!tech || !service) {
+          skipped++
+          continue
+        }
+        const dayExisting = row.dateKey === dateKeyRef.current ? apptsRef.current : apptDaysRef.current[row.dateKey] ?? []
+        const appt =
+          row.status === 'confirmed'
+            ? buildConfirmedAppointment(row, tech.id, service.id, byDay.get(row.dateKey) ?? dayExisting)
+            : buildRequestedAppointment(row, tech.id, service.id)
+        if (!byDay.has(row.dateKey)) byDay.set(row.dateKey, [...dayExisting])
+        byDay.get(row.dateKey)!.push(appt)
+        addNotification({
+          kind: row.status === 'confirmed' ? 'online_approved' : 'online_request',
+          text: row.status === 'confirmed' ? 'Online booking confirmed' : 'New online booking request',
+          detail: `${row.clientName} · ${row.serviceName} · ${row.dateKey}`,
+          dateKey: row.dateKey,
+          apptId: appt.id,
+        })
+      }
+      if (cancelled || byDay.size === 0) return
+
+      // the currently-viewed day goes through setAppts (a separate effect
+      // already mirrors appts into apptDays); every other day is written
+      // straight into apptDays so it's there next time staff navigate to
+      // it, without disturbing whatever's on screen right now
+      const currentDay = dateKeyRef.current
+      if (byDay.has(currentDay)) {
+        setAppts(byDay.get(currentDay)!)
+        byDay.delete(currentDay)
+      }
+      if (byDay.size > 0) {
+        setApptDays((m) => {
+          const next = { ...m }
+          for (const [day, list] of byDay) next[day] = list
+          return next
+        })
+      }
+      if (skipped > 0) {
+        console.warn(`[online booking sync] skipped ${skipped} request(s), couldn't match tech/service name to this salon's catalog`)
+      }
+    }
+    run()
+    const timer = setInterval(run, 45000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // best-effort: tell the backend what staff just decided here, so Settings
+  // → Online requests (which reads the backend directly) reflects it too.
+  // Never blocks or fails the local decision -- the calendar's own state is
+  // already the source of truth for what staff see next, this is purely to
+  // keep the backend's copy from going stale.
+  const pushOnlineDecision = (linked: Appointment[], decision: 'approve' | 'decline') => {
+    const token = getStoredStaffToken()
+    if (!token) return
+    const call = decision === 'approve' ? apiApproveOnlineRequest : apiDeclineOnlineRequest
+    for (const a of linked) {
+      if (!a.onlineRequestId) continue
+      call(token, a.onlineRequestId).catch((err) => {
+        if (!(err instanceof ApiError)) console.warn('[online booking sync] failed to sync decision to server', err)
+      })
+    }
+  }
+
   // ── requests approval ─────────────────────────────────────────────────────
   // ── requests rail actions ──────────────────────────────────────────────────
   const approveRequest = (id: string) => {
@@ -3307,6 +3423,7 @@ export function AppointmentBook() {
         dateKey,
         apptId: req.id,
       })
+      pushOnlineDecision(linked, 'approve')
       return
     }
     // requested time unavailable, keep the manual drag-onto-calendar flow
@@ -3327,6 +3444,7 @@ export function AppointmentBook() {
       detail: `${req.clientName} · requested ${fmtTime(req.startMin)}, needs placement`,
       dateKey,
     })
+    pushOnlineDecision(linked, 'approve')
   }
   const declineRequest = (id: string) => {
     const req = appts.find((a) => a.id === id)
@@ -3343,6 +3461,7 @@ export function AppointmentBook() {
       detail: `${req.clientName} · requested ${fmtTime(req.startMin)}`,
       dateKey,
     })
+    pushOnlineDecision(linked, 'decline')
   }
   const proposeRequest = (id: string, startMin: number) => {
     commit(appts.map((a) => (a.id === id ? { ...a, startMin, status: 'confirmed' as const } : a)))

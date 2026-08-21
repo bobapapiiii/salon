@@ -143,6 +143,13 @@ export function fetchOnlineRequests(token: string): Promise<{ requests: OnlineRe
   return request(`/api/staff/online-requests`, { headers: { Authorization: `Bearer ${token}` } });
 }
 
+/** Pending requests PLUS anything already confirmed elsewhere (e.g. from
+ *  the Settings panel) that hasn't been placed on the calendar yet -- what
+ *  AppointmentBook.tsx's sync polls. See online-booking-sync.ts. */
+export function fetchBookingFeed(token: string): Promise<{ requests: OnlineRequest[] }> {
+  return request(`/api/staff/booking-feed`, { headers: { Authorization: `Bearer ${token}` } });
+}
+
 export function approveOnlineRequest(token: string, id: string): Promise<unknown> {
   return request(`/api/staff/online-requests/${encodeURIComponent(id)}/approve`, {
     method: "POST",

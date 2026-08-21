@@ -175,16 +175,39 @@ section is the durable "why" and "what's still split" for whoever picks this up.
   only public online booking (a new `/book/:slug` page) and a staff "Online
   requests" approval panel (Settings -> Online requests). It does NOT touch
   the existing calendar, checkout, discounts, or reports.
-- **Two separate appointment stores that are NOT unified.** An online booking
-  request lives in Postgres (`server/src/db/schema.ts`'s `appointments` table)
-  with its own status lifecycle (`requested -> confirmed/declined/cancelled`).
-  Approving one in the staff panel does NOT create a card on the existing
-  localStorage calendar (`AppointmentBook.tsx`'s `Appointment` type, a
-  different shape entirely) -- staff currently have to add it to the book by
-  hand after confirming. Merging these is real, sizable follow-up work:
-  decide whether the localStorage calendar becomes a read/write view onto
-  Postgres, or whether confirmed online bookings get synced across on
-  approval. Do not assume this is done just because both features exist.
+- **Two separate appointment stores, bridged one-way (added later this
+  session).** An online booking still lives in Postgres
+  (`server/src/db/schema.ts`'s `appointments` table) with its own status
+  lifecycle (`requested -> confirmed/declined/cancelled`), a different shape
+  entirely from the localStorage calendar's `Appointment` type. But
+  `AppointmentBook.tsx` now polls the backend every 45s (see
+  `src/lib/online-booking-sync.ts`) and materializes what it finds onto the
+  board: a still-`requested` row lands in the existing Requests rail exactly
+  like any other online request (approve/decline there pushes the decision
+  back to Postgres, best-effort); a row already `confirmed` elsewhere (e.g.
+  from Settings -> Online requests) is placed directly, flagged with `issue`
+  if it collides with something already on the board. Real limitations worth
+  knowing before you build on top of this:
+  - **Name-matched, not id-matched.** The backend's techs/services
+    (`server/src/db/seed.ts`) and the frontend's (`src/lib/mock-data.ts`)
+    are two separate catalogs with no shared ids. The sync matches by exact
+    (then loose) name, and silently skips + `console.warn`s anything it
+    can't match rather than guessing wrong. Rename a tech or service on
+    either side and this join quietly breaks for that one row.
+    Give both catalogs one shared source of truth and this whole class of
+    bug disappears.
+  - **Requires a one-time staff sign-in.** The poll reads the same bearer
+    token Settings -> Online requests signs in with
+    (`getStoredStaffToken()` in `online-booking-sync.ts`); until a staff
+    member has signed in there once on this browser, nothing syncs. No UI
+    currently prompts for this from the calendar side.
+  - **One-way and polling, not push.** Up to 45s of lag, and the backend
+    never learns about anything that happens purely on the calendar (a
+    front-desk booking never creates a Postgres row). If this needs to be
+    real-time or bidirectional later, that's a real redesign, not a tweak.
+  - Merging these into one true store (localStorage calendar becomes a
+    read/write view onto Postgres) is still the real fix, deferred as
+    sizable follow-up work -- what's here is a working bridge, not that.
 - **Two separate auth systems.** The existing app's "login" (`src/lib/
   session.ts`, `DEMO_USERS`) has no real password and is used everywhere
   else. This backend has its own real `users` table (bcrypt + JWT), used only

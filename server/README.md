@@ -76,15 +76,23 @@ localStorage-based staff/roles data maps onto real accounts, which is a
 bigger migration than "add online booking." Tracked in the root
 `HANDOFF.md` as follow-up work.
 
+## Calendar sync
+
+`GET /api/staff/booking-feed` returns every `requested` or `confirmed`
+appointment for the salon (declined/cancelled excluded) -- what
+`AppointmentBook.tsx` polls every 45s to materialize bookings onto the
+existing localStorage calendar (see `app/src/lib/online-booking-sync.ts`
+and `HANDOFF.md` #10 for the full picture, including its real limitations:
+name-matched catalogs, requires a one-time staff sign-in on that browser,
+polling not push). A `requested` row lands in the calendar's own Requests
+rail; approving or declining it there calls the same `/approve`/`/decline`
+routes below, so Settings -> Online requests stays in sync either way.
+
 ## What's deliberately not built yet
 
-- **The online-booking data isn't merged into the existing calendar.**
-  Approving a request in "Online requests" marks it `confirmed` in the
-  new Postgres `appointments` table; it does NOT create a card on the
-  existing localStorage calendar (`AppointmentBook.tsx`). For now, staff
-  need to also add it to the book by hand after confirming. Unifying the
-  two appointment stores is real, deliberate follow-up work, not an
-  oversight -- flagged in `HANDOFF.md`.
+- **No real-time push.** The calendar sync above is a 45s poll, not a
+  webhook/websocket -- acceptable for a demo, not for a busy front desk
+  that needs to see a new request the instant it lands.
 - **No `autoConfirm` wiring.** The existing `settings-store.ts` has a
   `booking.autoConfirm` flag that nothing in this backend reads yet;
   every online booking lands as `requested` regardless. One-line change
@@ -177,5 +185,6 @@ change it) to include the frontend's real URL, then redeploy the API.
   handle, like per-tech custom hours or buffer time).
 - `src/routes/booking.ts` -- public, unauthenticated: salon info, slot
   availability, create a booking request.
-- `src/routes/auth.ts`, `src/routes/staff.ts` -- staff login and the
-  online-requests approve/decline API, gated by a JWT bearer token.
+- `src/routes/auth.ts`, `src/routes/staff.ts` -- staff login, the
+  online-requests approve/decline API, and the `booking-feed` route the
+  calendar sync polls -- all gated by a JWT bearer token.

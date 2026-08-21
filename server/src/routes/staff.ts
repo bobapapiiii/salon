@@ -3,10 +3,28 @@
 // is scoped to req.staff.salonId -- a logged-in user can only ever see or
 // change their own salon's data.
 import type { FastifyInstance } from "fastify";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { appointments, clients, services, techs, users } from "../db/schema.js";
 import { requireStaffAuth } from "../lib/require-auth.js";
+
+// Shared shape for both listing routes below -- join client/tech/service
+// names in so neither the Settings panel nor the calendar sync needs N
+// follow-up calls per row.
+const feedColumns = {
+  id: appointments.id,
+  dateKey: appointments.dateKey,
+  startMin: appointments.startMin,
+  durationMin: appointments.durationMin,
+  status: appointments.status,
+  clientNote: appointments.clientNote,
+  createdAt: appointments.createdAt,
+  clientName: clients.name,
+  clientPhone: clients.phone,
+  techName: techs.name,
+  serviceName: services.name,
+  servicePriceCents: services.priceCents,
+};
 
 export async function staffRoutes(app: FastifyInstance) {
   app.addHook("preHandler", requireStaffAuth);
@@ -17,30 +35,37 @@ export async function staffRoutes(app: FastifyInstance) {
     return { user: { id: user.id, name: user.name, email: user.email, title: user.title, salonId: user.salonId } };
   });
 
-  // Pending online-booking requests for this salon, newest first, joined
-  // with client/tech/service names so the panel doesn't need N follow-up calls.
+  // Pending online-booking requests for this salon, newest first. What the
+  // Settings → Online requests panel shows.
   app.get("/api/staff/online-requests", async (req) => {
     const salonId = req.staff!.salonId;
     const rows = await db
-      .select({
-        id: appointments.id,
-        dateKey: appointments.dateKey,
-        startMin: appointments.startMin,
-        durationMin: appointments.durationMin,
-        status: appointments.status,
-        clientNote: appointments.clientNote,
-        createdAt: appointments.createdAt,
-        clientName: clients.name,
-        clientPhone: clients.phone,
-        techName: techs.name,
-        serviceName: services.name,
-        servicePriceCents: services.priceCents,
-      })
+      .select(feedColumns)
       .from(appointments)
       .innerJoin(clients, eq(appointments.clientId, clients.id))
       .innerJoin(techs, eq(appointments.techId, techs.id))
       .innerJoin(services, eq(appointments.serviceId, services.id))
       .where(and(eq(appointments.salonId, salonId), eq(appointments.status, "requested")))
+      .orderBy(appointments.createdAt);
+
+    return { requests: rows };
+  });
+
+  // Everything the calendar (AppointmentBook.tsx) should materialize onto
+  // the board: still-pending requests (it places these in the Requests
+  // rail, same as any other online request) PLUS anything already
+  // confirmed elsewhere (e.g. approved from the Settings panel) that the
+  // calendar hasn't pulled onto the board yet. Declined/cancelled rows are
+  // deliberately excluded -- nothing to show for those.
+  app.get("/api/staff/booking-feed", async (req) => {
+    const salonId = req.staff!.salonId;
+    const rows = await db
+      .select(feedColumns)
+      .from(appointments)
+      .innerJoin(clients, eq(appointments.clientId, clients.id))
+      .innerJoin(techs, eq(appointments.techId, techs.id))
+      .innerJoin(services, eq(appointments.serviceId, services.id))
+      .where(and(eq(appointments.salonId, salonId), inArray(appointments.status, ["requested", "confirmed"])))
       .orderBy(appointments.createdAt);
 
     return { requests: rows };

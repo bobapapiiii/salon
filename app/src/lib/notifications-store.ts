@@ -16,6 +16,7 @@ export type NotificationKind =
   | "cancelled"
   | "no_show"
   | "waitlist_joined"
+  | "online_request"
   | "online_approved"
   | "online_declined"
   | "turnaway";

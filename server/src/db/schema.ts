@@ -142,7 +142,13 @@ export const appointments = pgTable(
     clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
     techId: uuid("tech_id").notNull().references(() => techs.id, { onDelete: "cascade" }),
     serviceId: uuid("service_id").notNull().references(() => services.id, { onDelete: "cascade" }),
-    dateKey: date("date_key").notNull(), // "YYYY-MM-DD", matches the frontend's dateKey convention
+    // mode: "string" pinned explicitly -- callers (routes/booking.ts,
+    // src/lib/online-booking-sync.ts on the frontend) all treat this as a
+    // plain "YYYY-MM-DD" string, matching the frontend's own dateKey
+    // convention exactly; leaving mode unspecified risks node-postgres/
+    // Drizzle handing back a JS Date instead, which would silently break
+    // every string comparison and equality filter against this column.
+    dateKey: date("date_key", { mode: "string" }).notNull(),
     startMin: integer("start_min").notNull(), // minutes from midnight, salon-local time
     durationMin: integer("duration_min").notNull(),
     status: text("status").notNull().default("requested"), // requested | confirmed | declined | cancelled
