@@ -189,54 +189,57 @@ function bogoBuyPool(bogo: BogoConfig, targeted: EngineLine[]): EngineLine[] {
   return targeted.filter((l) => ids.has(l.serviceId))
 }
 
-function bogoRewardPool(bogo: BogoConfig, targeted: EngineLine[], buyPool: EngineLine[]): EngineLine[] {
-  const buyIds = new Set(buyPool.map((l) => l.id))
-  const rest = targeted.filter((l) => !buyIds.has(l.id))
-  if (!bogo.rewardServiceIds || bogo.rewardServiceIds.length === 0) return rest.length > 0 ? rest : targeted
+/** Which items in `pool` are eligible to be the reward, given the config's
+ *  optional reward-service restriction (unset/empty = anything targeted). */
+function rewardEligible(bogo: BogoConfig, pool: EngineLine[]): EngineLine[] {
+  if (!bogo.rewardServiceIds || bogo.rewardServiceIds.length === 0) return pool
   const ids = new Set(bogo.rewardServiceIds)
-  const filtered = rest.filter((l) => ids.has(l.serviceId))
-  return filtered.length > 0 ? filtered : targeted.filter((l) => ids.has(l.serviceId))
+  return pool.filter((l) => ids.has(l.serviceId))
 }
 
-/** BOGO priced per reward line, so allocation can attribute savings to the
- *  exact line(s) that were comped/reduced -- never a single lump sum. */
+/** BOGO priced per reward line, one "set" (buyQty bought + rewardQty
+ *  rewarded) at a time, so allocation can attribute savings to the exact
+ *  line(s) that were comped/reduced -- never a single lump sum, and no
+ *  single line is ever double-counted as both a paid and a rewarded item.
+ *  Buy and reward candidates are drawn from the SAME remaining pool each
+ *  round, which is what makes overlapping buy/reward targeting (the common
+ *  "buy any service, get any service" case) consume correctly instead of
+ *  exhausting every eligible item on "buy" before any is left to reward. */
 function computeBogoAmount(d: Discount, targeted: EngineLine[]): { totalCents: number; perLine: Map<string, number> } {
   const bogo = d.bogo!
   const perLine = new Map<string, number>()
-  const buyPool = [...bogoBuyPool(bogo, targeted)].sort((a, b) => b.unitPriceCents - a.unitPriceCents)
-  if (buyPool.length < bogo.buyQty) return { totalCents: 0, perLine }
-
-  const setsAvailable = Math.floor(buyPool.length / bogo.buyQty)
-  let sets = bogo.repeat ? setsAvailable : Math.min(1, setsAvailable)
-  if (bogo.maxRewardsPerSale != null) {
-    const maxSets = Math.floor(bogo.maxRewardsPerSale / bogo.rewardQty) || 0
-    sets = Math.min(sets, Math.max(1, maxSets))
-  }
-  if (sets <= 0) return { totalCents: 0, perLine }
-
-  const consumedForBuy = new Set<string>()
-  buyPool.slice(0, sets * bogo.buyQty).forEach((l) => consumedForBuy.add(l.id))
-
-  let rewardPool = bogoRewardPool(bogo, targeted, buyPool.filter((l) => consumedForBuy.has(l.id)))
-    .filter((l) => !consumedForBuy.has(l.id))
-  rewardPool = [...rewardPool].sort((a, b) =>
-    bogo.rewardSelection === 'most_expensive' ? b.unitPriceCents - a.unitPriceCents : a.unitPriceCents - b.unitPriceCents,
-  )
-
-  const rewardsNeeded = sets * bogo.rewardQty
-  const rewardLines = rewardPool.slice(0, rewardsNeeded)
-
+  let remaining = targeted
   let total = 0
-  for (const l of rewardLines) {
-    const cut =
-      bogo.rewardType === 'free' ? l.unitPriceCents
-      : bogo.rewardType === 'percent' ? Math.round((l.unitPriceCents * (bogo.rewardValue ?? 0)) / 100)
-      : Math.min(l.unitPriceCents, toCents(bogo.rewardValue ?? 0)) // fixed $ off, never past the line's own price
-    const capped = Math.max(0, Math.min(cut, l.unitPriceCents))
-    if (capped > 0) {
-      perLine.set(l.id, (perLine.get(l.id) ?? 0) + capped)
-      total += capped
+  let sets = 0
+  const maxSets = bogo.repeat ? Infinity : 1
+  const maxSetsFromCap = bogo.maxRewardsPerSale != null ? Math.floor(bogo.maxRewardsPerSale / bogo.rewardQty) : Infinity
+
+  while (sets < maxSets && sets < maxSetsFromCap) {
+    const buyCandidates = [...bogoBuyPool(bogo, remaining)].sort((a, b) => b.unitPriceCents - a.unitPriceCents)
+    if (buyCandidates.length < bogo.buyQty) break
+    const buyPicked = new Set(buyCandidates.slice(0, bogo.buyQty).map((l) => l.id))
+    const afterBuy = remaining.filter((l) => !buyPicked.has(l.id))
+
+    const rewardCandidates = [...rewardEligible(bogo, afterBuy)].sort((a, b) =>
+      bogo.rewardSelection === 'most_expensive' ? b.unitPriceCents - a.unitPriceCents : a.unitPriceCents - b.unitPriceCents,
+    )
+    if (rewardCandidates.length < bogo.rewardQty) break
+    const rewardPicked = rewardCandidates.slice(0, bogo.rewardQty)
+
+    for (const l of rewardPicked) {
+      const cut =
+        bogo.rewardType === 'free' ? l.unitPriceCents
+        : bogo.rewardType === 'percent' ? Math.round((l.unitPriceCents * (bogo.rewardValue ?? 0)) / 100)
+        : Math.min(l.unitPriceCents, toCents(bogo.rewardValue ?? 0)) // fixed $ off, never past the line's own price
+      const capped = Math.max(0, Math.min(cut, l.unitPriceCents))
+      if (capped > 0) {
+        perLine.set(l.id, (perLine.get(l.id) ?? 0) + capped)
+        total += capped
+      }
     }
+    const rewardPickedIds = new Set(rewardPicked.map((l) => l.id))
+    remaining = afterBuy.filter((l) => !rewardPickedIds.has(l.id))
+    sets++
   }
   return { totalCents: total, perLine }
 }
