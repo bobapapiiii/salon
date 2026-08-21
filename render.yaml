@@ -45,8 +45,8 @@ services:
   - type: web
     name: gloss-nail-bar
     runtime: static
-    plan: free
-    region: oregon
+    # static sites have no `plan`/`region` fields -- Render hosts them on
+    # its global CDN regardless, there's no instance/region to pick
     rootDir: app
     buildCommand: npm install && npm run build
     staticPublishPath: dist
