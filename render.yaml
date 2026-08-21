@@ -1,7 +1,14 @@
-# Render Blueprint -- deploys the API (server/) as a Web Service and
-# provisions a managed Postgres database, wired together automatically.
-# See server/README.md for the "connect this repo to Render" steps; this
-# file just describes what to create once you do.
+# Render Blueprint -- deploys the API (server/) as a Web Service, the
+# frontend (app/) as a Static Site, and provisions a managed Postgres
+# database, all wired together automatically. See server/README.md for
+# the "connect this repo to Render" steps; this file just describes what
+# to create once you do.
+#
+# One manual step this file can't do for you: after the API service
+# exists, Render assigns it a URL (this Blueprint expects
+# https://gloss-nail-bar-api.onrender.com, matching the `name:` below --
+# if that name was already taken and Render picked a different one, the
+# frontend's VITE_API_URL below needs updating to match).
 databases:
   - name: gloss-nail-bar-db
     plan: free
@@ -26,15 +33,34 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: CORS_ORIGINS
-        # comma-separated list -- add your deployed frontend URL once you
-        # know it (Render Static Site URL, or Vercel/Netlify if you host
-        # the frontend elsewhere), then redeploy or edit in the dashboard
-        value: "http://localhost:5173"
+        # comma-separated list. Includes the frontend's Render URL (see the
+        # static site below) plus localhost for local dev against the
+        # deployed API. This value is Blueprint-managed: editing it in the
+        # Render dashboard instead of here gets overwritten on the next
+        # sync -- change it here and push instead.
+        value: "http://localhost:5173,https://gloss-nail-bar.onrender.com"
       - key: PORT
         value: "8080"
 
-# NOT included here on purpose: the frontend (app/). It's a static Vite
-# build with no server-side needs, so it's simplest as its own Render
-# "Static Site" (or Vercel/Netlify) pointed at app/ with build command
-# `npm run build` and publish directory `dist` -- see server/README.md
-# "Deploying the frontend."
+  - type: web
+    name: gloss-nail-bar
+    runtime: static
+    plan: free
+    region: oregon
+    rootDir: app
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        # baked into the built JS at build time (Vite env vars are not
+        # readable at request time) -- must match the API service's actual
+        # URL. If Render assigned the API a different URL than
+        # gloss-nail-bar-api.onrender.com (name collision), update this.
+        value: "https://gloss-nail-bar-api.onrender.com"
+    routes:
+      # single-page app: every path (the public /book/:slug page included)
+      # serves index.html, and App.tsx's own pathname check takes it from
+      # there. Without this, anything but the root path 404s.
+      - type: rewrite
+        source: /*
+        destination: /index.html

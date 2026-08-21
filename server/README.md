@@ -134,11 +134,14 @@ GitHub CLI (`gh auth login`) first and it'll handle this for you.
    rest of this platform as it grows).
 2. Dashboard -> **New** -> **Blueprint**, pick the GitHub repo you just
    pushed. Render reads `render.yaml` at the repo root automatically and
-   proposes: a `gloss-nail-bar-api` Web Service (building from `server/`)
-   and a `gloss-nail-bar-db` Postgres database, wired together.
-3. Click **Apply**. First build takes a few minutes (`npm install && npm
-   run build` per `render.yaml`).
-4. Once it's live, open a **Shell** tab on the `gloss-nail-bar-api`
+   proposes all three resources: the `gloss-nail-bar-api` Web Service
+   (building from `server/`), the `gloss-nail-bar` Static Site (building
+   from `app/`), and the `gloss-nail-bar-db` Postgres database, all wired
+   together -- see "Frontend + backend, one Blueprint" below for how they
+   reference each other.
+3. Click **Apply**. First build takes a few minutes for each service
+   (`npm install && npm run build` per `render.yaml`).
+4. Once the API is live, open a **Shell** tab on the `gloss-nail-bar-api`
    service (or run this from your own machine with `DATABASE_URL` set to
    the database's **External Database URL** from its Render dashboard
    page) and run the migration + seed once:
@@ -146,31 +149,45 @@ GitHub CLI (`gh auth login`) first and it'll handle this for you.
    npm run db:migrate
    npm run db:seed
    ```
-5. Confirm: `curl https://<your-service>.onrender.com/api/health`.
+5. Confirm: `curl https://gloss-nail-bar-api.onrender.com/api/health`, and
+   visit `https://gloss-nail-bar.onrender.com/book/gloss-nail-bar` for the
+   live booking page.
 
-Render's free-tier web services spin down after inactivity and take
-10-20 seconds to wake back up on the next request -- expected, not a bug,
-if the first booking-page load feels slow after a quiet period. Upgrade
-the plan in `render.yaml` (or the dashboard) once this needs to stay warm.
+Render's free-tier web services (not static sites) spin down after
+inactivity and take 10-20 seconds to wake back up on the next request --
+expected, not a bug, if the first booking-page load feels slow after a
+quiet period. Upgrade the plan in `render.yaml` (or the dashboard) once
+this needs to stay warm.
 
-### 3. Deploy the frontend
+### 3. Frontend + backend, one Blueprint
 
-The frontend (`app/`) is a static Vite build with no server-side needs.
-Simplest: a second Render **Static Site**, pointed at this same repo,
-build command `cd app && npm install && npm run build`, publish directory
-`app/dist`. Two things it needs that aren't automatic:
+`render.yaml` defines both services so they deploy together and know
+about each other automatically, with no manual dashboard configuration:
 
-- **Environment variable** `VITE_API_URL` set to your API's Render URL
-  (from step 2), so the built frontend calls the real API instead of
-  `localhost:8080`.
-- **A rewrite rule** so `/book/gloss-nail-bar` (and any other deep link)
-  serves `index.html` instead of 404ing -- this is a single-page app with
-  no server-side routing. Render Static Sites: Settings -> Redirects/
-  Rewrites -> add a rule `/*` -> `/index.html`, type Rewrite.
+- The frontend's `VITE_API_URL` is set to `https://gloss-nail-bar-api.onrender.com`
+  -- baked into the built JS at build time (Vite env vars aren't readable
+  at request time, so this has to be right before the frontend builds).
+- The API's `CORS_ORIGINS` includes `https://gloss-nail-bar.onrender.com`
+  (the frontend's URL) alongside `localhost:5173` for local dev.
+- The frontend's `routes: rewrite /* -> /index.html` makes deep links like
+  `/book/gloss-nail-bar` serve the app instead of 404ing (it's a
+  single-page app, there's no real file at that path).
 
-Once both are deployed, update the API service's `CORS_ORIGINS` env var
-(Render dashboard, not `render.yaml`, so you don't have to edit code to
-change it) to include the frontend's real URL, then redeploy the API.
+**This only works cleanly if both service names in `render.yaml` match
+what Render actually assigned them.** Render normally uses the `name:`
+field verbatim as the subdomain (that's how `gloss-nail-bar-api` became
+`gloss-nail-bar-api.onrender.com`), but if a name were ever taken by
+someone else on Render, yours would get a suffix instead -- check the
+actual URLs in your Render dashboard against what's hardcoded in
+`render.yaml` above if anything doesn't line up, and update the mismatched
+`value:` (either `VITE_API_URL` or `CORS_ORIGINS`), then push again.
+
+**If you already applied the Blueprint before the Static Site existed in
+`render.yaml`** (i.e. you only have the API + database so far): push this
+updated `render.yaml` to GitHub, then open the Blueprint in the Render
+dashboard and look for a **Manual Sync** button (or wait for auto-deploy
+if it's enabled) -- Render will detect the new `gloss-nail-bar` service
+definition and offer to create it, same as if you'd applied fresh.
 
 ## Files
 
