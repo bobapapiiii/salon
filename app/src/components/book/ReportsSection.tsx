@@ -354,7 +354,10 @@ export function ReportsSection() {
       r.sales += p.subtotal;
       r.tips += p.tip;
       r.total += p.total;
-      r.discounts += (p.discount ?? 0) + (p.redeemed?.value ?? 0);
+      // p.discount is already the combined total (loyalty + promotional +
+      // manual) -- adding p.redeemed.value on top would double-count the
+      // loyalty portion, since it's folded into p.discount too
+      r.discounts += p.discount ?? 0;
     }
     return map;
   }, [days, pays]);
@@ -794,7 +797,8 @@ export function ReportsSection() {
     total: closePayments.reduce((s, p) => s + p.total, 0),
     sales: closePayments.reduce((s, p) => s + p.subtotal, 0),
     tips: closePayments.reduce((s, p) => s + p.tip, 0),
-    discounts: closePayments.reduce((s, p) => s + (p.discount ?? 0) + (p.redeemed?.value ?? 0), 0),
+    // p.discount already includes the loyalty portion -- see byDay above
+    discounts: closePayments.reduce((s, p) => s + (p.discount ?? 0), 0),
     tickets: closePayments.length,
   }), [closePayments]);
   const closeStatusCounts = useMemo(() => {

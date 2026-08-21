@@ -8,7 +8,7 @@ import { useSettingsStore } from "@/lib/settings-store";
 import { useStaffStore } from "@/lib/staff-store";
 import { svcById } from "@/lib/services-store";
 import { balanceDue, totalRefunded, type RefundRecord } from "./RefundDialog";
-import { paymentSources, type PaymentSource } from "./CheckoutDialog";
+import { paymentSources, type AppliedDiscountSnapshot, type ManualDiscountSnapshot, type PaymentSource } from "./CheckoutDialog";
 
 export interface InvoicePayment {
   id: string;
@@ -20,8 +20,12 @@ export interface InvoicePayment {
   method: string;
   sources?: PaymentSource[];
   points: number;
+  /** combined total of every discount on this ticket -- loyalty redemption +
+   *  promotional Discounts + any manual one-time discount */
   discount?: number;
   redeemed?: { name: string; points: number; value: number };
+  appliedDiscounts?: AppliedDiscountSnapshot[];
+  manualDiscount?: ManualDiscountSnapshot;
   notes?: string;
   party?: number;
   refunds?: RefundRecord[];
@@ -127,8 +131,14 @@ export function InvoiceDialog({ payment, items, onClose }: {
         <div className="mt-2 space-y-1 border-t border-dashed border-line px-6 pt-2.5 text-[13px]">
           <div className="flex justify-between"><span className="text-ink-faint">Subtotal</span><span className="tnum">{money(payment.subtotal)}</span></div>
           <div className="flex justify-between"><span className="text-ink-faint">Tip</span><span className="tnum">{money(payment.tip)}</span></div>
-          {(payment.discount ?? 0) > 0 && payment.redeemed && (
-            <div className="flex justify-between text-violet-500"><span>Redeemed: {payment.redeemed.name}</span><span className="tnum">−{money(payment.discount!)}</span></div>
+          {(payment.redeemed?.value ?? 0) > 0 && payment.redeemed && (
+            <div className="flex justify-between text-violet-500"><span>Redeemed: {payment.redeemed.name}</span><span className="tnum">−{money(payment.redeemed.value)}</span></div>
+          )}
+          {(payment.appliedDiscounts ?? []).map((a) => (
+            <div key={a.discountId} className="flex justify-between text-emerald-600"><span>{a.name}</span><span className="tnum">−{money(a.amountCents / 100)}</span></div>
+          ))}
+          {payment.manualDiscount && (
+            <div className="flex justify-between text-amber-600"><span>Manual discount{payment.manualDiscount.reason ? `: ${payment.manualDiscount.reason}` : ""}</span><span className="tnum">−{money(payment.manualDiscount.amount)}</span></div>
           )}
           <div className="flex justify-between border-t border-line pt-1.5 text-[15px] font-bold">
             <span>Total</span><span className="tnum">{money(payment.total)}</span>
