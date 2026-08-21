@@ -163,3 +163,51 @@ real backend from the roadmap above:
 - **Customer tags**: added `ClientRecord.tags?: string[]` and `Tech.tags?: string[]` (small,
   additive fields, not a new system) so discount targeting has something to filter on.
 
+## 10. Real backend + online booking (added this session)
+
+Added `server/` -- the platform's first real backend (Node/TypeScript, Fastify,
+Postgres via Drizzle, JWT+bcrypt staff auth), deployed via Render (`render.yaml`
+at repo root). See `server/README.md` for full setup/deploy instructions; this
+section is the durable "why" and "what's still split" for whoever picks this up.
+
+- **Deliberately a self-contained slice, not a migration.** The rest of the app
+  (`app/src/lib/*-store.ts`) is still 100% localStorage. This backend covers
+  only public online booking (a new `/book/:slug` page) and a staff "Online
+  requests" approval panel (Settings -> Online requests). It does NOT touch
+  the existing calendar, checkout, discounts, or reports.
+- **Two separate appointment stores that are NOT unified.** An online booking
+  request lives in Postgres (`server/src/db/schema.ts`'s `appointments` table)
+  with its own status lifecycle (`requested -> confirmed/declined/cancelled`).
+  Approving one in the staff panel does NOT create a card on the existing
+  localStorage calendar (`AppointmentBook.tsx`'s `Appointment` type, a
+  different shape entirely) -- staff currently have to add it to the book by
+  hand after confirming. Merging these is real, sizable follow-up work:
+  decide whether the localStorage calendar becomes a read/write view onto
+  Postgres, or whether confirmed online bookings get synced across on
+  approval. Do not assume this is done just because both features exist.
+- **Two separate auth systems.** The existing app's "login" (`src/lib/
+  session.ts`, `DEMO_USERS`) has no real password and is used everywhere
+  else. This backend has its own real `users` table (bcrypt + JWT), used only
+  by the online-requests panel. Not unified in this pass; see `server/
+  README.md` "Two separate auth systems" for the reasoning.
+- **Discount engine, if online checkout ever happens**: `discount-engine.ts`
+  was written pure/stateless specifically so it could move server-side (see
+  §9). It has not been ported into `server/` in this pass since online
+  booking has no checkout step yet (requests are unpriced holds, payment
+  still happens in person). When online payment is built, that's the moment
+  to actually lift `discount-engine.ts` server-side rather than duplicating
+  pricing logic.
+- **Nothing here has been executed in this session** (the sandbox that built
+  it has no npm registry access) -- every file is TypeScript-syntax-checked
+  and the SQL migration is hand-verified line-by-line against `schema.ts`,
+  but `npm install`, the actual server boot, and real Postgres queries are
+  all unverified until you run `server/README.md`'s "Local setup" yourself.
+- **A real bug was found and fixed in already-shipped code while working in
+  this area**: the BOGO discount fix described in §9 as "fixed and shipped"
+  had NOT actually reached the committed `discount-engine.ts` (the commit
+  still had the old buggy split-pool logic) -- caught via a Mac-vs-cloud-clone
+  content diff while starting this backend work, and fixed for real in a
+  follow-up commit. Worth remembering: a reported fix is only real once the
+  file that's actually committed on the machine you develop from has been
+  re-diffed against what was verified, not just re-described from memory.
+

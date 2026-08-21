@@ -1,0 +1,40 @@
+# Render Blueprint -- deploys the API (server/) as a Web Service and
+# provisions a managed Postgres database, wired together automatically.
+# See server/README.md for the "connect this repo to Render" steps; this
+# file just describes what to create once you do.
+databases:
+  - name: gloss-nail-bar-db
+    plan: free
+    region: oregon
+    postgresMajorVersion: 16
+
+services:
+  - type: web
+    name: gloss-nail-bar-api
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: server
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: gloss-nail-bar-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        # comma-separated list -- add your deployed frontend URL once you
+        # know it (Render Static Site URL, or Vercel/Netlify if you host
+        # the frontend elsewhere), then redeploy or edit in the dashboard
+        value: "http://localhost:5173"
+      - key: PORT
+        value: "8080"
+
+# NOT included here on purpose: the frontend (app/). It's a static Vite
+# build with no server-side needs, so it's simplest as its own Render
+# "Static Site" (or Vercel/Netlify) pointed at app/ with build command
+# `npm run build` and publish directory `dist` -- see server/README.md
+# "Deploying the frontend."
