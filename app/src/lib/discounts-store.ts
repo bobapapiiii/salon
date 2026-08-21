@@ -6,8 +6,7 @@
 // log every mutating action writes to.
 import { useSyncExternalStore } from "react";
 import { sdata } from "./persist";
-import { getSessionUserId, DEMO_USERS, type SessionUser } from "./session";
-import { getStaff } from "./staff-store";
+import { getCurrentUser, type SessionUser } from "./session";
 
 // ── types ─────────────────────────────────────────────────────────────────
 
@@ -241,16 +240,9 @@ export const discountById: Record<string, Discount> = new Proxy({} as Record<str
 
 export const uid = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`;
 
-function currentUserName(): string {
-  const id = getSessionUserId();
-  const demo = DEMO_USERS.find((u) => u.id === id);
-  if (demo) return demo.name;
-  const tech = getStaff().techs.find((t) => t.id === id);
-  return tech?.name ?? "Unknown";
-}
-
 function logEntry(action: AuditAction, patch: Partial<AuditLogEntry> = {}): AuditLogEntry {
-  return { id: uid("audit"), at: Date.now(), userId: getSessionUserId(), userName: currentUserName(), action, ...patch };
+  const actor = getCurrentUser();
+  return { id: uid("audit"), at: Date.now(), userId: actor.id, userName: actor.name, action, ...patch };
 }
 
 function commit(next: DiscountsState) {
@@ -279,7 +271,7 @@ export function createDiscount(partial: Omit<Discount, "id" | "createdAt" | "upd
     id: uid("disc"),
     createdAt: now,
     updatedAt: now,
-    createdBy: getSessionUserId(),
+    createdBy: getCurrentUser().id,
     status: partial.status ?? "draft",
     ...partial,
   };
@@ -317,7 +309,7 @@ export function duplicateDiscount(id: string): Discount | undefined {
   const src = state.discounts.find((d) => d.id === id);
   if (!src) return undefined;
   const now = Date.now();
-  const copy: Discount = { ...src, id: uid("disc"), name: `${src.name} (copy)`, status: "draft", promoCode: undefined, createdAt: now, updatedAt: now, createdBy: getSessionUserId(), archivedAt: undefined };
+  const copy: Discount = { ...src, id: uid("disc"), name: `${src.name} (copy)`, status: "draft", promoCode: undefined, createdAt: now, updatedAt: now, createdBy: getCurrentUser().id, archivedAt: undefined };
   commit({ ...state, discounts: [...state.discounts, copy], auditLog: [...state.auditLog, logEntry("duplicated", { discountId: copy.id, discountName: copy.name, detail: `duplicated from ${src.name}` })] });
   return copy;
 }
@@ -369,13 +361,7 @@ export function logManualDiscount(action: "manual_apply" | "manual_apply_approve
 // place once real permissions land.
 
 function titleFor(): string {
-  const id = getSessionUserId();
-  const demo = DEMO_USERS.find((u) => u.id === id);
-  if (demo) return demo.title;
-  const staff = getStaff();
-  const tech = staff.techs.find((t) => t.id === id);
-  if (!tech) return "";
-  return staff.roles.find((r) => r.id === tech.teamId)?.name ?? "Technician";
+  return getCurrentUser().title;
 }
 
 export function isManagerOrAbove(): boolean {

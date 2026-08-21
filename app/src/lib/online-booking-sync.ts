@@ -6,23 +6,11 @@
 // See HANDOFF.md #10 for the fuller "why."
 import type { Appointment, Service, Tech } from "./booking-types";
 import { logEntry } from "./booking-types";
-import { sdata } from "./persist";
 import type { OnlineRequest } from "./booking-api";
 
-/** Same storage key OnlineRequestsSection.tsx signs in to -- read directly
- *  from localStorage (not usePersistentState) so a poll running in a
- *  different component always sees the latest sign-in, not whatever was
- *  true when that component mounted. */
-export function getStoredStaffToken(): string | null {
-  try {
-    const raw = localStorage.getItem(sdata("online-requests-auth-v1"));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { token?: string } | null;
-    return parsed?.token ?? null;
-  } catch {
-    return null;
-  }
-}
+// The staff bearer token itself now lives in lib/auth.ts (getStaffToken) --
+// that's the one real login for the whole app since the auth-unification
+// pass. This file just consumes it; see AppointmentBook.tsx's poll effect.
 
 /** Best-effort exact-then-loose name match. The backend and the frontend
  *  keep separate catalogs (see server/README.md); this is the join between

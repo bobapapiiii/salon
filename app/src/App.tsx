@@ -1,8 +1,10 @@
 import { useEffect } from 'react'
 import { AppointmentBook } from '@/components/book/AppointmentBook'
 import { TechPortal } from '@/components/book/TechPortal'
+import { StaffLoginScreen } from '@/components/book/StaffLoginScreen'
 import { BookingPage } from '@/components/public/BookingPage'
-import { DEMO_USERS, setSessionUser, useSessionUserId } from '@/lib/session'
+import { setSessionUser, useSessionUserId } from '@/lib/session'
+import { useStaffAuth } from '@/lib/auth'
 import { isArchived, useStaffStore } from '@/lib/staff-store'
 import { useSettingsStore } from '@/lib/settings-store'
 import { setClockFormat } from '@/lib/booking-types'
@@ -18,6 +20,7 @@ function publicBookingSlug(): string | null {
 
 export default function App() {
   const userId = useSessionUserId()
+  const auth = useStaffAuth()
   const { techs } = useStaffStore()
   const clock = useSettingsStore().general.clockFormat
   useEffect(() => setClockFormat(clock), [clock])
@@ -27,14 +30,24 @@ export default function App() {
     return <BookingPage slug={bookingSlug} />
   }
 
+  // a tech-portal override wins regardless of staff sign-in state -- it's a
+  // separate, still-local-only mechanism (see session.ts)
   const techUser = techs.find((t) => t.id === userId && t.loginEnabled && t.active !== false && !isArchived(t))
+  if (techUser) {
+    return (
+      <div className="h-screen w-screen overflow-hidden bg-background text-foreground">
+        <TechPortal key={techUser.id} tech={techUser} onSignOut={() => setSessionUser('')} />
+      </div>
+    )
+  }
+
+  if (!auth) {
+    return <StaffLoginScreen />
+  }
+
   return (
     <div className="h-screen w-screen overflow-hidden bg-background text-foreground">
-      {techUser ? (
-        <TechPortal key={techUser.id} tech={techUser} onSignOut={() => setSessionUser(DEMO_USERS[0].id)} />
-      ) : (
-        <AppointmentBook key={userId} />
-      )}
+      <AppointmentBook key={auth.user.id} />
     </div>
   )
 }

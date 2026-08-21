@@ -12,7 +12,7 @@ import { useSettingsStore } from "@/lib/settings-store";
 import { activeServices, orderedServices, serviceGroupLabel, svcById, useServicesStore } from "@/lib/services-store";
 import { catById, useCategoriesStore } from "@/lib/categories-store";
 import { paymentSources, refundedBySource, round2, techServiceTotals, techTipTotals, totalRefunded, type PaymentSource, type PaymentWithSources, type RefundRecord } from "@/lib/payments";
-import { DEMO_USERS, SALON_ID, getSessionUserId } from "@/lib/session";
+import { SALON_ID, getCurrentUser } from "@/lib/session";
 import {
   canApplyManualDiscount, logManualDiscount, normalizePromoCode,
   redemptionCounts, useDiscountsStore, type DiscountChannel,
@@ -153,13 +153,10 @@ function defaultTodayKey(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-/** display name for whoever's currently signed in -- demo account or a
+/** display name for whoever's currently signed in -- real staff login or a
  *  tech portal login -- used to stamp who applied a manual discount */
 function currentUserDisplayName(): string {
-  const id = getSessionUserId();
-  const demo = DEMO_USERS.find((u) => u.id === id);
-  if (demo) return demo.name;
-  return getStaff().techs.find((t) => t.id === id)?.name ?? "Unknown";
+  return getCurrentUser().name;
 }
 
 export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, onBack, people, selected, onTogglePerson, onSelectAll, hostName, editable, annotate, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, loyaltyBalance, pointsRecipients, accountNames, existingPrefs, draft, onDraft, existing, channel = "front_desk", dateKey, clientId, clientTags, isNewClient }: {
@@ -977,16 +974,16 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, onBac
                           <p className="mb-1 text-[10.5px] font-semibold text-amber-700">
                             {manualPct.toFixed(0)}% off needs a second approval (over the {manualSettings.managerApprovalThresholdPct}% threshold)
                           </p>
-                          <select
+                          {/* No staff roster API exists yet (Phase 1 of the
+                              localStorage->Postgres migration brings one) --
+                              a real picker of qualifying approvers comes back
+                              once that lands. Free text for now, same field. */}
+                          <input
                             value={D.manualDiscountApprovedBy ?? ""}
                             onChange={(e) => setD({ manualDiscountApprovedBy: e.target.value })}
-                            className="h-8 w-full rounded-[8px] border border-line bg-surface px-2 text-[12px] outline-none focus:border-clay"
-                          >
-                            <option value="">Approved by...</option>
-                            {DEMO_USERS.filter((u) => manualSettings.approverTitles.includes(u.title)).map((u) => (
-                              <option key={u.id} value={u.name}>{u.name}</option>
-                            ))}
-                          </select>
+                            placeholder="Approved by (manager/owner name)"
+                            className="h-8 w-full rounded-[8px] border border-line bg-surface px-2.5 text-[12px] outline-none focus:border-clay"
+                          />
                         </div>
                       )}
                       {manualDiscountValue > 0 && !manualActive && (

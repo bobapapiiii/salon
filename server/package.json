@@ -9,7 +9,9 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "db:migrate": "tsx src/db/migrate.ts",
-    "db:seed": "tsx src/db/seed.ts"
+    "db:seed": "tsx src/db/seed.ts",
+    "db:import-local": "tsx src/db/import-local-data.ts",
+    "db:create-staff-login": "tsx src/db/create-staff-logins.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

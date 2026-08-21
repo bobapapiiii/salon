@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import {
   ArrowRightLeft, Banknote, Bell, CalendarDays, CalendarPlus, CalendarX, Check, CheckCircle2, ClipboardList, Clock, Globe, ListPlus,
-  PhoneOff, Receipt, Search, Settings, UserX, XCircle,
+  LogOut, PhoneOff, Receipt, Search, Settings, UserX, XCircle,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { ClientRecord } from '@/lib/booking-types'
-import { DEMO_USERS, SALON_NAME, setSessionUser, useSessionUser, useSessionUserId } from '@/lib/session'
+import { SALON_NAME, setSessionUser, useSessionUser, useSessionUserId } from '@/lib/session'
+import { staffSignOut } from '@/lib/auth'
 import { boardTechs, useStaffStore } from '@/lib/staff-store'
 import { useSettingsStore } from '@/lib/settings-store'
 import {
@@ -117,23 +118,23 @@ export function NavRail({ active, onNavigate }: RailProps) {
               <p className="px-3 pb-1 pt-2.5 text-micro font-bold uppercase tracking-wide text-ink-faint">
                 Signed in at {salonName}
               </p>
-              {DEMO_USERS.map((u) => (
-                <button
-                  key={u.id}
-                  type="button"
-                  onClick={() => { setSessionUser(u.id); setUserMenu(false) }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-cream"
-                >
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-olive-tint text-[10px] font-extrabold text-olive">
-                    {u.initials}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13px] font-semibold text-ink">{u.name}</span>
-                    <span className="block text-[11px] text-ink-faint">{u.title}</span>
-                  </span>
-                  {u.id === user.id && <Check className="h-4 w-4 shrink-0 text-clay" />}
-                </button>
-              ))}
+              <div className="flex w-full items-center gap-2.5 px-3 py-2">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-olive-tint text-[10px] font-extrabold text-olive">
+                  {user.initials}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-semibold text-ink">{user.name}</span>
+                  <span className="block text-[11px] text-ink-faint">{user.title}</span>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => { staffSignOut(); setUserMenu(false) }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-rust transition-colors hover:bg-cream"
+              >
+                <LogOut className="h-4 w-4 shrink-0" />
+                <span className="text-[13px] font-semibold">Sign out</span>
+              </button>
               {loginTechs.length > 0 && (
                 <>
                   <p className="flex items-center gap-1 border-t border-line px-3 pb-1 pt-2 text-micro font-bold uppercase tracking-wide text-ink-faint">

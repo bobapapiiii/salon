@@ -1,0 +1,3345 @@
+{
+  "categories": [
+    {
+      "id": "mani",
+      "name": "Manicure",
+      "hue": "205 90% 60%",
+      "fill": "#fa004f26",
+      "line": "#fa004f",
+      "text": "#fa004f"
+    },
+    {
+      "id": "pedi",
+      "name": "Pedicure",
+      "hue": "160 70% 50%",
+      "fill": "#001eff26",
+      "line": "#001eff",
+      "text": "#001eff"
+    },
+    {
+      "id": "enh",
+      "name": "Nail Enhancement",
+      "hue": "270 75% 66%",
+      "fill": "#ffea0026",
+      "line": "#ffea00",
+      "text": "#ffea00"
+    },
+    {
+      "id": "art",
+      "name": "Nail Art",
+      "hue": "36 95% 58%",
+      "fill": "#E8E0FA",
+      "line": "#8A6AE0",
+      "text": "#553AA8",
+      "archived": true
+    },
+    {
+      "id": "rem",
+      "name": "Removal & Repair",
+      "hue": "348 80% 62%",
+      "fill": "#e2d58326",
+      "line": "#e2d583",
+      "text": "#e2d583",
+      "archived": true
+    },
+    {
+      "id": "cat-ultwkd",
+      "name": "Acrylic",
+      "hue": "210 90% 56%",
+      "fill": "#ffea0026",
+      "line": "#ffea00",
+      "text": "#ffea00",
+      "parentId": "enh"
+    },
+    {
+      "id": "cat-f5lj56",
+      "name": "Gel-X",
+      "hue": "150 70% 42%",
+      "fill": "#ffea0026",
+      "line": "#ffea00",
+      "text": "#ffea00",
+      "parentId": "enh"
+    },
+    {
+      "id": "cat-j2ctda",
+      "name": "Dip Powder",
+      "hue": "25 85% 55%",
+      "fill": "#ffea0026",
+      "line": "#ffea00",
+      "text": "#ffea00",
+      "parentId": "enh"
+    }
+  ],
+  "services": [
+    {
+      "id": "m-classic",
+      "name": "Texas Tea Mani",
+      "short": "TT Mani",
+      "durationMin": 30,
+      "price": 25,
+      "categoryId": "mani",
+      "onlineExcludedRoleIds": [
+        "gelx"
+      ]
+    },
+    {
+      "id": "svc-wayqix",
+      "name": "Bay Breeze Mani",
+      "short": "BB Mani",
+      "durationMin": 45,
+      "price": 35,
+      "categoryId": "mani"
+    },
+    {
+      "id": "p-classic",
+      "name": "Texas Tea Pedi",
+      "short": "TT Pedi",
+      "durationMin": 45,
+      "price": 38,
+      "categoryId": "pedi",
+      "teamAffinity": "pedi",
+      "addons": [
+        {
+          "id": "ao-5lzk9b",
+          "name": "Gel Polish",
+          "mins": 15,
+          "price": 20
+        }
+      ]
+    },
+    {
+      "id": "p-gel",
+      "name": "Bay Breeze Pedi",
+      "short": "BB Pedi",
+      "durationMin": 60,
+      "price": 48,
+      "categoryId": "pedi",
+      "teamAffinity": "pedi",
+      "addons": [
+        {
+          "id": "ao-wpzcar",
+          "name": "Gel Polish",
+          "mins": 15,
+          "price": 20
+        }
+      ]
+    },
+    {
+      "id": "p-spa",
+      "name": "Sunrise Pedi",
+      "short": "SUN Pedi",
+      "durationMin": 75,
+      "price": 58,
+      "categoryId": "pedi",
+      "teamAffinity": "pedi",
+      "addons": [
+        {
+          "id": "ao-se1rbi",
+          "name": "Gel Polish",
+          "mins": 15,
+          "price": 0
+        }
+      ]
+    },
+    {
+      "id": "a-custom",
+      "name": "Custom Nail Art",
+      "short": "Nail Art",
+      "durationMin": 45,
+      "price": 25,
+      "categoryId": "art",
+      "teamAffinity": "art",
+      "active": false
+    },
+    {
+      "id": "a-french",
+      "name": "French Design",
+      "short": "French",
+      "durationMin": 30,
+      "price": 15,
+      "categoryId": "art",
+      "active": false
+    },
+    {
+      "id": "r-soak",
+      "name": "Soak-Off Removal",
+      "short": "Removal",
+      "durationMin": 30,
+      "price": 15,
+      "categoryId": "rem",
+      "active": false
+    },
+    {
+      "id": "r-fix",
+      "name": "Nail Repair",
+      "short": "Repair",
+      "durationMin": 15,
+      "price": 0,
+      "categoryId": "rem",
+      "active": false
+    },
+    {
+      "id": "svc-jwbldh",
+      "name": "Mochatini Mani",
+      "short": "MO Mani",
+      "durationMin": 60,
+      "price": 50,
+      "categoryId": "mani"
+    },
+    {
+      "id": "m-gel",
+      "name": "Gel Manicure",
+      "short": "Gel Mani",
+      "durationMin": 60,
+      "price": 45,
+      "categoryId": "mani",
+      "addons": [
+        {
+          "id": "ao-udjskt",
+          "name": "gel removal",
+          "mins": 15,
+          "price": 5
+        },
+        {
+          "id": "ao-tmex2q",
+          "name": "nail design",
+          "mins": 30,
+          "price": 0
+        }
+      ],
+      "onlineExcludedRoleIds": [
+        "gelx"
+      ]
+    },
+    {
+      "id": "e-acrylic",
+      "name": "Acrylic Full Set",
+      "short": "FS",
+      "durationMin": 90,
+      "price": 65,
+      "categoryId": "cat-ultwkd",
+      "teamAffinity": "gelx",
+      "addons": [
+        {
+          "id": "ao-kj3tuu",
+          "name": "Take off",
+          "mins": 30,
+          "price": 10
+        },
+        {
+          "id": "ao-fvq9vo",
+          "name": "Nail Design",
+          "mins": 30,
+          "price": 0
+        }
+      ]
+    },
+    {
+      "id": "e-fill",
+      "name": "Acrylic Refill",
+      "short": "RF",
+      "durationMin": 60,
+      "price": 45,
+      "categoryId": "cat-ultwkd",
+      "teamAffinity": "gelx",
+      "addons": [
+        {
+          "id": "ao-j0q8zl",
+          "name": "Nail Design",
+          "mins": 30,
+          "price": 0
+        }
+      ]
+    },
+    {
+      "id": "e-gelx",
+      "name": "Gel-X ",
+      "short": "GX",
+      "durationMin": 90,
+      "price": 72,
+      "categoryId": "cat-f5lj56",
+      "teamAffinity": "gelx",
+      "addons": [
+        {
+          "id": "ao-zzklh5",
+          "name": "Nail Design",
+          "mins": 30,
+          "price": 0
+        },
+        {
+          "id": "ao-yts1x6",
+          "name": "Nail Removal",
+          "mins": 30,
+          "price": 10
+        }
+      ]
+    },
+    {
+      "id": "e-dip",
+      "name": "Dip Powder",
+      "short": "Dip",
+      "durationMin": 75,
+      "price": 55,
+      "categoryId": "cat-j2ctda",
+      "active": true,
+      "addons": [
+        {
+          "id": "ao-h47inr",
+          "name": "Nail Design",
+          "mins": 15,
+          "price": 0
+        }
+      ]
+    },
+    {
+      "id": "svc-fkonxk",
+      "name": "White Russian",
+      "short": "WR Pedi",
+      "durationMin": 90,
+      "price": 90,
+      "categoryId": "pedi",
+      "addons": [
+        {
+          "id": "ao-a1n0fg",
+          "name": "Gel Polish",
+          "mins": 15,
+          "price": 20
+        }
+      ]
+    },
+    {
+      "id": "svc-hg8zu1",
+      "name": "Rose Quartz",
+      "short": "RQ Pedi",
+      "durationMin": 120,
+      "price": 110,
+      "categoryId": "pedi",
+      "addons": [
+        {
+          "id": "ao-6mdmss",
+          "name": "Gel Polish",
+          "mins": 15,
+          "price": 20
+        }
+      ]
+    }
+  ],
+  "staff": {
+    "roles": [
+      {
+        "id": "pedi",
+        "name": "Pedi",
+        "serviceIds": [
+          "m-classic",
+          "m-gel",
+          "p-classic",
+          "p-gel",
+          "r-soak",
+          "p-spa",
+          "r-fix",
+          "svc-wayqix",
+          "svc-jwbldh",
+          "svc-fkonxk",
+          "svc-hg8zu1"
+        ]
+      },
+      {
+        "id": "gelx",
+        "name": "Nail Enhancement",
+        "serviceIds": [
+          "r-soak",
+          "r-fix",
+          "a-french",
+          "e-acrylic",
+          "e-gelx",
+          "e-dip",
+          "e-fill",
+          "m-classic",
+          "svc-jwbldh",
+          "m-gel",
+          "svc-wayqix"
+        ]
+      }
+    ],
+    "techs": [
+      {
+        "id": "t1",
+        "name": "Linh H.",
+        "initials": "LH",
+        "teamId": "pedi",
+        "skills": [
+          "m-classic",
+          "m-gel",
+          "p-classic",
+          "p-gel",
+          "r-soak",
+          "p-spa",
+          "r-fix",
+          "svc-wayqix",
+          "svc-jwbldh",
+          "svc-fkonxk",
+          "svc-hg8zu1"
+        ],
+        "loginEnabled": true,
+        "pin": "1234",
+        "commissionPct": 60,
+        "active": true,
+        "firstName": "Linh",
+        "lastName": "H.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "weeklySchedule": {
+          "2": {
+            "off": true
+          },
+          "6": {
+            "off": true
+          }
+        },
+        "country": "United States",
+        "timeOff": [
+          {
+            "id": "to-aqjsq9",
+            "from": "2026-07-30",
+            "to": "2026-07-30",
+            "status": "early",
+            "timeMin": 360
+          }
+        ],
+        "nickname": "Linny",
+        "gender": "female"
+      },
+      {
+        "id": "t2",
+        "name": "Mia Q.",
+        "initials": "MQ",
+        "teamId": "gelx",
+        "skills": [
+          "r-soak",
+          "r-fix",
+          "a-french",
+          "e-acrylic",
+          "e-gelx",
+          "e-dip",
+          "e-fill",
+          "m-classic",
+          "svc-jwbldh",
+          "m-gel",
+          "svc-wayqix"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Mia",
+        "lastName": "Q.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States",
+        "gender": "female"
+      },
+      {
+        "id": "t3",
+        "name": "Amy B.",
+        "initials": "AB",
+        "teamId": "pedi",
+        "skills": [
+          "m-classic",
+          "m-gel",
+          "p-classic",
+          "p-gel",
+          "r-soak",
+          "p-spa",
+          "r-fix",
+          "svc-wayqix",
+          "svc-jwbldh",
+          "svc-fkonxk",
+          "svc-hg8zu1"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Amy",
+        "lastName": "B.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States"
+      },
+      {
+        "id": "t4",
+        "name": "Jenny Q.",
+        "initials": "JQ",
+        "teamId": "gelx",
+        "skills": [
+          "r-soak",
+          "r-fix",
+          "a-french",
+          "e-acrylic",
+          "e-gelx",
+          "e-dip",
+          "e-fill",
+          "m-classic",
+          "svc-jwbldh",
+          "m-gel",
+          "svc-wayqix"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Jenny",
+        "lastName": "Q.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States",
+        "gender": "female"
+      },
+      {
+        "id": "t5",
+        "name": "Sophia V.",
+        "initials": "SV",
+        "teamId": "pedi",
+        "skills": [
+          "m-classic",
+          "m-gel",
+          "p-classic",
+          "p-gel",
+          "r-soak",
+          "p-spa",
+          "r-fix",
+          "svc-wayqix",
+          "svc-jwbldh",
+          "svc-fkonxk",
+          "svc-hg8zu1"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Sophia",
+        "lastName": "V.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States",
+        "bannedClientIds": [
+          "c14"
+        ]
+      },
+      {
+        "id": "t6",
+        "name": "Thao D.",
+        "initials": "TD",
+        "teamId": "gelx",
+        "skills": [
+          "r-soak",
+          "r-fix",
+          "a-french",
+          "e-acrylic",
+          "e-gelx",
+          "e-dip",
+          "e-fill",
+          "m-classic",
+          "svc-jwbldh",
+          "m-gel",
+          "svc-wayqix"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Thao",
+        "lastName": "D.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States"
+      },
+      {
+        "id": "t7",
+        "name": "Hana V.",
+        "initials": "HV",
+        "teamId": "pedi",
+        "skills": [
+          "m-classic",
+          "m-gel",
+          "p-classic",
+          "p-gel",
+          "r-soak",
+          "p-spa",
+          "r-fix",
+          "svc-wayqix",
+          "svc-jwbldh",
+          "svc-fkonxk",
+          "svc-hg8zu1"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Hana",
+        "lastName": "V.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States"
+      },
+      {
+        "id": "t8",
+        "name": "Lily H.",
+        "initials": "LH",
+        "teamId": "gelx",
+        "skills": [
+          "r-soak",
+          "r-fix",
+          "a-french",
+          "e-acrylic",
+          "e-gelx",
+          "e-dip",
+          "e-fill",
+          "m-classic",
+          "svc-jwbldh",
+          "m-gel",
+          "svc-wayqix"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Lily",
+        "lastName": "H.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States"
+      },
+      {
+        "id": "t9",
+        "name": "Chloe V.",
+        "initials": "CV",
+        "teamId": "pedi",
+        "skills": [
+          "m-classic",
+          "m-gel",
+          "p-classic",
+          "p-gel",
+          "r-soak",
+          "p-spa",
+          "r-fix",
+          "svc-wayqix",
+          "svc-jwbldh",
+          "svc-fkonxk",
+          "svc-hg8zu1"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Chloe",
+        "lastName": "V.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States"
+      },
+      {
+        "id": "t10",
+        "name": "Vy Q.",
+        "initials": "VQ",
+        "teamId": "pedi",
+        "skills": [
+          "m-classic",
+          "m-gel",
+          "p-classic",
+          "p-gel",
+          "r-soak",
+          "p-spa",
+          "r-fix",
+          "svc-wayqix",
+          "svc-jwbldh",
+          "svc-fkonxk",
+          "svc-hg8zu1"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Vy",
+        "lastName": "Q.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States",
+        "gender": "female"
+      },
+      {
+        "id": "t11",
+        "name": "Kim P.",
+        "initials": "KP",
+        "teamId": "pedi",
+        "skills": [
+          "m-classic",
+          "m-gel",
+          "p-classic",
+          "p-gel",
+          "r-soak",
+          "p-spa",
+          "r-fix",
+          "svc-wayqix",
+          "svc-jwbldh",
+          "svc-fkonxk",
+          "svc-hg8zu1"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Kim",
+        "lastName": "P.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States",
+        "gender": "female"
+      },
+      {
+        "id": "t12",
+        "name": "Anna D.",
+        "initials": "AD",
+        "teamId": "pedi",
+        "skills": [
+          "m-classic",
+          "m-gel",
+          "p-classic",
+          "p-gel",
+          "r-soak",
+          "p-spa",
+          "r-fix",
+          "svc-wayqix",
+          "svc-jwbldh",
+          "svc-fkonxk",
+          "svc-hg8zu1"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Anna",
+        "lastName": "D.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States"
+      },
+      {
+        "id": "t13",
+        "name": "Bella H.",
+        "initials": "BH",
+        "teamId": "pedi",
+        "skills": [
+          "m-classic",
+          "m-gel",
+          "p-classic",
+          "p-gel",
+          "r-soak",
+          "p-spa",
+          "r-fix",
+          "svc-wayqix",
+          "svc-jwbldh",
+          "svc-fkonxk",
+          "svc-hg8zu1"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Bella",
+        "lastName": "H.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States"
+      },
+      {
+        "id": "t14",
+        "name": "Tina P.",
+        "initials": "TP",
+        "teamId": "pedi",
+        "skills": [
+          "m-classic",
+          "m-gel",
+          "p-classic",
+          "p-gel",
+          "r-soak",
+          "p-spa",
+          "r-fix",
+          "svc-wayqix",
+          "svc-jwbldh",
+          "svc-fkonxk",
+          "svc-hg8zu1"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Tina",
+        "lastName": "P.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States",
+        "gender": "female"
+      },
+      {
+        "id": "t15",
+        "name": "Nancy N.",
+        "initials": "NN",
+        "teamId": "gelx",
+        "skills": [
+          "r-soak",
+          "r-fix",
+          "a-french",
+          "e-acrylic",
+          "e-gelx",
+          "e-dip",
+          "e-fill",
+          "m-classic",
+          "svc-jwbldh",
+          "m-gel",
+          "svc-wayqix"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Nancy",
+        "lastName": "N.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States"
+      },
+      {
+        "id": "t16",
+        "name": "Huong P.",
+        "initials": "HP",
+        "teamId": "gelx",
+        "skills": [
+          "r-soak",
+          "r-fix",
+          "a-french",
+          "e-acrylic",
+          "e-gelx",
+          "e-dip",
+          "e-fill",
+          "m-classic",
+          "svc-jwbldh",
+          "m-gel",
+          "svc-wayqix"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Huong",
+        "lastName": "P.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States",
+        "gender": "male"
+      },
+      {
+        "id": "t17",
+        "name": "Ruby P.",
+        "initials": "RP",
+        "teamId": "gelx",
+        "skills": [
+          "r-soak",
+          "r-fix",
+          "a-french",
+          "e-acrylic",
+          "e-gelx",
+          "e-dip",
+          "e-fill",
+          "m-classic",
+          "svc-jwbldh",
+          "m-gel",
+          "svc-wayqix"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Ruby",
+        "lastName": "P.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States"
+      },
+      {
+        "id": "t18",
+        "name": "Sara D.",
+        "initials": "SD",
+        "teamId": "gelx",
+        "skills": [
+          "r-soak",
+          "r-fix",
+          "a-french",
+          "e-acrylic",
+          "e-gelx",
+          "e-dip",
+          "e-fill",
+          "m-classic",
+          "svc-jwbldh",
+          "m-gel",
+          "svc-wayqix"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Sara",
+        "lastName": "D.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States"
+      },
+      {
+        "id": "t19",
+        "name": "Emma V.",
+        "initials": "EV",
+        "teamId": "gelx",
+        "skills": [
+          "r-soak",
+          "r-fix",
+          "a-french",
+          "e-acrylic",
+          "e-gelx",
+          "e-dip",
+          "e-fill",
+          "m-classic",
+          "svc-jwbldh",
+          "m-gel",
+          "svc-wayqix"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Emma",
+        "lastName": "V.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States",
+        "gender": "female"
+      },
+      {
+        "id": "t20",
+        "name": "Lan B.",
+        "initials": "LB",
+        "teamId": "gelx",
+        "skills": [
+          "r-soak",
+          "r-fix",
+          "a-french",
+          "e-acrylic",
+          "e-gelx",
+          "e-dip",
+          "e-fill",
+          "m-classic",
+          "svc-jwbldh",
+          "m-gel",
+          "svc-wayqix"
+        ],
+        "commissionPct": 60,
+        "active": true,
+        "loginEnabled": false,
+        "firstName": "Lan",
+        "lastName": "B.",
+        "bookableOnline": true,
+        "showPhotoOnCalendar": false,
+        "country": "United States"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "id": "c1",
+      "name": "Linh P.",
+      "phone": "(555) 100-1000",
+      "visits": 22,
+      "guests": [
+        {
+          "id": "g1785304762348-0",
+          "name": "khanh"
+        },
+        {
+          "id": "g1785336957579-1",
+          "name": "jennifer"
+        },
+        {
+          "id": "g1785468242942-2",
+          "name": "tom"
+        },
+        {
+          "id": "g1787035447540-3",
+          "name": "john"
+        }
+      ]
+    },
+    {
+      "id": "c2",
+      "name": "Mia B.",
+      "phone": "(555) 101-1037",
+      "visits": 25,
+      "usualTechId": "t17",
+      "preferredTechs": [
+        {
+          "id": "pref-zb8rqw",
+          "techId": "t9",
+          "categoryIds": [
+            "pedi"
+          ]
+        },
+        {
+          "id": "pref-j2xppj",
+          "techId": "t20",
+          "categoryIds": [
+            "cat-f5lj56"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c3",
+      "name": "Amy B.",
+      "phone": "(555) 102-1074",
+      "visits": 40,
+      "guests": [
+        {
+          "id": "g1785357599965-0",
+          "name": "steph"
+        }
+      ]
+    },
+    {
+      "id": "c4",
+      "name": "Jenny B.",
+      "phone": "(555) 103-1111",
+      "visits": 14,
+      "usualTechId": "t1",
+      "guests": [
+        {
+          "id": "g1786057894604-0",
+          "name": "michelle"
+        }
+      ]
+    },
+    {
+      "id": "c5",
+      "name": "Sophia V.",
+      "phone": "(555) 104-1148",
+      "visits": 24,
+      "guests": [
+        {
+          "id": "g1785331024386-0",
+          "name": "michael"
+        },
+        {
+          "id": "g1787073152898-1",
+          "name": "carol"
+        }
+      ]
+    },
+    {
+      "id": "c6",
+      "name": "Thao L.",
+      "phone": "(555) 105-1185",
+      "visits": 18,
+      "usualTechId": "t7",
+      "guests": [
+        {
+          "id": "g1786055334430-0",
+          "name": "jennifer"
+        },
+        {
+          "id": "g1786055833878-1",
+          "name": "michelle"
+        },
+        {
+          "id": "g1787192980450-2",
+          "name": "joe"
+        }
+      ]
+    },
+    {
+      "id": "c7",
+      "name": "Hana P.",
+      "phone": "(555) 106-1222",
+      "visits": 32,
+      "usualTechId": "t10"
+    },
+    {
+      "id": "c8",
+      "name": "Lily P.",
+      "phone": "(555) 107-1259",
+      "visits": 31,
+      "usualTechId": "t17"
+    },
+    {
+      "id": "c9",
+      "name": "Chloe L.",
+      "phone": "(555) 108-1296",
+      "visits": 36
+    },
+    {
+      "id": "c10",
+      "name": "Vy Q.",
+      "phone": "(555) 109-1333",
+      "visits": 3,
+      "usualTechId": "t5"
+    },
+    {
+      "id": "c11",
+      "name": "Kim L.",
+      "phone": "(555) 110-1370",
+      "visits": 23
+    },
+    {
+      "id": "c12",
+      "name": "Anna B.",
+      "phone": "(555) 111-1407",
+      "visits": 7,
+      "usualTechId": "t4"
+    },
+    {
+      "id": "c13",
+      "name": "Bella B.",
+      "phone": "(555) 112-1444",
+      "visits": 31,
+      "usualTechId": "t7"
+    },
+    {
+      "id": "c14",
+      "name": "Tina V.",
+      "phone": "(555) 113-1481",
+      "visits": 37
+    },
+    {
+      "id": "c15",
+      "name": "Nancy V.",
+      "phone": "(555) 114-1518",
+      "visits": 13,
+      "usualTechId": "t4"
+    },
+    {
+      "id": "c16",
+      "name": "Huong B.",
+      "phone": "(555) 115-1555",
+      "visits": 15
+    },
+    {
+      "id": "c17",
+      "name": "Ruby Q.",
+      "phone": "(555) 116-1592",
+      "visits": 30,
+      "usualTechId": "t9"
+    },
+    {
+      "id": "c18",
+      "name": "Sara L.",
+      "phone": "(555) 117-1629",
+      "visits": 20,
+      "usualTechId": "t10"
+    },
+    {
+      "id": "c19",
+      "name": "Emma T.",
+      "phone": "(555) 118-1666",
+      "visits": 22,
+      "usualTechId": "t13"
+    },
+    {
+      "id": "c20",
+      "name": "Lan V.",
+      "phone": "(555) 119-1703",
+      "visits": 22,
+      "usualTechId": "t14"
+    },
+    {
+      "id": "c21",
+      "name": "Cindy T.",
+      "phone": "(555) 120-1740",
+      "visits": 1
+    },
+    {
+      "id": "c22",
+      "name": "Grace T.",
+      "phone": "(555) 121-1777",
+      "visits": 28
+    },
+    {
+      "id": "c23",
+      "name": "Hannah T.",
+      "phone": "(555) 122-1814",
+      "visits": 23
+    },
+    {
+      "id": "c24",
+      "name": "Julie B.",
+      "phone": "(555) 123-1851",
+      "visits": 27
+    },
+    {
+      "id": "c25",
+      "name": "Katie N.",
+      "phone": "(555) 124-1888",
+      "visits": 11
+    },
+    {
+      "id": "c26",
+      "name": "Mai Q.",
+      "phone": "(555) 125-1925",
+      "visits": 7
+    },
+    {
+      "id": "c27",
+      "name": "Nina H.",
+      "phone": "(555) 126-1962",
+      "visits": 21,
+      "usualTechId": "t7"
+    },
+    {
+      "id": "c28",
+      "name": "Olivia T.",
+      "phone": "(555) 127-1999",
+      "visits": 11,
+      "usualTechId": "t8"
+    },
+    {
+      "id": "c29",
+      "name": "Phuong P.",
+      "phone": "(555) 128-2036",
+      "visits": 26,
+      "usualTechId": "t4"
+    },
+    {
+      "id": "c30",
+      "name": "Quinn D.",
+      "phone": "(555) 129-2073",
+      "visits": 6
+    },
+    {
+      "id": "c31",
+      "name": "Rosa L.",
+      "phone": "(555) 130-2110",
+      "visits": 34,
+      "usualTechId": "t2"
+    },
+    {
+      "id": "c32",
+      "name": "Selena Q.",
+      "phone": "(555) 131-2147",
+      "visits": 33,
+      "usualTechId": "t8"
+    },
+    {
+      "id": "c33",
+      "name": "Trang D.",
+      "phone": "(555) 132-2184",
+      "visits": 13
+    },
+    {
+      "id": "c34",
+      "name": "Vivian D.",
+      "phone": "(555) 133-2221",
+      "visits": 30
+    },
+    {
+      "id": "c35",
+      "name": "Wendy Q.",
+      "phone": "(555) 134-2258",
+      "visits": 7
+    },
+    {
+      "id": "c36",
+      "name": "Xuan V.",
+      "phone": "(555) 135-2295",
+      "visits": 35,
+      "usualTechId": "t1",
+      "preferredTechs": [
+        {
+          "id": "pref-bouwmc",
+          "techId": "t15",
+          "serviceIds": [
+            "e-gelx"
+          ]
+        },
+        {
+          "id": "pref-tsnihj",
+          "techId": "t12",
+          "serviceIds": [
+            "p-gel"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "c37",
+      "name": "Yen V.",
+      "phone": "(555) 136-2332",
+      "visits": 11
+    },
+    {
+      "id": "c38",
+      "name": "Zoe Q.",
+      "phone": "(555) 137-2369",
+      "visits": 38,
+      "usualTechId": "t14"
+    },
+    {
+      "id": "c39",
+      "name": "Amber D.",
+      "phone": "(555) 138-2406",
+      "visits": 30,
+      "usualTechId": "t1"
+    },
+    {
+      "id": "c40",
+      "name": "Bao V.",
+      "phone": "(555) 139-2443",
+      "visits": 33
+    },
+    {
+      "id": "c41",
+      "name": "Cam B.",
+      "phone": "(555) 140-2480",
+      "visits": 28
+    },
+    {
+      "id": "c42",
+      "name": "Diep P.",
+      "phone": "(555) 141-2517",
+      "visits": 2,
+      "usualTechId": "t10"
+    },
+    {
+      "id": "c43",
+      "name": "Elle L.",
+      "phone": "(555) 142-2554",
+      "visits": 34,
+      "usualTechId": "t3"
+    },
+    {
+      "id": "c44",
+      "name": "Fiona P.",
+      "phone": "(555) 143-2591",
+      "visits": 16,
+      "usualTechId": "t4"
+    },
+    {
+      "id": "c45",
+      "name": "Gia N.",
+      "phone": "(555) 144-2628",
+      "visits": 29
+    },
+    {
+      "id": "c46",
+      "name": "Haley N.",
+      "phone": "(555) 145-2665",
+      "visits": 35,
+      "usualTechId": "t14"
+    },
+    {
+      "id": "c1785302737138",
+      "name": "larry",
+      "phone": "(555) 000-0000",
+      "visits": 0
+    },
+    {
+      "id": "c1786059590794",
+      "name": "michelle",
+      "phone": "2819506830",
+      "visits": 0
+    },
+    {
+      "id": "client-wu2qnb",
+      "name": "Emma B.",
+      "phone": "",
+      "visits": 1,
+      "preferredTechs": [
+        {
+          "id": "pref-t3q5l4",
+          "techId": "t10",
+          "categoryIds": [
+            "pedi"
+          ]
+        },
+        {
+          "id": "pref-famdun",
+          "techId": "t6",
+          "categoryIds": [
+            "cat-ultwkd"
+          ]
+        }
+      ]
+    }
+  ],
+  "appointments": {
+    "2026-08-17": [
+      {
+        "id": "a1",
+        "techId": "t5",
+        "clientName": "Anna H.",
+        "serviceId": "p-gel",
+        "startMin": 135,
+        "durationMin": 60,
+        "status": "checked_out",
+        "checkedInMin": 132,
+        "bookingSource": "front_desk",
+        "log": [
+          {
+            "at": 1787024625721,
+            "text": "Checked out, $56.64 (Card)"
+          }
+        ],
+        "startedMin": 135,
+        "completedMin": 192
+      },
+      {
+        "id": "a2",
+        "techId": "t9",
+        "clientName": "Hannah H.",
+        "serviceId": "m-gel",
+        "startMin": 135,
+        "durationMin": 60,
+        "status": "checked_out",
+        "checkedInMin": 133,
+        "startedMin": 137,
+        "completedMin": 191,
+        "bookingSource": "front_desk",
+        "log": [
+          {
+            "at": 1787024638241,
+            "text": "Checked out, $70.80 (Cash)"
+          },
+          {
+            "at": 1787028795160,
+            "text": "Ticket corrected, $70.80"
+          }
+        ]
+      },
+      {
+        "id": "a3",
+        "techId": "t10",
+        "clientName": "Rosa D.",
+        "serviceId": "m-gel",
+        "startMin": 60,
+        "durationMin": 60,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "log": [
+          {
+            "at": 1787024615697,
+            "text": "Checked out, $53.10 (Card)"
+          },
+          {
+            "at": 1787028780643,
+            "text": "Ticket corrected, $53.10"
+          },
+          {
+            "at": 1787031194906,
+            "text": "Ticket corrected, $51.75"
+          },
+          {
+            "at": 1787031217714,
+            "text": "Ticket corrected, $53.10"
+          }
+        ],
+        "checkedInMin": 55,
+        "startedMin": 60,
+        "completedMin": 117
+      },
+      {
+        "id": "a4",
+        "techId": "t2",
+        "clientName": "Gia P.",
+        "serviceId": "m-gel",
+        "startMin": 450,
+        "durationMin": 60,
+        "status": "checked_out",
+        "checkedInMin": 444,
+        "startedMin": 450,
+        "notes": "Prefers square shape, medium length",
+        "bookingSource": "walk_in",
+        "log": [
+          {
+            "at": 1787024699241,
+            "text": "Checked out, $53.10 (Card)"
+          },
+          {
+            "at": 1787028789389,
+            "text": "Ticket corrected, $53.10"
+          }
+        ],
+        "completedMin": 507
+      },
+      {
+        "id": "a5",
+        "techId": "t4",
+        "clientName": "Chloe V.",
+        "serviceId": "m-classic",
+        "startMin": 420,
+        "durationMin": 45,
+        "status": "checked_out",
+        "checkedInMin": 416,
+        "startedMin": 420,
+        "bookingSource": "front_desk",
+        "log": [
+          {
+            "at": 1787024691091,
+            "text": "Checked out, $28.75 (Cash)"
+          }
+        ],
+        "completedMin": 462
+      },
+      {
+        "id": "a6",
+        "techId": "t6",
+        "clientName": "Zoe P.",
+        "serviceId": "m-classic",
+        "startMin": 225,
+        "durationMin": 45,
+        "status": "checked_out",
+        "bookingSource": "online",
+        "log": [
+          {
+            "at": 1787021316693,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787021316693,
+            "text": "Set back to booked"
+          },
+          {
+            "at": 1787024679299,
+            "text": "Checked out, $28.75 (Card)"
+          }
+        ],
+        "checkedInMin": 220,
+        "startedMin": 225,
+        "completedMin": 267
+      },
+      {
+        "id": "a7",
+        "techId": "t3",
+        "clientName": "Linh P.",
+        "serviceId": "r-fix",
+        "startMin": 555,
+        "durationMin": 15,
+        "status": "in_service",
+        "checkedInMin": 547,
+        "startedMin": 556,
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a8",
+        "techId": "t20",
+        "clientName": "Hannah H.",
+        "serviceId": "r-soak",
+        "startMin": 135,
+        "durationMin": 30,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "log": [
+          {
+            "at": 1787024638241,
+            "text": "Checked out, $70.80 (Cash)"
+          },
+          {
+            "at": 1787028795160,
+            "text": "Ticket corrected, $70.80"
+          }
+        ],
+        "checkedInMin": 130,
+        "startedMin": 135,
+        "completedMin": 162
+      },
+      {
+        "id": "a1787025322320-0",
+        "techId": "t1",
+        "clientName": "Amy B.",
+        "serviceId": "m-classic",
+        "startMin": 345,
+        "durationMin": 30,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "techRequested": true,
+        "log": [
+          {
+            "at": 1787025322321,
+            "text": "Booked at 1:45 PM with Linh H."
+          },
+          {
+            "at": 1787028621472,
+            "text": "Checked out, $29.50 (Cash)"
+          }
+        ],
+        "checkedInMin": 340,
+        "startedMin": 345,
+        "completedMin": 372
+      }
+    ],
+    "2026-08-18": [
+      {
+        "id": "a1",
+        "techId": "t8",
+        "clientName": "Tina H.",
+        "serviceId": "p-gel",
+        "startMin": 570,
+        "durationMin": 60,
+        "status": "checked_out",
+        "checkedInMin": 564,
+        "notes": "Prefers square shape, medium length",
+        "bookingSource": "front_desk",
+        "startedMin": 570,
+        "completedMin": 627
+      },
+      {
+        "id": "a2",
+        "techId": "t15",
+        "clientName": "Anna H.",
+        "serviceId": "p-classic",
+        "startMin": 60,
+        "durationMin": 45,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "checkedInMin": 55,
+        "startedMin": 60,
+        "completedMin": 102
+      },
+      {
+        "id": "a3",
+        "techId": "t10",
+        "clientName": "Emma B.",
+        "serviceId": "p-gel",
+        "startMin": 75,
+        "durationMin": 60,
+        "status": "checked_out",
+        "checkedInMin": 71,
+        "bookingSource": "front_desk",
+        "customFields": {
+          "f-color": "78"
+        },
+        "startedMin": 75,
+        "completedMin": 132,
+        "log": [
+          {
+            "at": 1787102806643,
+            "text": "Ticket corrected, $113.00"
+          },
+          {
+            "at": 1787102832209,
+            "text": "Ticket corrected, $113.00"
+          }
+        ]
+      },
+      {
+        "id": "a4",
+        "techId": "t4",
+        "clientName": "Nancy P.",
+        "serviceId": "m-gel",
+        "startMin": 555,
+        "durationMin": 60,
+        "status": "checked_out",
+        "checkedInMin": 552,
+        "bookingSource": "walk_in",
+        "startedMin": 555,
+        "completedMin": 612
+      },
+      {
+        "id": "a5",
+        "techId": "t14",
+        "clientName": "Trang Q.",
+        "serviceId": "r-soak",
+        "startMin": 570,
+        "durationMin": 30,
+        "status": "checked_out",
+        "notes": "Sensitive cuticles, be gentle",
+        "bookingSource": "front_desk",
+        "checkedInMin": 565,
+        "startedMin": 570,
+        "completedMin": 597
+      },
+      {
+        "id": "a6",
+        "techId": "t9",
+        "clientName": "Trang Q.",
+        "serviceId": "m-classic",
+        "startMin": 180,
+        "durationMin": 45,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "log": [
+          {
+            "at": 1787028841980,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787028847564,
+            "text": "Edited appointment details"
+          }
+        ],
+        "checkedInMin": 175,
+        "startedMin": 180,
+        "completedMin": 222
+      },
+      {
+        "id": "a7",
+        "techId": "t13",
+        "clientName": "Chloe V.",
+        "serviceId": "p-gel",
+        "startMin": 525,
+        "durationMin": 60,
+        "status": "checked_out",
+        "notes": "Running 10 min late, confirmed by text",
+        "bookingSource": "online",
+        "log": [
+          {
+            "at": 1787033777653,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787033777653,
+            "text": "Set back to booked"
+          },
+          {
+            "at": 1787035779948,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787035779948,
+            "text": "Confirmed"
+          }
+        ],
+        "checkedInMin": 520,
+        "startedMin": 525,
+        "completedMin": 582
+      },
+      {
+        "id": "a8",
+        "techId": "t18",
+        "clientName": "Mai P.",
+        "serviceId": "p-gel",
+        "startMin": 105,
+        "durationMin": 60,
+        "status": "checked_out",
+        "checkedInMin": 97,
+        "notes": "Regular: same nude dip as usual",
+        "bookingSource": "front_desk",
+        "startedMin": 105,
+        "completedMin": 162
+      },
+      {
+        "id": "a9",
+        "techId": "t20",
+        "clientName": "Sophia B.",
+        "serviceId": "p-classic",
+        "startMin": 195,
+        "durationMin": 45,
+        "status": "checked_out",
+        "bookingSource": "walk_in",
+        "log": [
+          {
+            "at": 1787032493450,
+            "text": "Checked out, $44.84 (Cash)"
+          }
+        ],
+        "checkedInMin": 190,
+        "startedMin": 195,
+        "completedMin": 237
+      },
+      {
+        "id": "a10",
+        "techId": "t12",
+        "clientName": "Yen L.",
+        "serviceId": "m-gel",
+        "startMin": 90,
+        "durationMin": 60,
+        "status": "checked_out",
+        "checkedInMin": 175,
+        "bookingSource": "front_desk",
+        "log": [
+          {
+            "at": 1787028835024,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787032508941,
+            "text": "Checked out, $53.10 (Card)"
+          }
+        ],
+        "startedMin": 90,
+        "completedMin": 147
+      },
+      {
+        "id": "a1787033711932-0",
+        "techId": "t2",
+        "clientName": "Vivian D.",
+        "serviceId": "r-soak",
+        "startMin": 300,
+        "durationMin": 30,
+        "status": "checked_out",
+        "notes": "Online request, awaiting approval",
+        "bookingSource": "online",
+        "log": [
+          {
+            "at": 1787033711932,
+            "text": "Placed at 1:00 PM with Mia Q."
+          }
+        ],
+        "checkedInMin": 295,
+        "startedMin": 300,
+        "completedMin": 327
+      },
+      {
+        "id": "a1787033723790-0",
+        "techId": "t14",
+        "clientName": "Bao V.",
+        "serviceId": "p-classic",
+        "startMin": 270,
+        "durationMin": 45,
+        "status": "checked_out",
+        "notes": "Online request, awaiting approval",
+        "bookingSource": "online",
+        "log": [
+          {
+            "at": 1787033723790,
+            "text": "Placed at 12:30 PM with Tina P."
+          }
+        ],
+        "checkedInMin": 265,
+        "startedMin": 270,
+        "completedMin": 312
+      },
+      {
+        "id": "a1787035447538-0",
+        "techId": "t3",
+        "clientName": "Linh P.",
+        "serviceId": "p-classic",
+        "startMin": 150,
+        "durationMin": 45,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787035447538",
+        "requestedTechChoice": "first",
+        "log": [
+          {
+            "at": 1787035447538,
+            "text": "Booked at 10:30 AM with Amy B."
+          },
+          {
+            "at": 1787035462774,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787035462775,
+            "text": "Confirmed"
+          },
+          {
+            "at": 1787035654501,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787035654501,
+            "text": "Checked in at 1:30 PM"
+          }
+        ],
+        "checkedInMin": 330,
+        "startedMin": 150,
+        "completedMin": 192
+      },
+      {
+        "id": "a1787035447539-1",
+        "techId": "t6",
+        "clientName": "Linh P.",
+        "serviceId": "e-gelx",
+        "startMin": 150,
+        "durationMin": 90,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787035447538",
+        "requestedTechChoice": "first",
+        "log": [
+          {
+            "at": 1787035447539,
+            "text": "Booked at 10:30 AM with Thao D."
+          },
+          {
+            "at": 1787035462774,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787035462775,
+            "text": "Confirmed"
+          },
+          {
+            "at": 1787035654501,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787035654501,
+            "text": "Checked in at 1:30 PM"
+          }
+        ],
+        "checkedInMin": 330,
+        "startedMin": 150,
+        "completedMin": 237
+      },
+      {
+        "id": "a1787035447539-2",
+        "techId": "t5",
+        "clientName": "john",
+        "serviceId": "p-gel",
+        "startMin": 150,
+        "durationMin": 60,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787035447538",
+        "guestOf": "c1",
+        "requestedTechChoice": "first",
+        "log": [
+          {
+            "at": 1787035447539,
+            "text": "Booked at 10:30 AM with Sophia V."
+          },
+          {
+            "at": 1787035471370,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787035471370,
+            "text": "Confirmed"
+          },
+          {
+            "at": 1787035662441,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787035662441,
+            "text": "Checked in at 1:30 PM"
+          }
+        ],
+        "checkedInMin": 330,
+        "startedMin": 150,
+        "completedMin": 207
+      },
+      {
+        "id": "a1787035447539-3",
+        "techId": "t7",
+        "clientName": "john",
+        "serviceId": "m-classic",
+        "startMin": 150,
+        "durationMin": 30,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787035447538",
+        "guestOf": "c1",
+        "requestedTechChoice": "first",
+        "log": [
+          {
+            "at": 1787035447539,
+            "text": "Booked at 10:30 AM with Hana V."
+          },
+          {
+            "at": 1787035471370,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787035471370,
+            "text": "Confirmed"
+          },
+          {
+            "at": 1787035662441,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787035662441,
+            "text": "Checked in at 1:30 PM"
+          }
+        ],
+        "checkedInMin": 330,
+        "startedMin": 150,
+        "completedMin": 177
+      },
+      {
+        "id": "a1787073152896-0",
+        "techId": "t11",
+        "clientName": "Sophia V.",
+        "serviceId": "p-gel",
+        "startMin": 420,
+        "durationMin": 60,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787073152896",
+        "requestedTechChoice": "first",
+        "log": [
+          {
+            "at": 1787073152897,
+            "text": "Booked at 3:00 PM with Kim P."
+          }
+        ],
+        "checkedInMin": 415,
+        "startedMin": 420,
+        "completedMin": 477
+      },
+      {
+        "id": "a1787073152897-1",
+        "techId": "t16",
+        "clientName": "Sophia V.",
+        "serviceId": "e-acrylic",
+        "startMin": 420,
+        "durationMin": 90,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787073152896",
+        "requestedTechChoice": "first",
+        "log": [
+          {
+            "at": 1787073152897,
+            "text": "Booked at 4:00 PM with Huong P."
+          },
+          {
+            "at": 1787073170422,
+            "text": "Moved to Huong P. at 2:45 PM"
+          },
+          {
+            "at": 1787073171979,
+            "text": "Moved to Huong P. at 3:00 PM"
+          }
+        ],
+        "checkedInMin": 415,
+        "startedMin": 420,
+        "completedMin": 507
+      },
+      {
+        "id": "a1787073152897-2",
+        "techId": "t3",
+        "clientName": "carol",
+        "serviceId": "p-classic",
+        "startMin": 420,
+        "durationMin": 45,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787073152896",
+        "guestOf": "c5",
+        "requestedTechChoice": "first",
+        "log": [
+          {
+            "at": 1787073152897,
+            "text": "Booked at 3:00 PM with Amy B."
+          }
+        ],
+        "checkedInMin": 415,
+        "startedMin": 420,
+        "completedMin": 462
+      },
+      {
+        "id": "a1787074267574-0",
+        "techId": "t5",
+        "clientName": "Hana P.",
+        "serviceId": "p-gel",
+        "startMin": 540,
+        "durationMin": 60,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787074267573",
+        "techRequested": true,
+        "log": [
+          {
+            "at": 1787074267574,
+            "text": "Booked at 5:00 PM with Sophia V."
+          }
+        ],
+        "customFields": {
+          "f-color": "485"
+        },
+        "checkedInMin": 535,
+        "startedMin": 540,
+        "completedMin": 597
+      },
+      {
+        "id": "a1787074267574-1",
+        "techId": "t7",
+        "clientName": "Fiona P.",
+        "serviceId": "p-spa",
+        "startMin": 540,
+        "durationMin": 75,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787074267573",
+        "requestedTechChoice": "first",
+        "log": [
+          {
+            "at": 1787074267574,
+            "text": "Booked at 5:00 PM with Hana V."
+          }
+        ],
+        "customFields": {
+          "f-color": "857"
+        },
+        "checkedInMin": 535,
+        "startedMin": 540,
+        "completedMin": 612
+      },
+      {
+        "id": "a1787102187423-rx",
+        "techId": "t6",
+        "clientName": "Emma B.",
+        "serviceId": "e-acrylic",
+        "startMin": 135,
+        "durationMin": 90,
+        "status": "checked_out",
+        "completedMin": 330,
+        "bookingSource": "front_desk",
+        "checkedInMin": 130,
+        "startedMin": 135,
+        "customFields": {
+          "f-color": "87"
+        },
+        "log": [
+          {
+            "at": 1787102806643,
+            "text": "Ticket corrected, $113.00"
+          },
+          {
+            "at": 1787102832209,
+            "text": "Ticket corrected, $113.00"
+          }
+        ]
+      }
+    ],
+    "2026-08-16": [
+      {
+        "id": "a1",
+        "techId": "t19",
+        "clientName": "Cam N.",
+        "serviceId": "p-gel",
+        "startMin": 60,
+        "durationMin": 60,
+        "status": "confirmed",
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a2",
+        "techId": "t11",
+        "clientName": "Sophia B.",
+        "serviceId": "r-fix",
+        "startMin": 315,
+        "durationMin": 15,
+        "status": "confirmed",
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a3",
+        "techId": "t12",
+        "clientName": "Tina H.",
+        "serviceId": "r-soak",
+        "startMin": 285,
+        "durationMin": 30,
+        "status": "requested",
+        "notes": "Bring inspo pic, tortoise shell design",
+        "bookingSource": "online"
+      },
+      {
+        "id": "a4",
+        "techId": "t16",
+        "clientName": "Nancy P.",
+        "serviceId": "p-classic",
+        "startMin": 525,
+        "durationMin": 45,
+        "status": "completed",
+        "checkedInMin": 519,
+        "startedMin": 530,
+        "completedMin": 569,
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a5",
+        "techId": "t6",
+        "clientName": "Lan Q.",
+        "serviceId": "p-classic",
+        "startMin": 150,
+        "durationMin": 45,
+        "status": "in_service",
+        "checkedInMin": 143,
+        "startedMin": 151,
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a6",
+        "techId": "t1",
+        "clientName": "Nina Q.",
+        "serviceId": "a-french",
+        "startMin": 240,
+        "durationMin": 30,
+        "status": "confirmed",
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a7",
+        "techId": "t4",
+        "clientName": "Wendy L.",
+        "serviceId": "m-classic",
+        "startMin": 390,
+        "durationMin": 45,
+        "status": "checked_out",
+        "checkedInMin": 383,
+        "startedMin": 390,
+        "completedMin": 433,
+        "bookingSource": "front_desk",
+        "log": [
+          {
+            "at": 1787028062413,
+            "text": "Checked out, $29.50 (Cash)"
+          },
+          {
+            "at": 1787033783936,
+            "text": "Ticket corrected, $29.50"
+          }
+        ]
+      },
+      {
+        "id": "a8",
+        "techId": "t20",
+        "clientName": "Olivia D.",
+        "serviceId": "p-gel",
+        "startMin": 495,
+        "durationMin": 60,
+        "status": "confirmed",
+        "notes": "Prefers square shape, medium length",
+        "bookingSource": "front_desk"
+      }
+    ],
+    "2026-08-19": [
+      {
+        "id": "a1",
+        "techId": "t7",
+        "clientName": "Grace D.",
+        "serviceId": "m-gel",
+        "startMin": 570,
+        "durationMin": 60,
+        "status": "checked_out",
+        "checkedInMin": 567,
+        "startedMin": 574,
+        "completedMin": 627,
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a2",
+        "techId": "t20",
+        "clientName": "Cam N.",
+        "serviceId": "r-soak",
+        "startMin": 120,
+        "durationMin": 60,
+        "status": "checked_out",
+        "checkedInMin": 116,
+        "startedMin": 121,
+        "completedMin": 147,
+        "bookingSource": "front_desk",
+        "log": [
+          {
+            "at": 1787108327295,
+            "text": "Moved to Lan B. at 10:00 AM"
+          }
+        ]
+      },
+      {
+        "id": "a3",
+        "techId": "t14",
+        "clientName": "Ruby D.",
+        "serviceId": "p-gel",
+        "startMin": 540,
+        "durationMin": 60,
+        "status": "checked_out",
+        "checkedInMin": 532,
+        "startedMin": 542,
+        "completedMin": 599,
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a4",
+        "techId": "t2",
+        "clientName": "Sophia B.",
+        "serviceId": "p-classic",
+        "startMin": 165,
+        "durationMin": 45,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "checkedInMin": 160,
+        "startedMin": 165,
+        "completedMin": 207
+      },
+      {
+        "id": "a5",
+        "techId": "t13",
+        "clientName": "Huong Q.",
+        "serviceId": "p-spa",
+        "startMin": 360,
+        "durationMin": 75,
+        "status": "checked_out",
+        "bookingSource": "online",
+        "log": [
+          {
+            "at": 1787108539636,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787108539636,
+            "text": "Set back to booked"
+          }
+        ],
+        "checkedInMin": 355,
+        "startedMin": 360,
+        "completedMin": 432
+      },
+      {
+        "id": "a6",
+        "techId": "t18",
+        "clientName": "Kim T.",
+        "serviceId": "r-soak",
+        "startMin": 285,
+        "durationMin": 30,
+        "status": "checked_out",
+        "checkedInMin": 278,
+        "bookingSource": "front_desk",
+        "startedMin": 285,
+        "completedMin": 312
+      },
+      {
+        "id": "a7",
+        "techId": "t4",
+        "clientName": "Anna H.",
+        "serviceId": "e-acrylic",
+        "startMin": 285,
+        "durationMin": 105,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "log": [
+          {
+            "at": 1787108033418,
+            "text": "Moved to Huong P. at 1:00 PM"
+          },
+          {
+            "at": 1787108315529,
+            "text": "Moved to Huong P. at 1:00 PM"
+          },
+          {
+            "at": 1787108317312,
+            "text": "Moved to Huong P. at 11:15 AM"
+          },
+          {
+            "at": 1787108318870,
+            "text": "Moved to Jenny Q. at 12:45 PM"
+          },
+          {
+            "at": 1787108322700,
+            "text": "Moved to Jenny Q. at 12:45 PM"
+          },
+          {
+            "at": 1787189580814,
+            "text": "Moved to Jenny Q. at 12:45 PM"
+          }
+        ],
+        "checkedInMin": 280,
+        "startedMin": 285,
+        "completedMin": 387
+      },
+      {
+        "id": "a8",
+        "techId": "t1",
+        "clientName": "Xuan Q.",
+        "serviceId": "m-classic",
+        "startMin": 90,
+        "durationMin": 45,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "log": [
+          {
+            "at": 1787110642009,
+            "text": "Edited appointment details"
+          }
+        ],
+        "checkedInMin": 85,
+        "startedMin": 90,
+        "completedMin": 132
+      },
+      {
+        "id": "a9",
+        "techId": "t8",
+        "clientName": "Quinn D.",
+        "serviceId": "p-gel",
+        "startMin": 90,
+        "durationMin": 60,
+        "status": "checked_out",
+        "notes": "Running 10 min late, confirmed by text",
+        "bookingSource": "walk_in",
+        "checkedInMin": 85,
+        "startedMin": 90,
+        "completedMin": 147
+      },
+      {
+        "id": "a10",
+        "techId": "t15",
+        "clientName": "Rosa D.",
+        "serviceId": "r-soak",
+        "startMin": 60,
+        "durationMin": 30,
+        "status": "checked_out",
+        "checkedInMin": 56,
+        "startedMin": 64,
+        "completedMin": 88,
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a1787192980450-0",
+        "techId": "t6",
+        "clientName": "Thao L.",
+        "serviceId": "e-acrylic",
+        "startMin": 180,
+        "durationMin": 120,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "notes": "Add-ons: Nail Design",
+        "parallelGroup": "pg1787192980449",
+        "addons": [
+          {
+            "id": "ao-fvq9vo",
+            "name": "Nail Design",
+            "mins": 30,
+            "price": 0
+          }
+        ],
+        "requestedTechChoice": "first",
+        "log": [
+          {
+            "at": 1787192980450,
+            "text": "Booked at 11:00 AM with Thao D."
+          }
+        ],
+        "customFields": {
+          "f-color": "kj"
+        }
+      },
+      {
+        "id": "a1787192980450-1",
+        "techId": "t3",
+        "clientName": "Thao L.",
+        "serviceId": "p-classic",
+        "startMin": 180,
+        "durationMin": 45,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787192980449",
+        "requestedTechChoice": "first",
+        "log": [
+          {
+            "at": 1787192980450,
+            "text": "Booked at 11:00 AM with Amy B."
+          }
+        ]
+      },
+      {
+        "id": "a1787192980450-2",
+        "techId": "t12",
+        "clientName": "Mia B.",
+        "serviceId": "svc-fkonxk",
+        "startMin": 180,
+        "durationMin": 90,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787192980449",
+        "issue": true,
+        "log": [
+          {
+            "at": 1787192980450,
+            "text": "Booked at 11:00 AM with Sophia V."
+          },
+          {
+            "at": 1787192991838,
+            "text": "Edited, auto-assigned to Anna D."
+          }
+        ],
+        "customFields": {
+          "f-color": "86"
+        }
+      },
+      {
+        "id": "a1787192980450-3",
+        "techId": "t16",
+        "clientName": "Mia B.",
+        "serviceId": "e-acrylic",
+        "startMin": 180,
+        "durationMin": 90,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787192980449",
+        "requestedTechChoice": "first",
+        "log": [
+          {
+            "at": 1787192980450,
+            "text": "Booked at 11:00 AM with Huong P."
+          },
+          {
+            "at": 1787192991838,
+            "text": "Edited appointment details"
+          }
+        ],
+        "customFields": {
+          "f-color": "754"
+        }
+      },
+      {
+        "id": "a1787192980450-4",
+        "techId": "t9",
+        "clientName": "joe",
+        "serviceId": "p-classic",
+        "startMin": 180,
+        "durationMin": 45,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787192980449",
+        "guestOf": "c6",
+        "requestedTechChoice": "first",
+        "log": [
+          {
+            "at": 1787192980450,
+            "text": "Booked at 11:00 AM with Chloe V."
+          }
+        ]
+      },
+      {
+        "id": "a1787192980450-5",
+        "techId": "t10",
+        "clientName": "Mai Q.",
+        "serviceId": "m-gel",
+        "startMin": 180,
+        "durationMin": 60,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787192980449",
+        "requestedTechChoice": "first",
+        "log": [
+          {
+            "at": 1787192980450,
+            "text": "Booked at 11:00 AM with Vy Q."
+          }
+        ],
+        "customFields": {
+          "f-color": "353"
+        }
+      },
+      {
+        "id": "a1787192980450-6",
+        "techId": "t11",
+        "clientName": "Mai Q.",
+        "serviceId": "p-gel",
+        "startMin": 180,
+        "durationMin": 60,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787192980449",
+        "requestedTechChoice": "first",
+        "log": [
+          {
+            "at": 1787192980450,
+            "text": "Booked at 11:00 AM with Kim P."
+          }
+        ],
+        "customFields": {
+          "f-color": "89"
+        }
+      },
+      {
+        "id": "a1787197270191-0",
+        "techId": "t5",
+        "clientName": "Tina V.",
+        "serviceId": "p-classic",
+        "startMin": 180,
+        "durationMin": 45,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "log": [
+          {
+            "at": 1787197270191,
+            "text": "Booked at 11:00 AM with Sophia V."
+          },
+          {
+            "at": 1787197281500,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787197283292,
+            "text": "Moved to Linh H. at 11:00 AM"
+          },
+          {
+            "at": 1787197293579,
+            "text": "Moved to Sophia V. at 11:00 AM"
+          },
+          {
+            "at": 1787197295148,
+            "text": "Moved to Tina P. at 11:00 AM"
+          },
+          {
+            "at": 1787197297115,
+            "text": "Moved to Sophia V. at 11:00 AM"
+          }
+        ]
+      }
+    ],
+    "2026-08-20": [
+      {
+        "id": "a1",
+        "techId": "t8",
+        "clientName": "Lan Q.",
+        "serviceId": "p-classic",
+        "startMin": 540,
+        "durationMin": 45,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "checkedInMin": 535,
+        "startedMin": 540,
+        "completedMin": 582
+      },
+      {
+        "id": "a2",
+        "techId": "t7",
+        "clientName": "Ruby D.",
+        "serviceId": "r-soak",
+        "startMin": 90,
+        "durationMin": 30,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "checkedInMin": 85,
+        "startedMin": 90,
+        "completedMin": 117
+      },
+      {
+        "id": "a3",
+        "techId": "t18",
+        "clientName": "Trang Q.",
+        "serviceId": "a-french",
+        "startMin": 150,
+        "durationMin": 30,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "checkedInMin": 145,
+        "startedMin": 150,
+        "completedMin": 177
+      },
+      {
+        "id": "a8",
+        "techId": "t1",
+        "clientName": "Huong Q.",
+        "serviceId": "p-gel",
+        "startMin": 255,
+        "durationMin": 60,
+        "status": "checked_out",
+        "checkedInMin": 247,
+        "startedMin": 255,
+        "bookingSource": "walk_in",
+        "completedMin": 312
+      },
+      {
+        "id": "a1787235114981-0",
+        "techId": "t3",
+        "clientName": "Linh P.",
+        "serviceId": "svc-fkonxk",
+        "startMin": 240,
+        "durationMin": 75,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787235114980",
+        "requestedTechChoice": "first",
+        "log": [
+          {
+            "at": 1787235114981,
+            "text": "Booked at 12:00 PM with Amy B."
+          },
+          {
+            "at": 1787237819561,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787237819561,
+            "text": "Confirmed"
+          },
+          {
+            "at": 1787237834026,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787237834026,
+            "text": "Checked in at 1:30 PM"
+          },
+          {
+            "at": 1787242641426,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787243410614,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787243416296,
+            "text": "Edited appointment details"
+          }
+        ],
+        "checkedInMin": 330,
+        "addons": [],
+        "customFields": {
+          "f-color": "94"
+        },
+        "startedMin": 240,
+        "completedMin": 312
+      },
+      {
+        "id": "a1787235114981-1",
+        "techId": "t5",
+        "clientName": "Phuong P.",
+        "serviceId": "svc-fkonxk",
+        "startMin": 240,
+        "durationMin": 90,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "parallelGroup": "pg1787235114980",
+        "requestedTechChoice": "first",
+        "log": [
+          {
+            "at": 1787235114981,
+            "text": "Booked at 12:00 PM with Sophia V."
+          },
+          {
+            "at": 1787237824459,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787237824459,
+            "text": "Confirmed"
+          },
+          {
+            "at": 1787237837884,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787237837884,
+            "text": "Checked in at 1:30 PM"
+          },
+          {
+            "at": 1787242641426,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787243410614,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787243416296,
+            "text": "Edited appointment details"
+          }
+        ],
+        "checkedInMin": 330,
+        "addons": [
+          {
+            "id": "ao-a1n0fg",
+            "name": "Gel Polish",
+            "mins": 15,
+            "price": 20
+          }
+        ],
+        "customFields": {
+          "f-color": "986"
+        },
+        "startedMin": 240,
+        "completedMin": 327
+      },
+      {
+        "id": "a1787258694574-pos0",
+        "techId": "t9",
+        "clientName": "Linh P.",
+        "serviceId": "p-spa",
+        "startMin": 120,
+        "durationMin": 75,
+        "status": "checked_out",
+        "completedMin": 330,
+        "customFields": {
+          "f-color": "785"
+        },
+        "bookingSource": "walk_in",
+        "log": [
+          {
+            "at": 1787258694574,
+            "text": "Rung up via POS, $58.00 (Cash)"
+          },
+          {
+            "at": 1787258754624,
+            "text": "Moved to Chloe V. at 10:00 AM"
+          }
+        ],
+        "checkedInMin": 115,
+        "startedMin": 120
+      },
+      {
+        "id": "a1787258694574-pos1",
+        "techId": "t13",
+        "clientName": "Kim L.",
+        "serviceId": "svc-hg8zu1",
+        "startMin": 120,
+        "durationMin": 120,
+        "status": "checked_out",
+        "completedMin": 330,
+        "customFields": {
+          "f-color": "688"
+        },
+        "bookingSource": "walk_in",
+        "log": [
+          {
+            "at": 1787258694574,
+            "text": "Rung up via POS, $110.00 (Cash)"
+          }
+        ],
+        "checkedInMin": 115,
+        "startedMin": 120
+      },
+      {
+        "id": "a1787258694574-pos2",
+        "techId": "t4",
+        "clientName": "Kim L.",
+        "serviceId": "e-gelx",
+        "startMin": 120,
+        "durationMin": 90,
+        "status": "checked_out",
+        "completedMin": 330,
+        "customFields": {
+          "f-color": "688"
+        },
+        "bookingSource": "walk_in",
+        "log": [
+          {
+            "at": 1787258694574,
+            "text": "Rung up via POS, $72.00 (Cash)"
+          }
+        ],
+        "checkedInMin": 115,
+        "startedMin": 120
+      },
+      {
+        "id": "a1787267890625-pos0",
+        "techId": "t9",
+        "clientName": "Mia B.",
+        "serviceId": "p-classic",
+        "startMin": 120,
+        "durationMin": 45,
+        "status": "checked_out",
+        "completedMin": 330,
+        "customFields": {
+          "f-color": "874"
+        },
+        "bookingSource": "walk_in",
+        "log": [
+          {
+            "at": 1787267890625,
+            "text": "Rung up via POS, $38.00 (Cash)"
+          }
+        ],
+        "checkedInMin": 115,
+        "startedMin": 120
+      },
+      {
+        "id": "a1787267890625-pos1",
+        "techId": "t8",
+        "clientName": "Mia B.",
+        "serviceId": "e-acrylic",
+        "startMin": 120,
+        "durationMin": 90,
+        "status": "checked_out",
+        "completedMin": 330,
+        "customFields": {
+          "f-color": "980"
+        },
+        "bookingSource": "walk_in",
+        "log": [
+          {
+            "at": 1787267890625,
+            "text": "Rung up via POS, $65.00 (Cash)"
+          }
+        ],
+        "checkedInMin": 115,
+        "startedMin": 120
+      },
+      {
+        "id": "a1787267890625-pos2",
+        "techId": "t10",
+        "clientName": "Linh P.",
+        "serviceId": "svc-fkonxk",
+        "startMin": 120,
+        "durationMin": 90,
+        "status": "checked_out",
+        "completedMin": 330,
+        "customFields": {
+          "f-color": "877"
+        },
+        "bookingSource": "walk_in",
+        "log": [
+          {
+            "at": 1787267890625,
+            "text": "Rung up via POS, $90.00 (Cash)"
+          },
+          {
+            "at": 1787269060289,
+            "text": "Auto-moved to Vy Q. to make room for a requested booking"
+          }
+        ],
+        "checkedInMin": 115,
+        "startedMin": 120
+      },
+      {
+        "id": "a1787268489838-pos0",
+        "techId": "t13",
+        "clientName": "Kim L.",
+        "serviceId": "m-gel",
+        "startMin": 360,
+        "durationMin": 60,
+        "status": "checked_out",
+        "completedMin": 330,
+        "customFields": {
+          "f-color": "986"
+        },
+        "bookingSource": "walk_in",
+        "log": [
+          {
+            "at": 1787268489838,
+            "text": "Rung up via POS, $45.00 (Cash)"
+          }
+        ],
+        "checkedInMin": 355,
+        "startedMin": 360
+      },
+      {
+        "id": "a1787268489838-pos1",
+        "techId": "t15",
+        "clientName": "Amy B.",
+        "serviceId": "e-dip",
+        "startMin": 360,
+        "durationMin": 75,
+        "status": "checked_out",
+        "completedMin": 330,
+        "customFields": {
+          "f-color": "568"
+        },
+        "bookingSource": "walk_in",
+        "log": [
+          {
+            "at": 1787268489838,
+            "text": "Rung up via POS, $55.00 (Cash)"
+          }
+        ],
+        "checkedInMin": 355,
+        "startedMin": 360
+      },
+      {
+        "id": "a1787270147641-0",
+        "techId": "t7",
+        "clientName": "Kim L.",
+        "serviceId": "svc-fkonxk",
+        "startMin": 360,
+        "durationMin": 90,
+        "status": "checked_out",
+        "bookingSource": "front_desk",
+        "techRequested": true,
+        "log": [
+          {
+            "at": 1787270147641,
+            "text": "Booked at 2:00 PM with Hana V."
+          },
+          {
+            "at": 1787270169410,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787270169410,
+            "text": "Service started at 1:30 PM"
+          },
+          {
+            "at": 1787270220609,
+            "text": "Edited appointment details"
+          },
+          {
+            "at": 1787270220609,
+            "text": "Service completed at 1:30 PM"
+          }
+        ],
+        "startedMin": 330,
+        "completedMin": 330,
+        "checkedInMin": 355
+      }
+    ],
+    "2026-08-21": [
+      {
+        "id": "a1",
+        "techId": "t19",
+        "clientName": "Bella P.",
+        "serviceId": "m-gel",
+        "startMin": 285,
+        "durationMin": 60,
+        "status": "confirmed",
+        "notes": "Allergic to acetone, use non-acetone remover",
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a2",
+        "techId": "t18",
+        "clientName": "Bao L.",
+        "serviceId": "r-soak",
+        "startMin": 300,
+        "durationMin": 30,
+        "status": "confirmed",
+        "bookingSource": "walk_in"
+      },
+      {
+        "id": "a3",
+        "techId": "t10",
+        "clientName": "Amber T.",
+        "serviceId": "m-gel",
+        "startMin": 135,
+        "durationMin": 60,
+        "status": "confirmed",
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a4",
+        "techId": "t5",
+        "clientName": "Zoe P.",
+        "serviceId": "r-soak",
+        "startMin": 495,
+        "durationMin": 30,
+        "status": "confirmed",
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a5",
+        "techId": "t16",
+        "clientName": "Bella P.",
+        "serviceId": "m-classic",
+        "startMin": 0,
+        "durationMin": 45,
+        "status": "in_service",
+        "checkedInMin": 0,
+        "startedMin": 0,
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a6",
+        "techId": "t4",
+        "clientName": "Jenny P.",
+        "serviceId": "e-dip",
+        "startMin": 270,
+        "durationMin": 75,
+        "status": "requested",
+        "notes": "Sensitive cuticles, be gentle",
+        "bookingSource": "online"
+      },
+      {
+        "id": "a7",
+        "techId": "t15",
+        "clientName": "Jenny P.",
+        "serviceId": "e-gelx",
+        "startMin": 480,
+        "durationMin": 90,
+        "status": "completed",
+        "checkedInMin": 477,
+        "startedMin": 482,
+        "completedMin": 567,
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a8",
+        "techId": "t7",
+        "clientName": "Emma B.",
+        "serviceId": "m-classic",
+        "startMin": 330,
+        "durationMin": 45,
+        "status": "checked_in",
+        "checkedInMin": 322,
+        "bookingSource": "walk_in"
+      },
+      {
+        "id": "a9",
+        "techId": "t3",
+        "clientName": "Julie Q.",
+        "serviceId": "m-gel",
+        "startMin": 360,
+        "durationMin": 60,
+        "status": "confirmed",
+        "bookingSource": "front_desk"
+      }
+    ],
+    "2026-08-22": [
+      {
+        "id": "a1",
+        "techId": "t17",
+        "clientName": "Rosa D.",
+        "serviceId": "m-classic",
+        "startMin": 510,
+        "durationMin": 45,
+        "status": "completed",
+        "checkedInMin": 505,
+        "startedMin": 514,
+        "completedMin": 553,
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a2",
+        "techId": "t9",
+        "clientName": "Julie Q.",
+        "serviceId": "r-fix",
+        "startMin": 195,
+        "durationMin": 15,
+        "status": "in_service",
+        "checkedInMin": 193,
+        "startedMin": 200,
+        "notes": "Prefers square shape, medium length",
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a3",
+        "techId": "t18",
+        "clientName": "Sophia B.",
+        "serviceId": "p-gel",
+        "startMin": 135,
+        "durationMin": 60,
+        "status": "confirmed",
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a4",
+        "techId": "t15",
+        "clientName": "Mai P.",
+        "serviceId": "e-acrylic",
+        "startMin": 285,
+        "durationMin": 90,
+        "status": "requested",
+        "bookingSource": "online"
+      },
+      {
+        "id": "a5",
+        "techId": "t16",
+        "clientName": "Haley L.",
+        "serviceId": "e-gelx",
+        "startMin": 450,
+        "durationMin": 90,
+        "status": "confirmed",
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a6",
+        "techId": "t6",
+        "clientName": "Cam N.",
+        "serviceId": "a-french",
+        "startMin": 570,
+        "durationMin": 30,
+        "status": "completed",
+        "checkedInMin": 565,
+        "startedMin": 575,
+        "completedMin": 596,
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a7",
+        "techId": "t8",
+        "clientName": "Elle L.",
+        "serviceId": "m-gel",
+        "startMin": 30,
+        "durationMin": 60,
+        "status": "confirmed",
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a8",
+        "techId": "t3",
+        "clientName": "Ruby D.",
+        "serviceId": "r-soak",
+        "startMin": 420,
+        "durationMin": 30,
+        "status": "confirmed",
+        "bookingSource": "front_desk"
+      }
+    ],
+    "2026-08-23": [
+      {
+        "id": "a1",
+        "techId": "t8",
+        "clientName": "Wendy L.",
+        "serviceId": "p-classic",
+        "startMin": 90,
+        "durationMin": 45,
+        "status": "requested",
+        "bookingSource": "online"
+      },
+      {
+        "id": "a2",
+        "techId": "t3",
+        "clientName": "Gia P.",
+        "serviceId": "m-classic",
+        "startMin": 375,
+        "durationMin": 45,
+        "status": "in_service",
+        "checkedInMin": 367,
+        "startedMin": 376,
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a3",
+        "techId": "t17",
+        "clientName": "Lan Q.",
+        "serviceId": "e-gelx",
+        "startMin": 585,
+        "durationMin": 90,
+        "status": "completed",
+        "checkedInMin": 577,
+        "startedMin": 588,
+        "completedMin": 672,
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a4",
+        "techId": "t7",
+        "clientName": "Sophia B.",
+        "serviceId": "e-dip",
+        "startMin": 150,
+        "durationMin": 75,
+        "status": "confirmed",
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a5",
+        "techId": "t12",
+        "clientName": "Amber T.",
+        "serviceId": "p-spa",
+        "startMin": 285,
+        "durationMin": 75,
+        "status": "checked_in",
+        "checkedInMin": 277,
+        "bookingSource": "walk_in"
+      },
+      {
+        "id": "a6",
+        "techId": "t10",
+        "clientName": "Sophia B.",
+        "serviceId": "a-french",
+        "startMin": 495,
+        "durationMin": 30,
+        "status": "requested",
+        "bookingSource": "online"
+      },
+      {
+        "id": "a7",
+        "techId": "t16",
+        "clientName": "Cam N.",
+        "serviceId": "e-dip",
+        "startMin": 240,
+        "durationMin": 75,
+        "status": "checked_in",
+        "checkedInMin": 235,
+        "notes": "Sensitive cuticles, be gentle",
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a8",
+        "techId": "t9",
+        "clientName": "Gia P.",
+        "serviceId": "p-spa",
+        "startMin": 30,
+        "durationMin": 75,
+        "status": "in_service",
+        "checkedInMin": 26,
+        "startedMin": 34,
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a9",
+        "techId": "t18",
+        "clientName": "Chloe V.",
+        "serviceId": "e-fill",
+        "startMin": 210,
+        "durationMin": 60,
+        "status": "requested",
+        "bookingSource": "online"
+      }
+    ],
+    "2026-07-28": [
+      {
+        "id": "a1",
+        "techId": "t19",
+        "clientName": "Julie P.",
+        "serviceId": "a-french",
+        "startMin": 135,
+        "durationMin": 30,
+        "status": "confirmed",
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a2",
+        "techId": "t15",
+        "clientName": "Lily B.",
+        "serviceId": "e-acrylic",
+        "startMin": 225,
+        "durationMin": 90,
+        "status": "requested",
+        "bookingSource": "online"
+      },
+      {
+        "id": "a3",
+        "techId": "t5",
+        "clientName": "Trang N.",
+        "serviceId": "a-french",
+        "startMin": 525,
+        "durationMin": 30,
+        "status": "checked_in",
+        "checkedInMin": 517,
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a4",
+        "techId": "t4",
+        "clientName": "Vy L.",
+        "serviceId": "m-classic",
+        "startMin": 195,
+        "durationMin": 45,
+        "status": "confirmed",
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a5",
+        "techId": "t18",
+        "clientName": "Rosa Q.",
+        "serviceId": "a-french",
+        "startMin": 435,
+        "durationMin": 30,
+        "status": "completed",
+        "checkedInMin": 427,
+        "startedMin": 439,
+        "completedMin": 462,
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a6",
+        "techId": "t2",
+        "clientName": "Mia B.",
+        "serviceId": "a-french",
+        "startMin": 450,
+        "durationMin": 30,
+        "status": "confirmed",
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a7",
+        "techId": "t17",
+        "clientName": "Vy L.",
+        "serviceId": "p-classic",
+        "startMin": 210,
+        "durationMin": 45,
+        "status": "completed",
+        "checkedInMin": 205,
+        "startedMin": 210,
+        "completedMin": 252,
+        "bookingSource": "front_desk"
+      },
+      {
+        "id": "a8",
+        "techId": "t11",
+        "clientName": "Sophia Q.",
+        "serviceId": "r-soak",
+        "startMin": 60,
+        "durationMin": 30,
+        "status": "in_service",
+        "checkedInMin": 55,
+        "startedMin": 63,
+        "notes": "Allergic to acetone, use non-acetone remover",
+        "bookingSource": "front_desk"
+      }
+    ]
+  }
+}

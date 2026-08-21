@@ -1,97 +1,36 @@
 // ─── Online requests, staff-side view of the new public booking API ────────
-// Settings → Online requests. This is the ONLY place in the frontend besides
-// BookingPage.tsx that talks to the new backend (server/) -- see
-// booking-api.ts and server/README.md. Sign-in here is a SEPARATE login
-// system from the local demo-user session switcher (NavRail): the backend
-// has its own users table with its own email/password, seeded by
-// `npm run db:seed` in server/ (see server/README.md for the demo
-// credentials). That's intentional for this pass rather than unifying the
-// two auth systems -- flagged as follow-up work in HANDOFF.md.
+// Settings → Online requests. Sign-in used to be a separate login just for
+// this panel (server/ has its own users table, distinct from the app's old
+// demo-user switcher) -- as of the auth-unification pass, the whole app now
+// requires the same real sign-in (see lib/auth.ts, App.tsx), so this panel
+// just consumes whoever's already signed in rather than asking again.
 import { useEffect, useState } from "react";
-import { Calendar, CheckCircle2, Clock, Loader2, LogOut, RefreshCw, User, XCircle } from "lucide-react";
+import { Calendar, CheckCircle2, Clock, Loader2, RefreshCw, User, XCircle } from "lucide-react";
 import {
   ApiError,
   approveOnlineRequest,
   declineOnlineRequest,
   fetchOnlineRequests,
   fmtMinutes,
-  staffLogin,
   type OnlineRequest,
-  type StaffUser,
 } from "@/lib/booking-api";
-import { sdata, usePersistentState } from "@/lib/persist";
-
-interface AuthState {
-  token: string;
-  user: StaffUser;
-}
+import { useStaffAuth, type StaffAuth } from "@/lib/auth";
 
 export function OnlineRequestsSection() {
-  const [auth, setAuth] = usePersistentState<AuthState | null>(sdata("online-requests-auth-v1"), null);
-
-  if (!auth) return <LoginForm onLoggedIn={setAuth} />;
-  return <RequestsList auth={auth} onSignOut={() => setAuth(null)} />;
-}
-
-function LoginForm({ onLoggedIn }: { onLoggedIn: (a: AuthState) => void }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    setBusy(true);
-    setError(null);
-    try {
-      const { token, user } = await staffLogin(email.trim(), password);
-      onLoggedIn({ token, user });
-    } catch (e) {
-      setError(
-        e instanceof ApiError
-          ? e.message
-          : "Couldn't reach the booking server. Make sure it's running and VITE_API_URL is set (see server/README.md).",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div className="mx-auto max-w-[360px] py-10 text-center">
-      <h2 className="mb-1 text-[17px] font-bold text-slate-900">Online requests</h2>
-      <p className="mb-5 text-[12px] text-slate-400">
-        Sign in with your backend staff account to review and approve online booking requests.
+  const auth = useStaffAuth();
+  // App.tsx only ever renders this deep in the signed-in app, so this is
+  // just a defensive fallback (e.g. a token that expired mid-session).
+  if (!auth) {
+    return (
+      <p className="rounded-xl border border-[#EDE7EE] bg-white px-4 py-8 text-center text-[12.5px] text-slate-400">
+        Sign in again to see online requests.
       </p>
-      <div className="space-y-2.5 text-left">
-        <input
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          placeholder="Email"
-          className="w-full rounded-lg border border-[#E3DDE3] px-3 py-2 text-[13px] outline-none focus:border-[#5B54D6]"
-        />
-        <input
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          type="password"
-          placeholder="Password"
-          className="w-full rounded-lg border border-[#E3DDE3] px-3 py-2 text-[13px] outline-none focus:border-[#5B54D6]"
-        />
-      </div>
-      {error && <p className="mt-2.5 text-[12px] font-semibold text-rose-500">{error}</p>}
-      <button
-        onClick={submit}
-        disabled={busy || !email.trim() || !password}
-        className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#5B54D6] py-2.5 text-[13px] font-bold text-white transition hover:bg-[#4B45BE] disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in"}
-      </button>
-    </div>
-  );
+    );
+  }
+  return <RequestsList auth={auth} />;
 }
 
-function RequestsList({ auth, onSignOut }: { auth: AuthState; onSignOut: () => void }) {
+function RequestsList({ auth }: { auth: StaffAuth }) {
   const [requests, setRequests] = useState<OnlineRequest[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -105,7 +44,7 @@ function RequestsList({ auth, onSignOut }: { auth: AuthState; onSignOut: () => v
       setRequests(requests);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
-        setError("Your session expired -- sign in again.");
+        setError("Your session expired -- sign out and sign in again.");
       } else {
         setError(e instanceof ApiError ? e.message : "Couldn't load requests.");
       }
@@ -141,20 +80,12 @@ function RequestsList({ auth, onSignOut }: { auth: AuthState; onSignOut: () => v
             Signed in as {auth.user.name} ({auth.user.title})
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={load}
-            className="flex items-center gap-1.5 rounded-lg border border-[#EDE7EE] px-3 py-1.5 text-[12px] font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
-          </button>
-          <button
-            onClick={onSignOut}
-            className="flex items-center gap-1.5 rounded-lg border border-[#EDE7EE] px-3 py-1.5 text-[12px] font-semibold text-slate-600 hover:bg-slate-50"
-          >
-            <LogOut className="h-3.5 w-3.5" /> Sign out
-          </button>
-        </div>
+        <button
+          onClick={load}
+          className="flex items-center gap-1.5 rounded-lg border border-[#EDE7EE] px-3 py-1.5 text-[12px] font-semibold text-slate-600 hover:bg-slate-50"
+        >
+          <RefreshCw className="h-3.5 w-3.5" /> Refresh
+        </button>
       </div>
 
       {error && <p className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-[12px] font-semibold text-rose-600">{error}</p>}

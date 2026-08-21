@@ -13,8 +13,9 @@ import { getServices, svcById } from '@/lib/services-store'
 import { ApiError, approveOnlineRequest as apiApproveOnlineRequest, declineOnlineRequest as apiDeclineOnlineRequest, fetchBookingFeed } from '@/lib/booking-api'
 import {
   buildConfirmedAppointment, buildRequestedAppointment, collectKnownOnlineRequestIds,
-  getStoredStaffToken, resolveServiceForRow, resolveTechForRow,
+  resolveServiceForRow, resolveTechForRow,
 } from '@/lib/online-booking-sync'
+import { getStaffToken } from '@/lib/auth'
 import { Toolbar } from './Toolbar'
 import { ApptContextMenu, ConfirmCancelDialog, type MenuAction } from './ApptMenus'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -3266,18 +3267,18 @@ export function AppointmentBook() {
   // ── online booking sync (server/) ───────────────────────────────────────
   // Pulls pending + already-confirmed bookings from the new backend
   // (server/) onto this calendar on a timer, so staff never have to check
-  // two separate places for what needs their attention. Requires having
-  // signed in once via Settings → Online requests (see online-booking-
-  // sync.ts's getStoredStaffToken) -- silently does nothing until that's
-  // done. Tech/service are matched by name against this salon's catalog
-  // (the backend and the frontend keep separate catalogs today, see
-  // server/README.md); a request whose tech or service name doesn't match
-  // anything here is skipped rather than guessed at, and logged to the
-  // console so it's not a silent black hole. See HANDOFF.md #10.
+  // two separate places for what needs their attention. Uses whichever
+  // staff account is signed in app-wide (lib/auth.ts) -- silently does
+  // nothing until someone's signed in. Tech/service are matched by name
+  // against this salon's catalog (the backend and the frontend keep
+  // separate catalogs today, see server/README.md); a request whose tech or
+  // service name doesn't match anything here is skipped rather than guessed
+  // at, and logged to the console so it's not a silent black hole. See
+  // HANDOFF.md #10.
   useEffect(() => {
     let cancelled = false
     const run = async () => {
-      const token = getStoredStaffToken()
+      const token = getStaffToken()
       if (!token) return
       let feed: Awaited<ReturnType<typeof fetchBookingFeed>>['requests']
       try {
@@ -3354,7 +3355,7 @@ export function AppointmentBook() {
   // already the source of truth for what staff see next, this is purely to
   // keep the backend's copy from going stale.
   const pushOnlineDecision = (linked: Appointment[], decision: 'approve' | 'decline') => {
-    const token = getStoredStaffToken()
+    const token = getStaffToken()
     if (!token) return
     const call = decision === 'approve' ? apiApproveOnlineRequest : apiDeclineOnlineRequest
     for (const a of linked) {
