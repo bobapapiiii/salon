@@ -100,6 +100,10 @@ export interface Tech {
    *  the salon can choose to book through anyway; it's never silently
    *  bypassed and never overridable from a client-facing flow */
   bannedClientIds?: string[]
+  /** salon-defined labels (e.g. "senior tech", "new hire") -- small,
+   *  additive tagging so discounts can target a group of technicians
+   *  without inventing a second roles system */
+  tags?: string[]
 }
 
 export interface ServiceCategory {
@@ -149,6 +153,10 @@ export interface Service {
    *  the online booking page -- the front desk can still book any of them
    *  for it in-salon, this only hides it from clients booking online */
   onlineExcludedRoleIds?: string[]
+  /** salon-defined labels (e.g. "add-on friendly", "premium") -- small,
+   *  additive tagging so discounts (and, later, reporting/search) can
+   *  target a group of services without a dedicated category */
+  tags?: string[]
 }
 
 export interface Appointment {
@@ -221,6 +229,9 @@ export interface ClientRecord {
   preferredTechs?: ClientTechPreference[]
   /** name-only guests this client has brought, no profile of their own */
   guests?: { id: string; name: string }[]
+  /** salon-defined labels (e.g. "VIP", "birthday club") -- small, additive
+   *  tagging so discounts can target a group of clients by eligibility */
+  tags?: string[]
 }
 
 export interface TimeBlock {

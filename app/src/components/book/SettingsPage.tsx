@@ -4,8 +4,9 @@
 // everything else writes instantly to the salon's settings store.
 import { useEffect, useMemo, useState } from "react";
 import {
-  BarChart3, Banknote, Bell, Briefcase, Check, CreditCard, Download, FileText, Globe, GripVertical, KeyRound, Plus, Sparkles, Star, Store, Trash2, Users, X,
+  BadgePercent, BarChart3, Banknote, Bell, Briefcase, Check, CreditCard, Download, FileText, Globe, GripVertical, KeyRound, Plus, Sparkles, Star, Store, Trash2, Users, X,
 } from "lucide-react";
+import { DiscountsSection } from "./DiscountsSection";
 import type { Tech } from "../../lib/booking-types";
 import { roleColor, setStaff, uid, useStaffStore, type JobRole } from "../../lib/staff-store";
 
@@ -86,7 +87,7 @@ interface DraftTech {
 }
 const newPin = () => String(Math.floor(1000 + Math.random() * 9000));
 
-export type SectionId = "general" | "roles" | "techs" | "services" | "booking" | "payments" | "checkout" | "registers" | "loyalty" | "notifications" | "reports";
+export type SectionId = "general" | "roles" | "techs" | "services" | "booking" | "payments" | "checkout" | "registers" | "loyalty" | "discounts" | "notifications" | "reports";
 
 const SECTIONS: { id: SectionId; label: string; blurb: string; icon: typeof Store }[] = [
   { id: "general", label: "General", blurb: "Salon name & contact", icon: Store },
@@ -98,6 +99,7 @@ const SECTIONS: { id: SectionId; label: string; blurb: string; icon: typeof Stor
   { id: "checkout", label: "Checkout", blurb: "Service & invoice fields", icon: FileText },
   { id: "registers", label: "Registers", blurb: "Cash drawers to open & close", icon: Banknote },
   { id: "loyalty", label: "Loyalty", blurb: "Points earning", icon: Star },
+  { id: "discounts", label: "Discounts", blurb: "Promotions, codes & Buy X Get Y", icon: BadgePercent },
   { id: "notifications", label: "Notifications", blurb: "SMS preferences", icon: Bell },
   { id: "reports", label: "Reports", blurb: "Sales, techs & clients", icon: BarChart3 },
 ];
@@ -352,6 +354,7 @@ export function SettingsPage({ open, section, onSection, onClose, focusTechId, c
           {section === "checkout" && <CheckoutSection />}
           {section === "registers" && <RegistersSection />}
           {section === "loyalty" && <LoyaltySection />}
+          {section === "discounts" && <DiscountsSection />}
           {section === "notifications" && <NotificationsSection />}
           {section === "reports" && <ReportsSection />}
         </div>

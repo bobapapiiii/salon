@@ -134,3 +134,32 @@ npm run build      # tsc + vite; MUST pass before declaring work done
 - Loves Zenoti's feature depth, customizable online booking, hover-spotlight for linked appointments, clipboard across days; hates its slowness, learning curve, and clunky appointment moves. Speed and obvious UI win every trade-off.
 - Light, neutral theme (they rejected cream, then "too pink"; current theme passed). Clean top bar, legend available but not noisy, bottom bar flush with the window bottom.
 - Edit-appointment actions should be prominent, not sandwiched between other buttons. No "..." text in labels; align form fields precisely.
+
+## 9. Discounts feature (added this session)
+
+Built a full discount-management feature (Marketing-style nav item "Discounts", builder drawer,
+promo codes, BOGO, advanced rules, POS integration, manual one-time discounts, audit log) entirely
+on today's client-side architecture, per explicit owner sign-off. Key note for whoever builds the
+real backend from the roadmap above:
+
+- **`src/lib/discount-engine.ts` is the single, shared, pure, deterministic pricing evaluator** —
+  no React/DOM/localStorage access inside it, only plain functions over plain data. POS calls it
+  and nothing else computes discount math. **When the real backend lands, this file should move
+  server-side largely unchanged** — that was the whole point of keeping it pure. Redemption-limit
+  enforcement is currently a best-effort in-process check (there's only one browser tab today, no
+  real concurrency); the real backend must make that check transactional (a DB constraint or
+  row lock), per the original spec.
+- **Multi-location**: `Discount.availability.locations`/`locationIds` fields exist and are wired
+  end to end, but there is still only one real location (`SALON_ID`), so today they're always
+  effectively "this location." Do not need to touch the discount model when multi-location lands,
+  just populate real location ids.
+- **Tax**: this app still has no tax line anywhere (`payments` = subtotal + tip - discount).
+  The engine's discount-capping logic caps against `subtotal` only. When tax is added, cap against
+  the pre-tax subtotal still (discounts should not apply to tax) and confirm that explicitly.
+- **RBAC**: still no real permission system app-wide. Manual discounts are gated by a small
+  `canManageDiscounts()`/`isManagerOrAbove()` helper keyed off the existing `SessionUser` list
+  (owner/manager titles) in `src/lib/discounts-store.ts` — a stopgap, not real RBAC. When real
+  auth/roles land, replace that helper's internals; nothing else should need to change.
+- **Customer tags**: added `ClientRecord.tags?: string[]` and `Tech.tags?: string[]` (small,
+  additive fields, not a new system) so discount targeting has something to filter on.
+
