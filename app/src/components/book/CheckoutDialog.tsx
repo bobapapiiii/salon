@@ -4,7 +4,7 @@
 // edit (service, tech, time, price, added services) lands on the book instantly
 // and persists if the panel closes mid-edit. POS feeds it manual sale lines.
 import { useEffect, useMemo, useState } from "react";
-import { Banknote, Check, ChevronLeft, CreditCard, Plus, Printer, Receipt, Smartphone, X } from "lucide-react";
+import { Banknote, BadgePercent, Check, ChevronLeft, CreditCard, Plus, Printer, Receipt, ShieldAlert, Smartphone, Tag, X } from "lucide-react";
 import type { Appointment } from "@/lib/booking-types";
 import { DAY_SLOTS, SLOT_MIN, fmtTime } from "@/lib/booking-types";
 import { getStaff } from "@/lib/staff-store";
@@ -12,6 +12,12 @@ import { useSettingsStore } from "@/lib/settings-store";
 import { activeServices, orderedServices, serviceGroupLabel, svcById, useServicesStore } from "@/lib/services-store";
 import { catById, useCategoriesStore } from "@/lib/categories-store";
 import { paymentSources, refundedBySource, round2, techServiceTotals, techTipTotals, totalRefunded, type PaymentSource, type PaymentWithSources, type RefundRecord } from "@/lib/payments";
+import { DEMO_USERS, SALON_ID, getSessionUserId } from "@/lib/session";
+import {
+  canApplyManualDiscount, logManualDiscount, normalizePromoCode,
+  redemptionCounts, useDiscountsStore, type DiscountChannel,
+} from "@/lib/discounts-store";
+import { evaluateEligibility, fromCents, isCandidate, resolveCombination, toCents, type EngineContext, type EngineLine } from "@/lib/discount-engine";
 import { SearchSelect } from "./SearchSelect";
 
 export { paymentSources, type PaymentSource, type PaymentWithSources } from "@/lib/payments";
@@ -38,6 +44,27 @@ export interface PaymentLine {
   customFields?: Record<string, string>;
 }
 
+/** a promotional Discount's effect on this ticket, snapshotted at the moment
+ *  it was applied -- so a later edit or archive of the discount record never
+ *  changes what a historical invoice says it did. No per-line Map here
+ *  (that's discount-engine.ts's internal working detail); this is the
+ *  human/audit-facing summary. */
+export interface AppliedDiscountSnapshot {
+  discountId: string;
+  name: string;
+  offerType: string;
+  amountCents: number;
+  explanation: string;
+}
+
+export interface ManualDiscountSnapshot {
+  amount: number;
+  reason?: string;
+  appliedBy: string;
+  /** set only when the amount crossed the approval threshold */
+  approvedBy?: string;
+}
+
 export interface PaymentResult {
   /** single method name, or "Split" once a ticket carries more than one source */
   method: string;
@@ -51,8 +78,14 @@ export interface PaymentResult {
   total: number;
   points: number;
   notes?: string;
+  /** every discount taken off this ticket, combined: loyalty redemption +
+   *  every promotional Discount applied + any manual one-time discount */
   discount?: number;
   redeemed?: { name: string; points: number; value: number };
+  /** managed Discount records that applied to this ticket -- empty/undefined
+   *  when none did */
+  appliedDiscounts?: AppliedDiscountSnapshot[];
+  manualDiscount?: ManualDiscountSnapshot;
   /** general checkout field values, keyed by field id */
   customFields?: Record<string, string>;
   /** how the tip splits across providers (always sums to tip) */
@@ -99,11 +132,37 @@ export interface CheckoutDraftState {
    *  more than one person on the ticket actually has an account; a guest
    *  (name-only, no ClientRecord) can never hold points themselves */
   pointsRecipient?: string | null;
+  /** promo code as typed at checkout, normalized on apply */
+  promoCode?: string;
+  /** managed Discount ids the staff explicitly picked from the "add
+   *  discount" list (the howReceived: "staff_select" flow) */
+  staffSelectedDiscountIds?: string[];
+  /** an otherwise-eligible/applied discount id the staff removed from this
+   *  specific ticket -- never applies here again until re-added */
+  removedDiscountIds?: string[];
+  /** manual one-time discount draft, before it's confirmed at charge time */
+  manualDiscountAmount?: string;
+  manualDiscountReason?: string;
+  manualDiscountApprovedBy?: string;
 }
 
 const money = (v: number) => `$${v.toFixed(2)}`;
 
-export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, onBack, people, selected, onTogglePerson, onSelectAll, hostName, editable, annotate, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, loyaltyBalance, pointsRecipients, accountNames, existingPrefs, draft, onDraft, existing }: {
+function defaultTodayKey(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/** display name for whoever's currently signed in -- demo account or a
+ *  tech portal login -- used to stamp who applied a manual discount */
+function currentUserDisplayName(): string {
+  const id = getSessionUserId();
+  const demo = DEMO_USERS.find((u) => u.id === id);
+  if (demo) return demo.name;
+  return getStaff().techs.find((t) => t.id === id)?.name ?? "Unknown";
+}
+
+export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, onBack, people, selected, onTogglePerson, onSelectAll, hostName, editable, annotate, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, loyaltyBalance, pointsRecipients, accountNames, existingPrefs, draft, onDraft, existing, channel = "front_desk", dateKey, clientId, clientTags, isNewClient }: {
   title: string;
   subtitle: string;
   lines: PaymentLine[];
@@ -182,6 +241,18 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, onBac
      *  their own explicit actions below */
     onSync?: (p: PaymentResult) => void;
   };
+  /** which sales channel this ticket is being rung up through -- drives
+   *  discount channel targeting. Front desk (appointment checkout) is the
+   *  default; POS passes "walk_in" */
+  channel?: DiscountChannel;
+  /** ISO date this sale is happening on, for discount date-range/window
+   *  checks; defaults to today */
+  dateKey?: string;
+  /** the ClientRecord id actually paying, for discount customer-eligibility
+   *  and per-customer redemption limits -- unset for a name-only guest */
+  clientId?: string;
+  clientTags?: string[];
+  isNewClient?: boolean;
 }) {
   const settings = useSettingsStore();
   const TIME_OPTS = Array.from({ length: DAY_SLOTS * (SLOT_MIN / settings.booking.increment) }, (_, i) => i * settings.booking.increment);
@@ -211,6 +282,9 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, onBac
   const [refundReason, setRefundReason] = useState("");
   const [refundFrom, setRefundFrom] = useState<"service" | "tip" | undefined>(undefined);
   const [refundTechId, setRefundTechId] = useState("");
+  const [promoDraft, setPromoDraft] = useState(draft?.promoCode ?? "");
+  const [discPickerOpen, setDiscPickerOpen] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
   // lines checked "save as preferred technician" this checkout -- resolved
   // into technician + category pairs (per person) when the ticket completes.
   // starts pre-checked for any line that already matches a saved preference
@@ -297,9 +371,72 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, onBac
     : redemption.type === "amount" ? Math.min(redemption.value, subtotal)
     : redemption.type === "percent" ? Math.round((subtotal * redemption.value) / 100 * 100) / 100
     : Math.min(allLines.find((l) => l.serviceId === redemption.serviceId)?.price ?? 0, subtotal);
-  const total = Math.max(0, subtotal + tip - discount);
+
+  // promotional Discounts (Settings → Discounts) -- eligibility, priority,
+  // and combination all run through the exact same engine POS uses, so a
+  // discount behaves identically no matter where it's applied
+  const { discounts: allDiscounts, manualSettings } = useDiscountsStore();
+  const today = dateKey ?? defaultTodayKey();
+  const engineLines: EngineLine[] = useMemo(() => allLines.map((l) => {
+    const svc = l.serviceId ? svcById[l.serviceId] : undefined;
+    const cat = svc ? catById[svc.categoryId] : undefined;
+    const tech = l.techId ? getStaff().techs.find((t) => t.id === l.techId) : undefined;
+    return {
+      id: l.id, serviceId: l.serviceId ?? l.id, categoryId: svc?.categoryId, parentCategoryId: cat?.parentId,
+      serviceTags: svc?.tags, techId: l.techId ?? "", techRoleId: tech?.teamId, techTags: tech?.tags,
+      person: l.person, unitPriceCents: toCents(l.price),
+    };
+  }), [allLines]);
+  const discountCtx: EngineContext = useMemo(() => {
+    const now = new Date();
+    return {
+      lines: engineLines, dateKey: today, minutesOfDay: now.getHours() * 60 + now.getMinutes(), dayOfWeek: now.getDay(),
+      locationId: SALON_ID, channel, clientId, clientTags, isNewClient,
+      promoCode: D.promoCode, staffSelectedIds: D.staffSelectedDiscountIds,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engineLines, today, channel, clientId, clientTags, isNewClient, D.promoCode, D.staffSelectedDiscountIds]);
+  const combo = useMemo(() => {
+    const candidates = allDiscounts
+      .filter((d) => isCandidate(d, discountCtx))
+      .filter((d) => !D.removedDiscountIds?.includes(d.id))
+      .filter((d) => evaluateEligibility(d, discountCtx, redemptionCounts(d.id, clientId)).eligible);
+    return resolveCombination(candidates, discountCtx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allDiscounts, discountCtx, D.removedDiscountIds, clientId]);
+  const promoDiscount = fromCents(combo.totalDiscountCents);
+
+  // staff-select discounts still available to add to this ticket
+  const staffSelectable = allDiscounts.filter((d) => d.howReceived === "staff_select" && d.status === "active" && !(D.staffSelectedDiscountIds ?? []).includes(d.id));
+  // promo code: does the typed code match something active and eligible here?
+  const promoMatch = D.promoCode ? allDiscounts.find((d) => d.howReceived === "promo_code" && normalizePromoCode(d.promoCode ?? "") === normalizePromoCode(D.promoCode ?? "")) : null;
+  const promoApplied = promoMatch ? combo.applied.some((a) => a.discountId === promoMatch.id) : false;
+  const promoError = D.promoCode && !promoMatch ? "Code not found" : D.promoCode && promoMatch && !promoApplied ? "Not eligible on this ticket" : null;
+
+  // manual one-time discount -- separate from managed Discount records,
+  // gated by permission + (optionally) a reason + a second approval once
+  // it crosses the salon's threshold
+  const manualAllowed = canApplyManualDiscount(manualSettings);
+  const manualRaw = Math.max(0, Number(D.manualDiscountAmount) || 0);
+  const manualDiscountValue = Math.min(manualRaw, Math.max(0, round2(subtotal - discount - promoDiscount)));
+  const manualPct = subtotal > 0 ? (manualDiscountValue / subtotal) * 100 : 0;
+  const manualNeedsApproval = manualDiscountValue > 0 && manualPct >= (manualSettings.managerApprovalThresholdPct ?? 0);
+  const manualReasonOk = !manualSettings.requireReason || Boolean(D.manualDiscountReason?.trim());
+  const manualApprovalOk = !manualNeedsApproval || Boolean(D.manualDiscountApprovedBy);
+  const manualActive = manualDiscountValue > 0 && manualReasonOk && manualApprovalOk;
+
+  const totalDiscount = round2(discount + promoDiscount + (manualActive ? manualDiscountValue : 0));
+  // snapshots go on the payment record so a later edit/archive of the
+  // Discount, or a change to who can approve, never rewrites this ticket's
+  // own history
+  const appliedDiscountSnapshots: AppliedDiscountSnapshot[] =
+    combo.applied.map((a) => ({ discountId: a.discountId, name: a.discountName, offerType: a.offerType, amountCents: a.amountCents, explanation: a.explanation }));
+  const manualDiscountSnapshot: ManualDiscountSnapshot | undefined = manualActive
+    ? { amount: manualDiscountValue, reason: D.manualDiscountReason?.trim() || undefined, appliedBy: currentUserDisplayName(), approvedBy: manualNeedsApproval ? (D.manualDiscountApprovedBy ?? undefined) : undefined }
+    : undefined;
+  const total = Math.max(0, subtotal + tip - totalDiscount);
   // points earn on the discounted service value, never on tips
-  const points = Math.floor(Math.max(0, subtotal - discount) * settings.loyalty.pointsPerDollar);
+  const points = Math.floor(Math.max(0, subtotal - totalDiscount) * settings.loyalty.pointsPerDollar);
 
   // reopening a paid ticket: its existing sources show as locked rows (can't
   // be edited or removed, they're already collected) and count toward the
@@ -386,20 +523,25 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, onBac
     if (refundNeeded > 0.004) return;
     const t = setTimeout(() => {
       existing.onSync!({
-        method: methodLabel, sources: [], balanceDue, tip, subtotal, total, points, discount,
+        method: methodLabel, sources: [], balanceDue, tip, subtotal, total, points, discount: totalDiscount,
         redeemed: redemption ? { name: redemption.name, points: redemption.pointsCost, value: discount } : undefined,
+        appliedDiscounts: appliedDiscountSnapshots.length > 0 ? appliedDiscountSnapshots : undefined,
+        manualDiscount: manualDiscountSnapshot,
         tipByTech: tip > 0 ? tipByTechResult : undefined,
         apptIds,
       });
     }, 600);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subtotal, tip, total, discount, points, balanceDue, refundNeeded, apptIds.join(",")]);
+  }, [subtotal, tip, total, totalDiscount, points, balanceDue, refundNeeded, apptIds.join(",")]);
 
   const submitExisting = () => {
+    if (manualDiscountSnapshot) logManualDiscount("manual_apply", `${manualDiscountSnapshot.appliedBy} applied ${money(manualDiscountSnapshot.amount)} manual discount on ${title}${manualDiscountSnapshot.reason ? ` (${manualDiscountSnapshot.reason})` : ""}${manualDiscountSnapshot.approvedBy ? `, approved by ${manualDiscountSnapshot.approvedBy}` : ""}`);
     onComplete({
-      method: methodLabel, sources: finalSources, balanceDue, tip, subtotal, total, points, discount,
+      method: methodLabel, sources: finalSources, balanceDue, tip, subtotal, total, points, discount: totalDiscount,
       redeemed: redemption ? { name: redemption.name, points: redemption.pointsCost, value: discount } : undefined,
+      appliedDiscounts: appliedDiscountSnapshots.length > 0 ? appliedDiscountSnapshots : undefined,
+      manualDiscount: manualDiscountSnapshot,
       notes: D.note.trim() || undefined,
       customFields: Object.fromEntries(Object.entries(D.custom ?? {}).filter(([, v]) => v.trim())),
       tipByTech: tip > 0 ? tipByTechResult : undefined,
@@ -737,6 +879,131 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, onBac
                 </div>
               </>
             )}
+
+            {/* promotional discounts -- automatic ones just show up applied;
+                staff can add a staff-select discount, type a promo code, or
+                (with permission) apply a one-time manual discount */}
+            <p className="mb-1.5 mt-4 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+              <BadgePercent className="h-3 w-3" /> Discounts
+            </p>
+            <div className="space-y-1.5">
+              {combo.applied.map((a) => (
+                <div key={a.discountId} className="flex items-center gap-2 rounded-[10px] border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5">
+                  <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-emerald-700">{a.discountName}</span>
+                  <span className="tnum shrink-0 text-[11px] font-bold text-emerald-700">−{money(fromCents(a.amountCents))}</span>
+                  <button
+                    type="button"
+                    title="Remove from this ticket"
+                    onClick={() => setD({ removedDiscountIds: [...(D.removedDiscountIds ?? []), a.discountId] })}
+                    className="shrink-0 text-emerald-700/60 hover:text-emerald-700"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              {combo.suppressed.length > 0 && (
+                <p className="text-[10.5px] text-ink-faint">{combo.suppressed.map((s) => s.discountName).join(", ")} not applied: {combo.suppressed[0].reason.toLowerCase()}</p>
+              )}
+
+              <div className="flex gap-1.5">
+                <input
+                  value={promoDraft}
+                  onChange={(e) => setPromoDraft(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") setD({ promoCode: promoDraft }); }}
+                  onBlur={() => setD({ promoCode: promoDraft })}
+                  placeholder="Promo code"
+                  className="h-8 min-w-0 flex-1 rounded-[8px] border border-line bg-surface px-2.5 text-[12px] font-semibold uppercase tracking-wide outline-none focus:border-clay"
+                />
+                <button
+                  type="button"
+                  onClick={() => setD({ promoCode: promoDraft })}
+                  className="h-8 shrink-0 rounded-[8px] border border-line bg-surface px-3 text-[11.5px] font-bold text-ink-soft transition-colors hover:border-line-strong"
+                >
+                  Apply
+                </button>
+              </div>
+              {promoError && <p className="text-[10.5px] font-semibold text-rust">{promoError}</p>}
+              {promoApplied && <p className="flex items-center gap-1 text-[10.5px] font-semibold text-emerald-600"><Check className="h-3 w-3" /> Code applied</p>}
+
+              {staffSelectable.length > 0 && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setDiscPickerOpen((v) => !v)}
+                    className="flex items-center gap-1 text-[11.5px] font-semibold text-clay hover:underline"
+                  >
+                    <Tag className="h-3 w-3" /> Add a discount
+                  </button>
+                  {discPickerOpen && (
+                    <div className="absolute left-0 top-7 z-10 w-64 overflow-hidden rounded-[10px] border border-line bg-popover shadow-sh-2">
+                      {staffSelectable.map((d) => (
+                        <button
+                          key={d.id}
+                          type="button"
+                          onClick={() => { setD({ staffSelectedDiscountIds: [...(D.staffSelectedDiscountIds ?? []), d.id] }); setDiscPickerOpen(false); }}
+                          className="flex w-full items-center justify-between px-3 py-2 text-left text-[12px] font-medium text-ink hover:bg-cream"
+                        >
+                          {d.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {manualAllowed && (
+                <div className="rounded-[10px] border border-amber-500/30 bg-amber-500/5 p-2.5">
+                  <button type="button" onClick={() => setManualOpen((v) => !v)} className="flex items-center gap-1 text-[11.5px] font-semibold text-amber-700">
+                    <ShieldAlert className="h-3 w-3" /> Manual discount (one time)
+                  </button>
+                  {manualOpen && (
+                    <div className="mt-2 space-y-1.5">
+                      <input
+                        value={D.manualDiscountAmount ?? ""}
+                        onChange={(e) => setD({ manualDiscountAmount: e.target.value.replace(/[^\d.]/g, "") })}
+                        placeholder="$ amount off"
+                        className="h-8 w-full rounded-[8px] border border-line bg-surface px-2.5 text-[12px] font-semibold outline-none focus:border-clay"
+                      />
+                      {manualSettings.requireReason && (
+                        <input
+                          value={D.manualDiscountReason ?? ""}
+                          onChange={(e) => setD({ manualDiscountReason: e.target.value })}
+                          placeholder="Reason (required)"
+                          className="h-8 w-full rounded-[8px] border border-line bg-surface px-2.5 text-[12px] outline-none focus:border-clay"
+                        />
+                      )}
+                      {manualNeedsApproval && (
+                        <div>
+                          <p className="mb-1 text-[10.5px] font-semibold text-amber-700">
+                            {manualPct.toFixed(0)}% off needs a second approval (over the {manualSettings.managerApprovalThresholdPct}% threshold)
+                          </p>
+                          <select
+                            value={D.manualDiscountApprovedBy ?? ""}
+                            onChange={(e) => setD({ manualDiscountApprovedBy: e.target.value })}
+                            className="h-8 w-full rounded-[8px] border border-line bg-surface px-2 text-[12px] outline-none focus:border-clay"
+                          >
+                            <option value="">Approved by...</option>
+                            {DEMO_USERS.filter((u) => manualSettings.approverTitles.includes(u.title)).map((u) => (
+                              <option key={u.id} value={u.name}>{u.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      {manualDiscountValue > 0 && !manualActive && (
+                        <p className="text-[10.5px] font-semibold text-rust">
+                          {!manualReasonOk ? "A reason is required" : !manualApprovalOk ? "Needs approval above" : ""}
+                        </p>
+                      )}
+                      {manualActive && (
+                        <p className="flex items-center gap-1 text-[10.5px] font-semibold text-emerald-600">
+                          <Check className="h-3 w-3" /> −{money(manualDiscountValue)} applied
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* redeem loyalty points, only what this client can redeem right now */}
             {redeemable.length > 0 && (
@@ -1077,8 +1344,20 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, onBac
                   <span className="font-semibold text-violet-500">−{money(discount)} · {redemption.name}</span>
                 )}
               </div>
+              {combo.applied.map((a) => (
+                <div key={a.discountId} className="flex items-baseline justify-between text-[12px] text-ink-soft">
+                  <span />
+                  <span className="font-semibold text-emerald-600">−{money(fromCents(a.amountCents))} · {a.discountName}</span>
+                </div>
+              ))}
+              {manualActive && (
+                <div className="flex items-baseline justify-between text-[12px] text-ink-soft">
+                  <span />
+                  <span className="font-semibold text-amber-600">−{money(manualDiscountValue)} · Manual discount</span>
+                </div>
+              )}
               <div className="flex items-baseline justify-between">
-                <span className="text-[12px] text-ink-soft">{discount > 0 ? <s className="mr-1 text-ink-faint">{money(subtotal + tip)}</s> : null}</span>
+                <span className="text-[12px] text-ink-soft">{totalDiscount > 0 ? <s className="mr-1 text-ink-faint">{money(subtotal + tip)}</s> : null}</span>
                 <span className="text-[15px] font-bold">
                   Total <span className="tnum text-clay">{money(total)}</span>
                   {existing && round2(total) !== round2(existing.payment.total) && (
@@ -1151,6 +1430,12 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, onBac
               {discount > 0 && redemption && (
                 <div className="flex justify-between text-violet-500"><span>Redeemed: {redemption.name}</span><span className="tnum">−{money(discount)}</span></div>
               )}
+              {combo.applied.map((a) => (
+                <div key={a.discountId} className="flex justify-between text-emerald-600"><span>{a.discountName}</span><span className="tnum">−{money(fromCents(a.amountCents))}</span></div>
+              ))}
+              {manualActive && (
+                <div className="flex justify-between text-amber-600"><span>Manual discount{manualDiscountSnapshot?.reason ? `: ${manualDiscountSnapshot.reason}` : ""}</span><span className="tnum">−{money(manualDiscountValue)}</span></div>
+              )}
               <div className="flex justify-between border-t border-line pt-1 font-bold"><span>Total</span><span className="tnum">{money(total)}</span></div>
               {finalSources.map((s) => (
                 <div key={s.id} className="flex justify-between pl-3 text-[11px] text-ink-faint">
@@ -1180,7 +1465,10 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, onBac
               <Printer className="h-4 w-4" /> Print receipt
             </button>
             <button
-              onClick={() => onComplete({ method: methodLabel, sources: finalSources, balanceDue, tip, subtotal, total, points, discount, redeemed: redemption ? { name: redemption.name, points: redemption.pointsCost, value: discount } : undefined, notes: D.note.trim() || undefined, customFields: Object.fromEntries(Object.entries(D.custom ?? {}).filter(([, v]) => v.trim())), tipByTech: tip > 0 ? tipByTechResult : undefined, preferredTechPrefs: preferredTechPrefs.length > 0 ? preferredTechPrefs : undefined })}
+              onClick={() => {
+                if (manualDiscountSnapshot) logManualDiscount("manual_apply", `${manualDiscountSnapshot.appliedBy} applied ${money(manualDiscountSnapshot.amount)} manual discount on ${title}${manualDiscountSnapshot.reason ? ` (${manualDiscountSnapshot.reason})` : ""}${manualDiscountSnapshot.approvedBy ? `, approved by ${manualDiscountSnapshot.approvedBy}` : ""}`);
+                onComplete({ method: methodLabel, sources: finalSources, balanceDue, tip, subtotal, total, points, discount: totalDiscount, redeemed: redemption ? { name: redemption.name, points: redemption.pointsCost, value: discount } : undefined, appliedDiscounts: appliedDiscountSnapshots.length > 0 ? appliedDiscountSnapshots : undefined, manualDiscount: manualDiscountSnapshot, notes: D.note.trim() || undefined, customFields: Object.fromEntries(Object.entries(D.custom ?? {}).filter(([, v]) => v.trim())), tipByTech: tip > 0 ? tipByTechResult : undefined, preferredTechPrefs: preferredTechPrefs.length > 0 ? preferredTechPrefs : undefined });
+              }}
               className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-clay py-2.5 text-[14px] font-bold text-white transition-colors hover:bg-clay-deep"
             >
               <Receipt className="h-4 w-4" />
@@ -1194,7 +1482,7 @@ export function PaymentFlow({ title, subtitle, lines, onComplete, onClose, onBac
 }
 
 // ─── Appointment checkout, live ticket editing ───────────────────────────────
-export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, loyaltyBalance, pointsRecipients, accountNames, existingPrefs, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, draft, onDraft }: {
+export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClose, people, selected, onTogglePerson, onSelectAll, loyaltyBalance, pointsRecipients, accountNames, existingPrefs, addedIds, onPatchLine, onRemoveLine, onAddExtra, onRemoveExtra, draft, onDraft, dateKey, clientId, clientTags, isNewClient }: {
   clientName: string;
   items: Appointment[];
   dateLabel: string;
@@ -1223,6 +1511,12 @@ export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClo
   onRemoveExtra?: (id: string) => void;
   draft?: CheckoutDraftState;
   onDraft?: (patch: Partial<CheckoutDraftState>) => void;
+  /** ISO date this ticket is on, for discount date/day-of-week checks; defaults to today */
+  dateKey?: string;
+  /** the host's ClientRecord id, for discount customer-eligibility + per-customer redemption limits */
+  clientId?: string;
+  clientTags?: string[];
+  isNewClient?: boolean;
 }) {
   const lines: PaymentLine[] = items.map((a) => {
     const svc = svcById[a.serviceId];
@@ -1264,6 +1558,11 @@ export function CheckoutDialog({ clientName, items, dateLabel, onComplete, onClo
       existingPrefs={existingPrefs}
       draft={draft}
       onDraft={onDraft}
+      channel="front_desk"
+      dateKey={dateKey}
+      clientId={clientId}
+      clientTags={clientTags}
+      isNewClient={isNewClient}
     />
   );
 }

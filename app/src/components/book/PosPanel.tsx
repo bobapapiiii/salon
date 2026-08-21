@@ -299,6 +299,10 @@ export function PosPanel({ clients, pointsByClient, onAddClient, onComplete, onC
         existingPrefs={existingPrefs}
         draft={posDraft}
         onDraft={(patch) => setPosDraft((d) => ({ ...d, ...patch }))}
+        channel="walk_in"
+        clientId={guests[0]?.clientId}
+        clientTags={clients.find((c) => c.id === guests[0]?.clientId)?.tags}
+        isNewClient={(clients.find((c) => c.id === guests[0]?.clientId)?.visits ?? 1) === 0}
         onComplete={(p) => onComplete({
           ...p,
           clientName: name,

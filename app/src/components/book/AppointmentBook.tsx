@@ -28,7 +28,8 @@ import { buildJobCard, printJobCards } from '@/lib/job-card'
 import { useLocation, useNavigate } from 'react-router'
 import { useSettingsStore, setSettings } from '@/lib/settings-store'
 import { catById } from '@/lib/categories-store'
-import { CheckoutDialog, paymentSources, type CheckoutSourceDraft, type PaymentResult, type PaymentSource } from './CheckoutDialog'
+import { CheckoutDialog, paymentSources, type AppliedDiscountSnapshot, type CheckoutSourceDraft, type ManualDiscountSnapshot, type PaymentResult, type PaymentSource } from './CheckoutDialog'
+import { recordRedemptions } from '@/lib/discounts-store'
 import { InvoiceDialog } from './InvoiceDialog'
 import { ReopenCheckoutDialog, balanceDue, totalRefunded, type RefundRecord } from './RefundDialog'
 import { reduceTechLines, reduceTechTip, round2, netCollected } from '@/lib/payments'
@@ -340,6 +341,12 @@ export function AppointmentBook() {
      *  more than one person on the ticket actually has an account; a guest
      *  (name-only, no ClientRecord) can never hold points themselves */
     pointsRecipient?: string | null
+    promoCode?: string
+    staffSelectedDiscountIds?: string[]
+    removedDiscountIds?: string[]
+    manualDiscountAmount?: string
+    manualDiscountReason?: string
+    manualDiscountApprovedBy?: string
   }
   const [checkoutDraft, setCheckoutDraft] = usePersistentState<CheckoutDraft | null>(sdata('checkout-draft-v2'), null)
   const [posOpen, setPosOpen] = useState(false)
@@ -444,7 +451,7 @@ export function AppointmentBook() {
   const turnawayTitle = canLogTurnaway
     ? turnawaySummary ?? "Log a turnaway, a client we couldn't fit in"
     : `Turnaways can only be logged for today${turnawaySummary ? ` · ${turnawaySummary}` : ''}`
-  const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; /** when it was taken, to the minute — what buckets a sale into a register shift */ at?: number; clientName: string; /** every distinct client on this ticket (host + any party members/guests), so each of them sees this checkout in their own visit history, not just the host */ clientNames?: string[]; itemCount: number; subtotal: number; tip: number; total: number; method: string; /** the actual tender(s) taken against this ticket; older records fall back to method/total via paymentSources() */ sources?: PaymentSource[]; /** total minus what the sources add up to, >0 while a partial payment is still owed */ balanceDue?: number; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number; /** salon-defined per-service notation (Color, etc.) -- POS-only, an appointment-backed checkout keeps this on the appointment itself */ customFields?: Record<string, string> }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[]; /** money given back on this ticket, from a specific payment source, in full or in part */ refunds?: RefundRecord[]; /** who this ticket's points actually went to, if anyone -- a real ClientRecord, never a guest; kept on the payment so a later correction or refund reverses the same person even if clientName is a guest or the party's selection has since changed */ pointsRecipient?: string | null }[]>(sdata('payments-v2'), [])
+  const [payments, setPayments] = usePersistentState<{ id: string; dateKey: string; /** when it was taken, to the minute — what buckets a sale into a register shift */ at?: number; clientName: string; /** every distinct client on this ticket (host + any party members/guests), so each of them sees this checkout in their own visit history, not just the host */ clientNames?: string[]; itemCount: number; subtotal: number; tip: number; total: number; method: string; /** the actual tender(s) taken against this ticket; older records fall back to method/total via paymentSources() */ sources?: PaymentSource[]; /** total minus what the sources add up to, >0 while a partial payment is still owed */ balanceDue?: number; points: number; notes?: string; pos?: boolean; party?: number; discount?: number; redeemed?: { name: string; points: number; value: number }; lines?: { techId: string; price: number; /** salon-defined per-service notation (Color, etc.) -- POS-only, an appointment-backed checkout keeps this on the appointment itself */ customFields?: Record<string, string> }[]; apptIds?: string[]; tipByTech?: { techId: string; amount: number }[]; /** money given back on this ticket, from a specific payment source, in full or in part */ refunds?: RefundRecord[]; /** who this ticket's points actually went to, if anyone -- a real ClientRecord, never a guest; kept on the payment so a later correction or refund reverses the same person even if clientName is a guest or the party's selection has since changed */ pointsRecipient?: string | null; /** managed Discount records applied to this ticket, snapshotted at charge time so a later edit/archive of the discount never changes this invoice */ appliedDiscounts?: AppliedDiscountSnapshot[]; /** a one-time manual discount, if one was applied to this ticket */ manualDiscount?: ManualDiscountSnapshot }[]>(sdata('payments-v2'), [])
   // online waitlist (self-serve) + walk-in queue (front desk)
   const [waitlist, setWaitlist] = usePersistentState<QueueEntry[]>(sdata('waitlist-v1'), () => [
     { id: 'w1', name: 'Ava R.', serviceId: 'p-gel', phone: '(555) 220-1188', preferredTechId: getStaff().techs.find((t) => t.teamId === 'pedi')?.id, days: [1, 3, 5], fromMin: 360, toMin: 600, notes: 'Prefers after 2 PM', createdMin: DEMO_NOW_MIN - 25 },
@@ -2233,6 +2240,15 @@ export function AppointmentBook() {
     // anyone whose line was checked "save as preferred tech" gets that tech
     // + category added to their standing preferences
     applyPreferredTechPrefs(p.preferredTechPrefs, party)
+    // count this against each applied discount's overall + per-customer
+    // redemption limits (best-effort in-process check, see discounts-store.ts)
+    if (p.appliedDiscounts && p.appliedDiscounts.length > 0) {
+      const recipientClient = clients.find((c) => c.name === pointsRecipient)
+      recordRedemptions(p.appliedDiscounts.map((a) => ({
+        discountId: a.discountId, at: Date.now(), clientId: recipientClient?.id, clientName: checkoutName ?? undefined,
+        paymentId: newPayment.id, amountCents: a.amountCents,
+      })))
+    }
     // loyalty: deduct redeemed points, then award what this ticket earned --
     // stamped on the payment above too, so a later correction or refund
     // reverses the SAME person's balance even if the ticket's selection changes
@@ -2270,7 +2286,7 @@ export function AppointmentBook() {
   // real (already checked-out) Appointment card onto today's board for
   // every line with a tech credited -- a tech-less line still rings up
   // fine, it just has no column to land on, so no card gets made for it
-  const completePos = (r: { method: string; sources: PaymentSource[]; balanceDue: number; tip: number; subtotal: number; total: number; points: number; discount?: number; redeemed?: { name: string; points: number; value: number }; clientName: string; clientNames?: string[]; party?: number; pointsRecipient?: string | null; itemCount: number; lines?: { serviceId: string; techId: string; person?: string; price: number; customFields?: Record<string, string>; startMin: number; durationMin: number }[]; tipByTech?: { techId: string; amount: number }[]; preferredTechPrefs?: { person: string; techId: string; categoryId: string }[] }) => {
+  const completePos = (r: { method: string; sources: PaymentSource[]; balanceDue: number; tip: number; subtotal: number; total: number; points: number; discount?: number; redeemed?: { name: string; points: number; value: number }; appliedDiscounts?: AppliedDiscountSnapshot[]; manualDiscount?: ManualDiscountSnapshot; clientName: string; clientNames?: string[]; party?: number; pointsRecipient?: string | null; itemCount: number; lines?: { serviceId: string; techId: string; person?: string; price: number; customFields?: Record<string, string>; startMin: number; durationMin: number }[]; tipByTech?: { techId: string; amount: number }[]; preferredTechPrefs?: { person: string; techId: string; categoryId: string }[] }) => {
     const hostClient = clients.find((c) => c.name === r.clientName)
     const newAppts: Appointment[] = (r.lines ?? [])
       .filter((l) => l.techId !== '')
@@ -2291,10 +2307,12 @@ export function AppointmentBook() {
         log: [logEntry(`Rung up via POS, $${l.price.toFixed(2)} (${r.method})`)],
       }))
     if (newAppts.length > 0) commit([...appts, ...newAppts])
+    const posPaymentId = `pay${Date.now()}`
     setPayments((x) => [...x, {
-      id: `pay${Date.now()}`, at: Date.now(), dateKey, clientName: r.clientName, clientNames: r.clientNames, party: r.party,
+      id: posPaymentId, at: Date.now(), dateKey, clientName: r.clientName, clientNames: r.clientNames, party: r.party,
       itemCount: r.itemCount, subtotal: r.subtotal, tip: r.tip, total: r.total, method: r.method, sources: r.sources,
       balanceDue: r.balanceDue, points: r.points, pos: true, pointsRecipient: r.pointsRecipient,
+      discount: r.discount, redeemed: r.redeemed, appliedDiscounts: r.appliedDiscounts, manualDiscount: r.manualDiscount,
       lines: r.lines?.filter((l) => l.techId !== '').map((l) => ({ techId: l.techId, price: l.price, customFields: l.customFields })),
       tipByTech: r.tipByTech,
       apptIds: newAppts.length > 0 ? newAppts.map((a) => a.id) : undefined,
@@ -2303,6 +2321,14 @@ export function AppointmentBook() {
     // every account holder actually on the ticket gets a visit -- a
     // name-only guest or "Guest sale" simply matches no ClientRecord
     setClients((cs) => cs.map((c) => (party.has(c.name) ? { ...c, visits: c.visits + 1 } : c)))
+    // count this against each applied discount's redemption limits, same as a regular checkout
+    if (r.appliedDiscounts && r.appliedDiscounts.length > 0) {
+      const recipientClient = r.pointsRecipient ? clients.find((c) => c.name === r.pointsRecipient) : undefined
+      recordRedemptions(r.appliedDiscounts.map((a) => ({
+        discountId: a.discountId, at: Date.now(), clientId: recipientClient?.id, clientName: r.clientName,
+        paymentId: posPaymentId, amountCents: a.amountCents,
+      })))
+    }
     const posClient = r.pointsRecipient ? clients.find((c) => c.name === r.pointsRecipient) : undefined
     if (posClient) {
       setPointsByClient((m) => ({ ...m, [posClient.id]: Math.max(0, (m[posClient.id] ?? 0) - (r.redeemed?.points ?? 0) + r.points) }))
@@ -4858,8 +4884,17 @@ export function AppointmentBook() {
           onRemoveLine={removeCheckoutLine}
           onAddExtra={addCheckoutExtra}
           onRemoveExtra={removeCheckoutExtra}
-          draft={checkoutDraft ? { tipPct: checkoutDraft.tipPct, tipCustom: checkoutDraft.tipCustom, method: checkoutDraft.method, sources: checkoutDraft.sources, note: checkoutDraft.note, redeemId: checkoutDraft.redeemId, tipByTech: checkoutDraft.tipByTech, pointsRecipient: checkoutDraft.pointsRecipient } : undefined}
+          draft={checkoutDraft ? {
+            tipPct: checkoutDraft.tipPct, tipCustom: checkoutDraft.tipCustom, method: checkoutDraft.method, sources: checkoutDraft.sources,
+            note: checkoutDraft.note, redeemId: checkoutDraft.redeemId, tipByTech: checkoutDraft.tipByTech, pointsRecipient: checkoutDraft.pointsRecipient,
+            promoCode: checkoutDraft.promoCode, staffSelectedDiscountIds: checkoutDraft.staffSelectedDiscountIds, removedDiscountIds: checkoutDraft.removedDiscountIds,
+            manualDiscountAmount: checkoutDraft.manualDiscountAmount, manualDiscountReason: checkoutDraft.manualDiscountReason, manualDiscountApprovedBy: checkoutDraft.manualDiscountApprovedBy,
+          } : undefined}
           onDraft={(patch) => setCheckoutDraft((d) => d && { ...d, ...patch })}
+          dateKey={dateKey}
+          clientId={clients.find((c) => c.name === checkoutName)?.id}
+          clientTags={clients.find((c) => c.name === checkoutName)?.tags}
+          isNewClient={(clients.find((c) => c.name === checkoutName)?.visits ?? 0) === 0}
         />
       )}
       </div>
