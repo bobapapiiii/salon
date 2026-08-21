@@ -239,7 +239,7 @@ export function SettingsPage({ open, section, onSection, onClose, focusTechId, c
     patchRole(roleId, { serviceIds: has ? r.serviceIds.filter((x) => x !== svcId) : [...r.serviceIds, svcId] });
   };
   const addRole = () => {
-    const r: JobRole = { id: uid("role"), name: "New role", serviceIds: [] };
+    const r: JobRole = { id: crypto.randomUUID(), name: "New role", serviceIds: [] };
     const next = [...roles, r];
     setRoles(next);
     commitStaff(next, techs);
@@ -275,7 +275,7 @@ export function SettingsPage({ open, section, onSection, onClose, focusTechId, c
     const roleId = selRole?.id ?? roles[0]?.id;
     if (!roleId) return;
     const t: DraftTech = {
-      id: uid("tech"), name: "", teamId: roleId, phone: "", email: "", hireDate: "",
+      id: crypto.randomUUID(), name: "", teamId: roleId, phone: "", email: "", hireDate: "",
       commissionPct: 60, active: true, loginEnabled: false, pin: "", isNew: true,
       firstName: "", lastName: "", nickname: "", gender: "", birthday: "", endDate: "",
       bookableOnline: true, photoUrl: "", showPhotoOnCalendar: false, description: "",
@@ -1147,7 +1147,7 @@ function ServicesSection() {
     setServices((list) => [
       ...list,
       {
-        id: `svc-${Math.random().toString(36).slice(2, 8)}`,
+        id: crypto.randomUUID(),
         name: "New service",
         short: "New service",
         durationMin: 45,

@@ -6,7 +6,7 @@
 //
 // Base URL: set VITE_API_URL in app/.env (or app/.env.production for a
 // deployed build) to your API's URL. Defaults to localhost for dev.
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:8080";
+export const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") || "http://localhost:8080";
 
 export class ApiError extends Error {
   status: number;

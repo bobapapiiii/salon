@@ -1,29 +1,46 @@
 // ─── Services store, the salon's editable service catalog ───────────────────
-// Services are salon-configurable: name, short label, duration, price, active.
-// `svcById` is a live lookup, reads always see the current catalog, so the
-// calendar, booking, and checkout update the moment a service changes.
+// Phase 1 of the localStorage->Postgres migration: same pattern as
+// categories-store.ts -- internals fetch from/persist to the server, every
+// exported function keeps its old signature, mutations are optimistic with
+// rollback + a toast on failure. Money crosses the API boundary as integer
+// cents (server) <-> dollars (frontend, matching discount-engine.ts's
+// existing convention) -- that conversion happens here, not in staff-api.ts.
 import { useSyncExternalStore } from "react";
-import { SERVICES } from "./mock-data";
+import { toast } from "sonner";
 import type { Service, ServiceCategory } from "./booking-types";
-import { sdata } from "./persist";
+import { makeLoader } from "./store-loader";
+import {
+  ApiError,
+  createService as apiCreateService,
+  deleteService as apiDeleteService,
+  fetchServices,
+  patchService as apiPatchService,
+  reorderServices as apiReorderServices,
+  type ApiService,
+} from "./staff-api";
 
-const KEY = sdata("services-v1");
-
-function load(): Service[] {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return SERVICES.map((s) => ({ ...s }));
-    const parsed = JSON.parse(raw) as Service[];
-    if (!Array.isArray(parsed) || parsed.length === 0) return SERVICES.map((s) => ({ ...s }));
-    return parsed.filter((s) => s && typeof s.id === "string" && typeof s.name === "string");
-  } catch {
-    return SERVICES.map((s) => ({ ...s }));
-  }
+function apiToService(s: ApiService): Service {
+  return {
+    id: s.id,
+    name: s.name,
+    short: s.short,
+    durationMin: s.durationMin,
+    price: s.priceCents / 100,
+    categoryId: s.categoryId ?? "",
+    ...(s.teamAffinity ? { teamAffinity: s.teamAffinity } : {}),
+    ...(s.active === false ? { active: false } : {}),
+    ...(s.addons.length ? { addons: s.addons } : {}),
+    ...(s.onlineExcludedRoleIds.length ? { onlineExcludedRoleIds: s.onlineExcludedRoleIds } : {}),
+    ...(s.tags.length ? { tags: s.tags } : {}),
+  };
 }
 
-let state: Service[] = load();
+let state: Service[] = [];
 
 const listeners = new Set<() => void>();
+function emit() {
+  listeners.forEach((l) => l());
+}
 function subscribe(l: () => void) {
   listeners.add(l);
   return () => {
@@ -31,22 +48,88 @@ function subscribe(l: () => void) {
   };
 }
 
+const loader = makeLoader(async () => {
+  const { services } = await fetchServices();
+  state = services.map(apiToService);
+  emit();
+});
+
 export function useServicesStore(): Service[] {
+  loader.ensureLoaded();
   return useSyncExternalStore(subscribe, () => state);
 }
 
+/** for AppBootGate (App.tsx) -- true once the initial fetch has resolved */
+export const isServicesLoaded = () => loader.isLoaded();
+
 export function getServices(): Service[] {
+  loader.ensureLoaded();
   return state;
 }
 
+const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/** Same diff-and-sync approach as categories-store.ts's setCategories --
+ *  see its comment for why a single whole-array replace on the caller's
+ *  side is still correct even though this fires only the network calls a
+ *  change actually needs. */
 export function setServices(up: (s: Service[]) => Service[]) {
-  state = up(state);
-  try {
-    localStorage.setItem(KEY, JSON.stringify(state));
-  } catch {
-    /* storage blocked */
+  const prev = state;
+  const next = up(prev);
+  state = next;
+  emit();
+
+  const prevById = new Map(prev.map((s) => [s.id, s]));
+  const nextById = new Map(next.map((s) => [s.id, s]));
+
+  const rollback = (err: unknown) => {
+    state = prev;
+    emit();
+    toast.error(err instanceof ApiError ? err.message : "Couldn't save that change -- please try again");
+  };
+
+  const toApiPatch = (s: Service) => ({
+    name: s.name,
+    short: s.short,
+    durationMin: s.durationMin,
+    priceCents: Math.round(s.price * 100),
+    categoryId: s.categoryId || null,
+    teamAffinity: s.teamAffinity ?? null,
+    active: s.active ?? true,
+    addons: s.addons ?? [],
+    onlineExcludedRoleIds: s.onlineExcludedRoleIds ?? [],
+    tags: s.tags ?? [],
+  });
+
+  for (const id of prevById.keys()) {
+    if (!nextById.has(id)) apiDeleteService(id).catch(rollback);
   }
-  listeners.forEach((l) => l());
+  for (const svc of next) {
+    const before = prevById.get(svc.id);
+    if (!before) {
+      apiCreateService({ id: svc.id, ...toApiPatch(svc) }).catch(rollback);
+    } else if (
+      before.name !== svc.name ||
+      before.short !== svc.short ||
+      before.durationMin !== svc.durationMin ||
+      before.price !== svc.price ||
+      before.categoryId !== svc.categoryId ||
+      before.teamAffinity !== svc.teamAffinity ||
+      before.active !== svc.active ||
+      !same(before.addons, svc.addons) ||
+      !same(before.onlineExcludedRoleIds, svc.onlineExcludedRoleIds) ||
+      !same(before.tags, svc.tags)
+    ) {
+      apiPatchService(svc.id, toApiPatch(svc)).catch(rollback);
+    }
+  }
+
+  const survivingIds = next.map((s) => s.id);
+  const prevSurvivingOrder = prev.filter((s) => nextById.has(s.id)).map((s) => s.id);
+  const nextSurvivingOrder = next.filter((s) => prevById.has(s.id)).map((s) => s.id);
+  if (survivingIds.length > 1 && prevSurvivingOrder.join() !== nextSurvivingOrder.join()) {
+    apiReorderServices(survivingIds).catch(rollback);
+  }
 }
 
 /** live id → service lookup; index it exactly like the old static map */

@@ -231,6 +231,9 @@ export interface ClientRecord {
   name: string
   phone: string
   visits: number
+  /** collected by the public online-booking page; optional everywhere else,
+   *  most walk-in clients never have one on file */
+  email?: string
   /** standing tech + service preferences, set by staff on the client's profile */
   preferredTechs?: ClientTechPreference[]
   /** name-only guests this client has brought, no profile of their own */

@@ -1,11 +1,30 @@
 // ─── Staff store, job roles + technicians ────────────────────────────────────
-// Job roles are salon-configurable: a role has a name and the set of services
-// its members can perform. Each tech is assigned one role; a tech's skills are
-// derived from that role. Role order here drives the calendar column groups.
+// Phase 1 of the localStorage->Postgres migration: internals fetch from/
+// persist to the server (server/src/routes/staff-admin.ts) instead of
+// localStorage. Every exported function keeps its old signature -- SettingsPage
+// still calls setStaff/moveRole/uid exactly as before. Mutations are
+// optimistic (state updates immediately, the API call goes out in the
+// background, a failure rolls back + shows a toast) and syncSkills() stays a
+// pure client-side computation, same as always -- the server never
+// reimplements "a tech's skills = their role's services + their extras",
+// it just persists whatever `skills` array this file sends it.
 import { useSyncExternalStore } from "react";
-import { TECHS } from "./mock-data";
+import { toast } from "sonner";
 import type { Service, ServiceCategory, Tech } from "./booking-types";
-import { sdata } from "./persist";
+import { makeLoader } from "./store-loader";
+import {
+  ApiError,
+  createJobRole as apiCreateJobRole,
+  createTech as apiCreateTech,
+  deleteJobRole as apiDeleteJobRole,
+  fetchJobRoles,
+  fetchTechs,
+  patchJobRole as apiPatchJobRole,
+  patchTech as apiPatchTech,
+  reorderJobRoles as apiReorderJobRoles,
+  type ApiJobRole,
+  type ApiTech,
+} from "./staff-api";
 
 export interface JobRole {
   id: string;
@@ -17,19 +36,6 @@ export interface StaffState {
   roles: JobRole[];
   techs: Tech[];
 }
-
-const BASE = ["m-classic", "m-gel", "p-classic", "p-gel", "r-soak", "r-fix", "a-french"];
-
-const seedRoles: JobRole[] = [
-  { id: "nail", name: "Nail Artists", serviceIds: [...BASE, "e-dip", "e-fill"] },
-  { id: "pedi", name: "Pedi Specialists", serviceIds: [...BASE, "p-spa", "a-custom"] },
-  { id: "gelx", name: "Gel-X & Acrylic", serviceIds: [...BASE, "e-acrylic", "e-gelx", "e-dip", "e-fill"] },
-  { id: "art", name: "Nail Art Studio", serviceIds: [...BASE, "a-custom", "e-dip"] },
-];
-
-// staff/roles are salon-shared, every login at this salon sees the same team
-const STORAGE_KEY = sdata("staff-v1");
-const LEGACY_KEY = "salon-staff-v1";
 
 /** Keep every tech's skills in sync with their role's service list. */
 function syncSkills(s: StaffState): StaffState {
@@ -46,51 +52,33 @@ function syncSkills(s: StaffState): StaffState {
   };
 }
 
-const seedState = (): StaffState => ({
-  roles: seedRoles.map((r) => ({ ...r, serviceIds: [...r.serviceIds] })),
-  techs: TECHS.map((t, i) =>
-    i === 0
-      ? { ...t, loginEnabled: true, pin: "1234", commissionPct: 60, hireDate: "2021-03-15", phone: "(555) 010-2030", email: "amy@glossnailbar.com" }
-      : { ...t },
-  ),
-});
-
-/** Load persisted staff (role order, renames, services, tech assignments). */
-function loadInitial(): StaffState {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_KEY);
-    if (!raw) return seedState();
-    const parsed = JSON.parse(raw) as StaffState;
-    if (!Array.isArray(parsed.roles) || !Array.isArray(parsed.techs) || parsed.roles.length === 0) return seedState();
-    if (!parsed.roles.every((r) => r && typeof r.id === "string" && typeof r.name === "string" && Array.isArray(r.serviceIds))) return seedState();
-    if (!parsed.techs.every((t) => t && typeof t.id === "string" && typeof t.name === "string" && typeof t.teamId === "string")) return seedState();
-    // repair: techs pointing at a deleted role fall back to the first role
-    const roleIds = new Set(parsed.roles.map((r) => r.id));
-    const techs = parsed.techs.map((t) => ({
-      ...t,
-      initials: t.initials || t.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase(),
-      teamId: roleIds.has(t.teamId) ? t.teamId : parsed.roles[0].id,
-      skills: Array.isArray(t.skills) ? t.skills : [],
-    }));
-    // one-time migration: seed a demo portal login if nobody has one yet
-    if (techs.length > 0 && !techs.some((t) => t.loginEnabled)) {
-      techs[0] = { ...techs[0], loginEnabled: true, pin: "1234", commissionPct: techs[0].commissionPct ?? 60 };
-    }
-    return syncSkills({ roles: parsed.roles, techs });
-  } catch {
-    return seedState();
-  }
+function apiToRole(r: ApiJobRole): JobRole {
+  return { id: r.id, name: r.name, serviceIds: r.serviceIds };
 }
 
-let state: StaffState = loadInitial();
-
-function persist() {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    /* storage blocked/full, keep serving the in-memory state */
-  }
+/** The server (routes/staff-admin.ts) already reassembled a flat
+ *  Tech-shaped object -- known columns plus whatever the jsonb `profile`
+ *  catch-all held (initials, firstName, weeklySchedule, pin, etc). This is
+ *  just a null->undefined normalization so it matches Tech's optional-field
+ *  convention exactly. */
+function apiToTech(t: ApiTech): Tech {
+  const { id, name, teamId, skills, active, archived, bookableOnline, phone, email, commissionPct, ...profile } = t;
+  return {
+    ...(profile as Partial<Tech>),
+    id,
+    name,
+    teamId: teamId ?? "",
+    skills,
+    active,
+    archived,
+    bookableOnline,
+    ...(phone ? { phone } : {}),
+    ...(email ? { email } : {}),
+    ...(commissionPct != null ? { commissionPct } : {}),
+  } as Tech;
 }
+
+let state: StaffState = { roles: [], techs: [] };
 
 const listeners = new Set<() => void>();
 function emit() {
@@ -103,19 +91,91 @@ function subscribe(l: () => void) {
   };
 }
 
+const loader = makeLoader(async () => {
+  const [{ roles }, { techs }] = await Promise.all([fetchJobRoles(), fetchTechs()]);
+  state = syncSkills({ roles: roles.map(apiToRole), techs: techs.map(apiToTech) });
+  emit();
+});
+
 export function useStaffStore(): StaffState {
+  loader.ensureLoaded();
   return useSyncExternalStore(subscribe, () => state);
 }
 
+/** for AppBootGate (App.tsx) -- true once the initial fetch has resolved */
+export const isStaffLoaded = () => loader.isLoaded();
+
 /** Imperative read for non-reactive spots (drag math, module helpers). */
 export function getStaff(): StaffState {
+  loader.ensureLoaded();
   return state;
 }
 
+const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+// `rest` still carries `id` -- harmless, the server ignores an `id` key on
+// PATCH (see staff-admin.ts's splitTechPatch) and POST passes it separately.
+const techToApiPatch = (t: Tech) => {
+  const { skills, teamId, ...rest } = t;
+  return { ...rest, teamId, skills };
+};
+
+/** Diffs the previous and next {roles, techs} into the minimal set of API
+ *  calls, same approach as categories-store.ts/services-store.ts. Techs are
+ *  synced first and awaited before role deletes fire, so a role delete that
+ *  depends on its techs having just been reassigned elsewhere (see
+ *  SettingsPage.tsx's confirmDeleteRole) never races the server's "still in
+ *  use" 409 check. */
 export function setStaff(up: (s: StaffState) => StaffState) {
-  state = syncSkills(up(state));
-  persist();
+  const prev = state;
+  const next = syncSkills(up(prev));
+  state = next;
   emit();
+
+  const rollback = (err: unknown) => {
+    state = prev;
+    emit();
+    toast.error(err instanceof ApiError ? err.message : "Couldn't save that change -- please try again");
+  };
+
+  const prevTechById = new Map(prev.techs.map((t) => [t.id, t]));
+  const techWrites: Promise<unknown>[] = [];
+  for (const tech of next.techs) {
+    const before = prevTechById.get(tech.id);
+    if (!before) {
+      // techToApiPatch(tech) already carries `id` (see its comment) --
+      // createTech only needs id? to be present somewhere in the payload.
+      techWrites.push(apiCreateTech(techToApiPatch(tech)).catch(rollback));
+    } else if (!same(before, tech)) {
+      techWrites.push(apiPatchTech(tech.id, techToApiPatch(tech)).catch(rollback));
+    }
+  }
+  // Techs are never deleted through this store (archived only, via a normal
+  // patch) -- see the Phase 1 migration plan.
+
+  void Promise.all(techWrites).then(() => {
+    const prevRoleById = new Map(prev.roles.map((r) => [r.id, r]));
+    const nextRoleById = new Map(next.roles.map((r) => [r.id, r]));
+
+    for (const id of prevRoleById.keys()) {
+      if (!nextRoleById.has(id)) apiDeleteJobRole(id).catch(rollback);
+    }
+    for (const role of next.roles) {
+      const before = prevRoleById.get(role.id);
+      if (!before) {
+        apiCreateJobRole({ id: role.id, name: role.name, serviceIds: role.serviceIds }).catch(rollback);
+      } else if (before.name !== role.name || !same(before.serviceIds, role.serviceIds)) {
+        apiPatchJobRole(role.id, { name: role.name, serviceIds: role.serviceIds }).catch(rollback);
+      }
+    }
+
+    const survivingIds = next.roles.map((r) => r.id);
+    const prevSurvivingOrder = prev.roles.filter((r) => nextRoleById.has(r.id)).map((r) => r.id);
+    const nextSurvivingOrder = next.roles.filter((r) => prevRoleById.has(r.id)).map((r) => r.id);
+    if (survivingIds.length > 1 && prevSurvivingOrder.join() !== nextSurvivingOrder.join()) {
+      apiReorderJobRoles(survivingIds).catch(rollback);
+    }
+  });
 }
 
 /** Move a role to a new index, reorders the calendar's column groups. */

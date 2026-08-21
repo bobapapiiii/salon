@@ -11,7 +11,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "db:import-local": "tsx src/db/import-local-data.ts",
-    "db:create-staff-login": "tsx src/db/create-staff-logins.ts"
+    "db:create-staff-login": "tsx src/db/create-staff-logins.ts",
+    "db:cleanup-demo-seed": "tsx src/db/cleanup-demo-seed.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.1",

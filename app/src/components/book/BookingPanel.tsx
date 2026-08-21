@@ -453,7 +453,7 @@ export function BookingPanel({
 
   const createGuest = () => {
     if (!newName.trim() || !newPhone.trim()) return // an account needs a phone number
-    const c: ClientRecord = { id: `c${Date.now()}`, name: newName.trim(), phone: newPhone.trim(), visits: 0 }
+    const c: ClientRecord = { id: crypto.randomUUID(), name: newName.trim(), phone: newPhone.trim(), visits: 0 }
     onAddClient(c)
     pickGuest(c)
     setAddOpen(false)
@@ -892,7 +892,7 @@ export function BookingPanel({
                     onPick={(c) => { pickGuest(c); setAddGuestOpen(false) }}
                     onPickNameOnly={(name) => { pickNameOnlyGuest(name); setAddGuestOpen(false) }}
                     onCreate={(name, phone) => {
-                      const c: ClientRecord = { id: `c${Date.now()}`, name, phone: phone || '(555) 000-0000', visits: 0 }
+                      const c: ClientRecord = { id: crypto.randomUUID(), name, phone: phone || '(555) 000-0000', visits: 0 }
                       onAddClient(c)
                       pickGuest(c)
                       setAddGuestOpen(false)

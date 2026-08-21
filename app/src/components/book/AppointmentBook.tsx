@@ -6,10 +6,11 @@ import {
   CLOSE_MIN, DAY_SLOTS, MIN_PPM, MAX_PPM, MIN_COL_W, MAX_COL_W,
   OPEN_MIN, OVERVIEW_COL_W, SLOT_MIN, TEXT_COL_W, fmtTime, overlaps,
 } from '@/lib/booking-types'
-import { CLIENTS, SERVICES, generateDay } from '@/lib/mock-data'
+import { SERVICES, generateDay } from '@/lib/mock-data'
 import { boardTechs, getStaff, isArchived, moveRole, roleColor, uid, useStaffStore } from '@/lib/staff-store'
 import { sdata, setCodec, upref, usePersistentState } from '@/lib/persist'
 import { getServices, svcById } from '@/lib/services-store'
+import { setClients, useClientsStore } from '@/lib/clients-store'
 import { ApiError, approveOnlineRequest as apiApproveOnlineRequest, declineOnlineRequest as apiDeclineOnlineRequest, fetchBookingFeed } from '@/lib/booking-api'
 import {
   buildConfirmedAppointment, buildRequestedAppointment, collectKnownOnlineRequestIds,
@@ -494,7 +495,7 @@ export function AppointmentBook() {
   const salonOpenOff = Math.max(0, Math.min(DAY_MIN, (salonDayHours?.open ?? OPEN_MIN) - OPEN_MIN))
   const salonCloseOff = Math.max(salonOpenOff, Math.min(DAY_MIN, (salonDayHours?.close ?? CLOSE_MIN) - OPEN_MIN))
   const salonClosed = Boolean(salonHoliday) || Boolean(salonDayHours?.off)
-  const [clients, setClients] = usePersistentState<ClientRecord[]>(sdata('clients-v1'), CLIENTS)
+  const clients = useClientsStore()
   const [bookingOpen, setBookingOpen] = useState(false)
   const [bookingPrefill, setBookingPrefill] = useState<{ techId: string; startMin: number } | null>(null)
   const [finderOpen, setFinderOpen] = useState(false)
@@ -2219,7 +2220,7 @@ export function AppointmentBook() {
       // whoever's left had no ClientRecord at all -- checking the box is
       // enough to start a minimal profile just to hold the preference
       const created: ClientRecord[] = [...prefsByPerson.entries()].map(([name, adds]) => ({
-        id: uid('client'), name, phone: '', visits: 1, preferredTechs: mergePrefs(undefined, adds),
+        id: crypto.randomUUID(), name, phone: '', visits: 1, preferredTechs: mergePrefs(undefined, adds),
       }))
       return created.length > 0 ? [...updated, ...created] : updated
     })

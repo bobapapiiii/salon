@@ -4,6 +4,9 @@ import cors from "@fastify/cors";
 import { bookingRoutes } from "./routes/booking.js";
 import { authRoutes } from "./routes/auth.js";
 import { staffRoutes } from "./routes/staff.js";
+import { catalogRoutes } from "./routes/catalog.js";
+import { staffAdminRoutes } from "./routes/staff-admin.js";
+import { clientsRoutes } from "./routes/clients.js";
 
 const app = Fastify({ logger: true });
 
@@ -19,6 +22,9 @@ app.get("/api/health", async () => ({ ok: true, time: new Date().toISOString() }
 await app.register(bookingRoutes);
 await app.register(authRoutes);
 await app.register(staffRoutes);
+await app.register(catalogRoutes);
+await app.register(staffAdminRoutes);
+await app.register(clientsRoutes);
 
 const port = Number(process.env.PORT ?? 8080);
 app

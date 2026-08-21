@@ -10,6 +10,7 @@ import { sdata, usePersistentState } from "../../lib/persist";
 import { svcById, useServicesStore } from "../../lib/services-store";
 import { catById } from "../../lib/categories-store";
 import { roleColor, useStaffStore } from "../../lib/staff-store";
+import { useClientsStore } from "../../lib/clients-store";
 import { useSettingsStore } from "../../lib/settings-store";
 
 // ── data shapes ──────────────────────────────────────────────────────────────
@@ -31,13 +32,6 @@ interface PaymentRec {
   lines?: { techId: string; price: number }[];
   apptIds?: string[];
   tipByTech?: { techId: string; amount: number }[];
-}
-interface ClientRec {
-  id: string;
-  name: string;
-  phone: string;
-  visits: number;
-  guests?: { id: string; name: string }[];
 }
 interface CancellationRec {
   id: string;
@@ -305,7 +299,7 @@ export function ReportsSection() {
 
   const [payments] = usePersistentState<PaymentRec[]>(sdata("payments-v2"), []);
   const [apptDays] = usePersistentState<Record<string, Appointment[]>>(sdata("appts-v2"), {});
-  const [clients] = usePersistentState<ClientRec[]>(sdata("clients-v1"), []);
+  const clients = useClientsStore();
   const [cancellations] = usePersistentState<CancellationRec[]>(sdata("cancellations-v2"), []);
   const [turnaways] = usePersistentState<TurnawayRec[]>(sdata("turnaways-v1"), [], turnawaysCodec);
   const [pointsByClient] = usePersistentState<Record<string, number>>(sdata("loyalty-v1"), {});

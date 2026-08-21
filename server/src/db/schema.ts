@@ -20,6 +20,7 @@ import {
   date,
   uniqueIndex,
   index,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
@@ -64,6 +65,17 @@ export const serviceCategories = pgTable(
     salonId: uuid("salon_id").notNull().references(() => salons.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     sortOrder: integer("sort_order").notNull().default(0),
+    // Phase 1 (localStorage->Postgres migration) additions -- see
+    // migrations/0001_phase1_catalog.sql. Color tokens are directly
+    // user-editable client-side (a raw <input type="color"> per token), so
+    // they're stored verbatim, not derived server-side.
+    hue: text("hue"),
+    fill: text("fill"),
+    line: text("line"),
+    textColor: text("text_color"),
+    parentId: uuid("parent_id").references((): AnyPgColumn => serviceCategories.id, { onDelete: "set null" }),
+    archived: boolean("archived").notNull().default(false),
+    onlineExcludedRoleIds: jsonb("online_excluded_role_ids").$type<string[]>().notNull().default([]),
   },
   (t) => [index("service_categories_salon_idx").on(t.salonId)],
 );
@@ -81,8 +93,38 @@ export const services = pgTable(
     bookableOnline: boolean("bookable_online").notNull().default(true),
     tags: jsonb("tags").$type<string[]>().notNull().default([]),
     sortOrder: integer("sort_order").notNull().default(0),
+    // Phase 1 additions -- see migrations/0001_phase1_catalog.sql. `addons`
+    // follows the exact precedent `tags` already sets (jsonb, no query need).
+    short: text("short").notNull().default(""),
+    teamAffinity: text("team_affinity"),
+    addons: jsonb("addons").$type<{ id: string; name: string; mins: number; price: number }[]>().notNull().default([]),
+    onlineExcludedRoleIds: jsonb("online_excluded_role_ids").$type<string[]>().notNull().default([]),
   },
   (t) => [index("services_salon_idx").on(t.salonId)],
+);
+
+// Job roles -- a new concept as of Phase 1, mirrors the frontend's JobRole
+// (app/src/lib/staff-store.ts): distinct from users.title, which is a
+// permission level (Reception/Manager/Owner), not a job role.
+export const jobRoles = pgTable(
+  "job_roles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    salonId: uuid("salon_id").notNull().references(() => salons.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+  },
+  (t) => [index("job_roles_salon_idx").on(t.salonId)],
+);
+
+// Which services a job role covers -- mirrors techSkills exactly.
+export const jobRoleServices = pgTable(
+  "job_role_services",
+  {
+    jobRoleId: uuid("job_role_id").notNull().references(() => jobRoles.id, { onDelete: "cascade" }),
+    serviceId: uuid("service_id").notNull().references(() => services.id, { onDelete: "cascade" }),
+  },
+  (t) => [uniqueIndex("job_role_services_pk").on(t.jobRoleId, t.serviceId)],
 );
 
 export const techs = pgTable(
@@ -92,11 +134,29 @@ export const techs = pgTable(
     salonId: uuid("salon_id").notNull().references(() => salons.id, { onDelete: "cascade" }),
     userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
     name: text("name").notNull(),
-    title: text("title"), // job role label, e.g. "Nail Tech", "Senior Tech"
+    // Denormalized cache of jobRoleId's name, kept in sync server-side on
+    // every write (see routes/staff-admin.ts) so the public booking route
+    // (routes/booking.ts) needs zero changes. jobRoleId is the source of
+    // truth as of Phase 1; this column is a read convenience, not a second
+    // source of truth to edit directly.
+    title: text("title"),
     active: boolean("active").notNull().default(true),
     bookableOnline: boolean("bookable_online").notNull().default(true),
     tags: jsonb("tags").$type<string[]>().notNull().default([]),
     sortOrder: integer("sort_order").notNull().default(0),
+    // Phase 1 additions -- see migrations/0001_phase1_catalog.sql and the
+    // migration plan's "jsonb-vs-columns" section. Only fields actually
+    // queried/joined/reported-on are promoted to real columns; the rest of
+    // the frontend's much richer Tech shape (documents, weekly schedule,
+    // time off, per-service overrides, address, PIN, etc) round-trips
+    // through `profile`, shallow-merged over these columns on every
+    // read/write in routes/staff-admin.ts -- invisible to the frontend.
+    jobRoleId: uuid("job_role_id").references(() => jobRoles.id, { onDelete: "set null" }),
+    archived: boolean("archived").notNull().default(false),
+    phone: text("phone"),
+    email: text("email"),
+    commissionPct: integer("commission_pct"),
+    profile: jsonb("profile").$type<Record<string, unknown>>().notNull().default({}),
   },
   (t) => [index("techs_salon_idx").on(t.salonId)],
 );
@@ -122,6 +182,12 @@ export const clients = pgTable(
     phone: text("phone"),
     tags: jsonb("tags").$type<string[]>().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // Phase 1 additions -- see migrations/0001_phase1_catalog.sql. `visits`
+    // is a real column (arithmetic, feeds reports); preferredTechs/guests
+    // are small nested arrays with no query need, kept as jsonb.
+    visits: integer("visits").notNull().default(0),
+    preferredTechs: jsonb("preferred_techs").$type<{ id: string; techId: string; categoryIds: string[] }[]>().notNull().default([]),
+    guests: jsonb("guests").$type<{ id: string; name: string }[]>().notNull().default([]),
   },
   (t) => [
     index("clients_salon_idx").on(t.salonId),
@@ -171,17 +237,35 @@ export const salonsRelations = relations(salons, ({ many }) => ({
   techs: many(techs),
   services: many(services),
   serviceCategories: many(serviceCategories),
+  jobRoles: many(jobRoles),
   clients: many(clients),
   appointments: many(appointments),
+}));
+
+export const serviceCategoriesRelations = relations(serviceCategories, ({ one, many }) => ({
+  parent: one(serviceCategories, { fields: [serviceCategories.parentId], references: [serviceCategories.id] }),
+  services: many(services),
 }));
 
 export const servicesRelations = relations(services, ({ one, many }) => ({
   category: one(serviceCategories, { fields: [services.categoryId], references: [serviceCategories.id] }),
   techSkills: many(techSkills),
+  jobRoleServices: many(jobRoleServices),
+}));
+
+export const jobRolesRelations = relations(jobRoles, ({ many }) => ({
+  jobRoleServices: many(jobRoleServices),
+  techs: many(techs),
+}));
+
+export const jobRoleServicesRelations = relations(jobRoleServices, ({ one }) => ({
+  jobRole: one(jobRoles, { fields: [jobRoleServices.jobRoleId], references: [jobRoles.id] }),
+  service: one(services, { fields: [jobRoleServices.serviceId], references: [services.id] }),
 }));
 
 export const techsRelations = relations(techs, ({ one, many }) => ({
   user: one(users, { fields: [techs.userId], references: [users.id] }),
+  jobRole: one(jobRoles, { fields: [techs.jobRoleId], references: [jobRoles.id] }),
   techSkills: many(techSkills),
 }));
 
