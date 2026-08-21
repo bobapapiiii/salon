@@ -289,9 +289,9 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
                   {upcoming.map((a) => (
                     <div key={a.id} className="flex items-center gap-3 border-b border-border/50 px-4 py-2.5 text-sm last:border-0">
                       <span className="w-24 text-muted-foreground">Today</span>
-                      <span className="min-w-0 flex-1 truncate">{svcById[a.serviceId].name} · {fmtTime(a.startMin)}</span>
+                      <span className="min-w-0 flex-1 truncate">{svcById[a.serviceId]?.name ?? 'Unknown service'} · {fmtTime(a.startMin)}</span>
                       <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">UPCOMING</span>
-                      <span className="w-16 text-right">${svcById[a.serviceId].price}</span>
+                      <span className="w-16 text-right">${svcById[a.serviceId]?.price ?? 0}</span>
                       <span className="w-24 truncate text-right text-muted-foreground">{techById(a.techId)?.name ?? 'Unknown'}</span>
                     </div>
                   ))}
@@ -531,9 +531,9 @@ export function ClientProfile({ client, appts, guestVisits = [], realVisits = []
                 {upcoming.map((a) => (
                   <div key={a.id} className="flex items-center gap-3 border-b border-border/50 px-4 py-2.5 text-sm last:border-0">
                     <span className="w-24 text-muted-foreground">Today</span>
-                    <span className="min-w-0 flex-1 truncate">{svcById[a.serviceId].name} · {fmtTime(a.startMin)}</span>
+                    <span className="min-w-0 flex-1 truncate">{svcById[a.serviceId]?.name ?? 'Unknown service'} · {fmtTime(a.startMin)}</span>
                     <span className="rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600">OPEN</span>
-                    <span className="w-16 text-right">${svcById[a.serviceId].price.toFixed(2)}</span>
+                    <span className="w-16 text-right">${(svcById[a.serviceId]?.price ?? 0).toFixed(2)}</span>
                     <span className="w-28 truncate text-right text-muted-foreground">{techById(a.techId)?.name ?? 'Unknown'}</span>
                   </div>
                 ))}

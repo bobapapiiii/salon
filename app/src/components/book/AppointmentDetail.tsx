@@ -328,7 +328,7 @@ export function AppointmentDetail({
     onSave(updated, removed, dateKey !== originDateKey ? dateKey : undefined, added)
   }
 
-  const total = activeSvcs.reduce((s, d) => s + svcById[d.serviceId].price + (d.addons ?? []).reduce((s2, a) => s2 + a.price, 0), 0)
+  const total = activeSvcs.reduce((s, d) => s + (svcById[d.serviceId]?.price ?? 0) + (d.addons ?? []).reduce((s2, a) => s2 + a.price, 0), 0)
 
   // ── day & time rail, same slot-finding mechanism as booking a new appointment.
   // scoped to whichever guest is active via the chips above, so switching

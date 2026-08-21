@@ -795,7 +795,7 @@ export function AppointmentBook() {
   const filtered = useMemo(
     () => appts
       .filter((a) => showNoShows || a.status !== 'no_show')
-      .filter((a) => catFilter === 'all' || catById[svcById[a.serviceId].categoryId].id === catFilter),
+      .filter((a) => catFilter === 'all' || catById[svcById[a.serviceId]?.categoryId ?? '']?.id === catFilter),
     [appts, catFilter, showNoShows],
   )
   const requested = useMemo(() => appts.filter((a) => a.status === 'requested'), [appts])
@@ -1300,7 +1300,7 @@ export function AppointmentBook() {
   ): Appointment[] | null => {
     if (!autoRelocateNonRequested) return null
     const items = groups.flatMap((g) => {
-      const durationOf = (id: string) => g.durations?.[id] ?? svcById[id].durationMin
+      const durationOf = (id: string) => g.durations?.[id] ?? svcById[id]?.durationMin ?? 0
       return layoutItems(g.svcIds, g.parallel, durationOf).map((it) => ({ ...it, techChoice: g.techChoices?.[it.serviceId] }))
     })
     if (items.length === 0) return null
@@ -2621,7 +2621,7 @@ export function AppointmentBook() {
       sourceApptId: a.id,
     }
     setClipboard((c) => [...c.filter((x) => x.sourceApptId !== a.id), item])
-    if (!quiet) showFlash(`⧉ ${a.clientName}, ${svcById[a.serviceId].short} on the clipboard, drag it onto any day`)
+    if (!quiet) showFlash(`⧉ ${a.clientName}, ${svcById[a.serviceId]?.short ?? 'this service'} on the clipboard, drag it onto any day`)
   }
 
   const copyToClipboard = (a: Appointment) => {
@@ -3822,7 +3822,7 @@ export function AppointmentBook() {
 
   // day totals for the status bar
   const dayGuests = useMemo(() => new Set(appts.map((a) => a.clientName)).size, [appts])
-  const dayValue = useMemo(() => appts.reduce((s, a) => s + (a.priceOverride ?? svcById[a.serviceId].price) + (a.addons ?? []).reduce((x, ad) => x + ad.price, 0), 0), [appts])
+  const dayValue = useMemo(() => appts.reduce((s, a) => s + (a.priceOverride ?? svcById[a.serviceId]?.price ?? 0) + (a.addons ?? []).reduce((x, ad) => x + ad.price, 0), 0), [appts])
   const dayCollected = useMemo(() => payments.filter((p) => p.dateKey === dateKey).reduce((s, p) => s + p.total, 0), [payments, dateKey])
   // a day's appointments still needing checkout -- Manage Register blocks
   // closing a drawer until this list (for the SESSION being closed, not
@@ -3976,7 +3976,7 @@ export function AppointmentBook() {
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{c.clientName}</div>
                   <div className="truncate text-[10px] text-muted-foreground">
-                    {c.services.map((s) => svcById[s.serviceId].short).join(' + ')}
+                    {c.services.map((s) => svcById[s.serviceId]?.short ?? '—').join(' + ')}
                     {c.isPair && ' · same time'}
                   </div>
                   {c.services[0] && (() => {
@@ -4285,7 +4285,9 @@ export function AppointmentBook() {
                     <div key={a.id} className="absolute rounded-sm opacity-50" style={{
                       top: yAt(a.startMin), height: Math.max(3, a.durationMin * pxPerMin),
                       left: 2, right: 2,
-                      background: darkMode ? `hsl(${catById[svcById[a.serviceId].categoryId].hue} / 0.6)` : catById[svcById[a.serviceId].categoryId].line,
+                      background: darkMode
+                        ? `hsl(${catById[svcById[a.serviceId]?.categoryId ?? '']?.hue ?? '0 0% 60%'} / 0.6)`
+                        : catById[svcById[a.serviceId]?.categoryId ?? '']?.line ?? 'hsl(0 0% 60%)',
                     }} />
                   ))}
                 </div>
@@ -4805,7 +4807,7 @@ export function AppointmentBook() {
       {cancelAppt && (
         <ConfirmCancelDialog
           clientName={cancelAppt.clientName}
-          serviceName={svcById[cancelAppt.serviceId].name}
+          serviceName={svcById[cancelAppt.serviceId]?.name ?? 'this service'}
           timeLabel={fmtTime(cancelAppt.startMin)}
           groupCount={cancelGroup.length}
           onCancelOne={doCancelOne}
