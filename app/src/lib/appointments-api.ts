@@ -19,7 +19,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!token) throw new ApiError(401, "Not signed in");
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(init?.headers ?? {}) },
+    // Only send Content-Type when there's actually a body -- see the
+    // matching comment in staff-api.ts's request(). deleteBlockApi and
+    // deleteScheduleOverride below send no body, and Fastify's default
+    // JSON parser 400s a "Content-Type: application/json" request with no
+    // body before the route handler ever runs.
+    headers: { ...(init?.body ? { "Content-Type": "application/json" } : {}), Authorization: `Bearer ${token}`, ...(init?.headers ?? {}) },
   });
   const body = await res.json().catch(() => null);
   if (!res.ok) {

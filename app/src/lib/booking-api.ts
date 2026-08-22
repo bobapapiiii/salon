@@ -19,7 +19,13 @@ export class ApiError extends Error {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    // Only send Content-Type when there's actually a body -- see the
+    // matching comment in staff-api.ts's request(). No bodyless call
+    // exists through this file today, but Fastify's default JSON parser
+    // 400s a "Content-Type: application/json" request with no body, so
+    // this stays consistent with the other two API clients rather than
+    // becoming a trap for the next bodyless call added here.
+    headers: { ...(init?.body ? { "Content-Type": "application/json" } : {}), ...(init?.headers ?? {}) },
   });
   const body = await res.json().catch(() => null);
   if (!res.ok) {

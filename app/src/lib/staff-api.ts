@@ -20,7 +20,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!token) throw new ApiError(401, "Not signed in");
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}`, ...(init?.headers ?? {}) },
+    // Only send Content-Type when there's actually a body -- Fastify's
+    // default JSON body parser treats "Content-Type: application/json"
+    // with an empty/absent body as an error (FST_ERR_CTP_EMPTY_JSON_BODY),
+    // replying 400 with `error: "Bad Request"` before the route handler
+    // ever runs. Every DELETE call through this file (deleteCategory,
+    // deleteService, deleteJobRole) sends no body, so it always hit this
+    // -- looked exactly like the category having something still in it,
+    // when the request never got far enough to check that.
+    headers: { ...(init?.body ? { "Content-Type": "application/json" } : {}), Authorization: `Bearer ${token}`, ...(init?.headers ?? {}) },
   });
   const body = await res.json().catch(() => null);
   if (!res.ok) {
