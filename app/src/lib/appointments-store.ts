@@ -320,7 +320,20 @@ export function patchAppointment(
     .then((res) => {
       const homeKey = res.appointment.dateKey;
       if (days.has(homeKey)) {
-        setDayAppts(homeKey, [...(days.get(homeKey)?.appts ?? []).filter((a) => a.id !== id), res.appointment]);
+        // Reconcile in place when the row is already sitting in this day's
+        // cache (the overwhelmingly common case -- a same-day content edit,
+        // e.g. every keystroke of a checkout custom field). Filter+append
+        // here used to shove the just-edited row to the END of the array on
+        // every successful patch -- harmless for the calendar (positioned by
+        // startMin/techId, not array order) but visibly reordered any list
+        // that renders in array order, like CheckoutDialog's per-service
+        // lines: type into "Color" on the top line, and by the time the
+        // optimistic patch round-trips, that line jumps to the bottom.
+        // Only a genuine cross-day arrival (row not yet present here) still
+        // appends, since there's no prior position to preserve.
+        const homeList = days.get(homeKey)?.appts ?? [];
+        const idx = homeList.findIndex((a) => a.id === id);
+        setDayAppts(homeKey, idx === -1 ? [...homeList, res.appointment] : homeList.map((a) => (a.id === id ? res.appointment : a)));
       }
       for (const [key, day] of days) {
         if (key !== homeKey && day.appts.some((a) => a.id === id)) {
@@ -379,8 +392,12 @@ export function moveAppointment(dateKey: string, id: string, move: { techId?: st
     .then((res) => {
       const homeKey = res.appointment.dateKey;
       if (days.has(homeKey)) {
-        const homeList = (days.get(homeKey)?.appts ?? []).filter((a) => a.id !== id);
-        setDayAppts(homeKey, [...homeList, res.appointment]);
+        // Same in-place-reconcile fix as patchAppointment() above -- keep
+        // the row's array position when it's already cached here (a
+        // same-day move), only append for a genuine new arrival.
+        const homeList = days.get(homeKey)?.appts ?? [];
+        const idx = homeList.findIndex((a) => a.id === id);
+        setDayAppts(homeKey, idx === -1 ? [...homeList, res.appointment] : homeList.map((a) => (a.id === id ? res.appointment : a)));
       }
       // Clean up the id from every OTHER cached day it might still be
       // sitting in (the optimistic pre-move day, if different from home).

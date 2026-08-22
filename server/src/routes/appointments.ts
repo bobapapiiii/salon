@@ -307,9 +307,15 @@ export async function appointmentsRoutes(app: FastifyInstance) {
     if (!DATE_KEY.test(dateKey)) return reply.code(400).send({ error: "dateKey must be YYYY-MM-DD" });
     const salonId = req.staff!.salonId;
 
+    // Explicit orderBy (defense in depth, belt-and-suspenders alongside the
+    // frontend's own in-place-reconcile fix in appointments-store.ts): a
+    // bare SELECT has no ordering guarantee, so a row that gets UPDATEd
+    // between two fetches of the same day could otherwise come back in a
+    // different position -- createdAt as tiebreaker keeps same-instant rows
+    // stable too.
     const [apptRows, blockRows, overrideRows] = await Promise.all([
-      db.select().from(appointments).where(and(eq(appointments.salonId, salonId), eq(appointments.dateKey, dateKey))),
-      db.select().from(timeBlocks).where(and(eq(timeBlocks.salonId, salonId), eq(timeBlocks.dateKey, dateKey))),
+      db.select().from(appointments).where(and(eq(appointments.salonId, salonId), eq(appointments.dateKey, dateKey))).orderBy(appointments.startMin, appointments.createdAt),
+      db.select().from(timeBlocks).where(and(eq(timeBlocks.salonId, salonId), eq(timeBlocks.dateKey, dateKey))).orderBy(timeBlocks.startMin),
       db.select().from(techDayOverrides).where(and(eq(techDayOverrides.salonId, salonId), eq(techDayOverrides.dateKey, dateKey))),
     ]);
 
