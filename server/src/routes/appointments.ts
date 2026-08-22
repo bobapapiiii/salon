@@ -45,35 +45,27 @@ const APPT_STATUSES = [
 
 // Which statuses a given status may move to via POST /:id/status. A
 // same-status "transition" (X -> X) is always allowed regardless of this
-// map -- treated as an idempotent confirmation, not a real state change
-// (covers the "completed -> completed" reopen-adjacent no-op the plan
-// calls out without needing a special-cased entry for it). cancelled and
-// declined are terminal: nothing transitions out of them, and there is no
-// DELETE endpoint for appointments at all -- cancel/decline are the only
-// ways an appointment leaves the active board, and both are soft status
-// writes so a second terminal (or a refresh) never loses the row.
+// map -- treated as an idempotent confirmation, not a real state change.
+// Every status short of the two terminal soft-deletes (cancelled,
+// declined) is freely reachable from every other one: ApptMenus.tsx's
+// manual status dropdown in the edit panel offers all 8 of them with NO
+// client-side gating on the appointment's current status -- front desk
+// needs to be able to correct a mis-set status (undo a mistaken no-show,
+// confirm an already-booked walk-in, etc.) without hitting an artificial
+// wall here. The context-menu shortcuts (Confirm, Check in, Start
+// service, Mark completed, Checkout, Back to confirmed/checked in) are
+// just curated fast paths through this same open set, not a stricter
+// workflow than the dropdown already allows -- keeping this list narrower
+// than the dropdown is exactly what produced the "Cannot move from booked
+// to confirmed" and "...to checked out" bugs, one specific transition at
+// a time. cancelled and declined stay terminal: nothing transitions out
+// of them, and there is no DELETE endpoint for appointments at all --
+// cancel/decline are the only ways an appointment leaves the active
+// board, and both are soft status writes so a second terminal (or a
+// refresh) never loses the row.
+const ACTIVE_STATUSES = ["requested", "confirmed", "booked", "checked_in", "in_service", "completed", "checked_out", "no_show"] as const;
 const STATUS_TRANSITIONS: Record<string, readonly string[]> = {
-  // "cancelled" here (alongside the normal confirmed/declined decision)
-  // covers approveRequest's unplaced-at-approval-time fallback in
-  // AppointmentBook.tsx: the requested slot turned out to be taken, so the
-  // original row is cancelled and a brand-new confirmed appointment gets
-  // created once staff drags it from the approved-queue rail onto a real
-  // slot -- same "no hard deletes, only soft status writes" rule as every
-  // other removal in that file's commit() diff-translator.
-  requested: ["confirmed", "declined", "cancelled"],
-  // "checked_out" is reachable directly from every active status below, not
-  // just from "completed" -- checkout is a single terminal action (payment
-  // processed) that staff can trigger at any point, whether or not they
-  // clicked through checked_in/in_service along the way. See
-  // completeCheckout() in AppointmentBook.tsx, which always writes
-  // 'checked_out' regardless of the appointment's current status.
-  confirmed: ["checked_in", "checked_out", "cancelled", "no_show"],
-  booked: ["checked_in", "checked_out", "cancelled", "no_show"],
-  checked_in: ["in_service", "checked_out", "cancelled", "no_show"],
-  in_service: ["completed", "checked_out", "cancelled"],
-  completed: ["checked_out"],
-  checked_out: [],
-  no_show: [],
+  ...Object.fromEntries(ACTIVE_STATUSES.map((s) => [s, ACTIVE_STATUSES.filter((t) => t !== s)] as const)),
   cancelled: [],
   declined: [],
 };
