@@ -210,6 +210,12 @@ export interface Appointment {
    *  decision back. undefined for every appointment that originated locally
    *  (front desk, walk-in, demo data). See HANDOFF.md #10. */
   onlineRequestId?: string
+  /** the status this appointment held right before checkout stamped it to
+   *  'checked_out' -- lets a full refund (an appointment removed entirely
+   *  from its ticket via Reopen checkout) put it back where it was instead
+   *  of leaving it stuck reading "checked out" for a visit that's no longer
+   *  actually paid. Cleared the moment it's used. */
+  preCheckoutStatus?: ApptStatus
 }
 
 export const logEntry = (text: string) => ({ at: Date.now(), text })

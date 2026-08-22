@@ -2307,6 +2307,10 @@ export function AppointmentBook() {
     commit(appts.map((a) => (ids.has(a.id)
       ? {
           ...a, status: 'checked_out' as const,
+          // stash what it was before checkout so a later full refund (see
+          // reopenRefund) can put it back instead of leaving it reading
+          // "checked out" for a visit that's no longer actually paid
+          preCheckoutStatus: a.status,
           log: [...(a.log ?? []), logEntry(`Checked out, $${p.total.toFixed(2)} (${p.method})`)],
         }
       : a)))
@@ -2622,6 +2626,27 @@ export function AppointmentBook() {
       if (host) {
         setPointsByClient((m) => ({ ...m, [host.id]: Math.max(0, (m[host.id] ?? 0) + (payment.redeemed?.points ?? 0) - payment.points) }))
       }
+    }
+    // An appointment stops being "checked out" for real the moment either
+    // (a) it's no longer on this ticket at all -- removed in the Reopen
+    // panel before refunding the difference -- or (b) the whole ticket just
+    // became fully refunded, even with every line still in place (the
+    // common "Refund" button on a locked payment source above needs no line
+    // removal at all). Either way it shouldn't keep reading "checked out"
+    // on the calendar/edit panel for a visit nothing was actually paid for
+    // anymore -- put it back where it was right before checkout stamped it.
+    const revertIds = new Set((payment.apptIds ?? []).filter((id) => !snapshot.apptIds.includes(id)))
+    if (fullyRefunded) for (const id of snapshot.apptIds) revertIds.add(id)
+    if (revertIds.size > 0) {
+      const reverted = reopenDayAppts(payment.dateKey).map((a) => {
+        if (!revertIds.has(a.id) || a.status !== 'checked_out') return a
+        const revertStatus = a.preCheckoutStatus ?? 'completed'
+        return {
+          ...a, status: revertStatus, preCheckoutStatus: undefined,
+          log: [...(a.log ?? []), logEntry(`Refunded in full, reverted to ${revertStatus.replace('_', ' ')}`)],
+        }
+      })
+      commitToDay(payment.dateKey, reverted)
     }
     // keep the panel's `existing` payment/refunds (and its service/tip
     // totals) in sync so refundNeeded and the per-tech pickers recalculate
