@@ -94,20 +94,26 @@ async function main() {
   console.log(`Importing into salon ${salon.name} (${salon.id})`);
 
   // ── Categories ──────────────────────────────────────────────────────────
-  // Backend schema has no parent/archived columns yet, so subcategories
-  // flatten to top-level and archived categories are skipped (their
-  // services get imported as "uncategorized" below, not silently dropped).
+  // service_categories has had parent_id/archived columns since the Phase 1
+  // migration (0001_phase1_catalog.sql) -- this loop used to predate that
+  // and unconditionally flattened every subcategory to top-level, which is
+  // why a first import (before this fix) silently dropped the hierarchy.
+  // Still deliberately skips archived categories -- an archived category's
+  // services import as "uncategorized" below, not silently lost, and
+  // resurrecting old archived rows on every re-run isn't what a re-import
+  // is for.
   const localCats = (data.categories ?? []).filter((c) => !c.archived);
   if (data.categories?.some((c) => c.archived)) {
-    console.log(`  skipping ${data.categories.filter((c) => c.archived).length} archived categor(y/ies) -- no archived flag in this schema yet`);
-  }
-  if (localCats.some((c) => c.parentId)) {
-    console.log(`  flattening ${localCats.filter((c) => c.parentId).length} subcategor(y/ies) to top level -- no category hierarchy in this schema yet`);
+    console.log(`  skipping ${data.categories.filter((c) => c.archived).length} archived categor(y/ies)`);
   }
 
   const existingCats = await db.select().from(serviceCategories).where(eq(serviceCategories.salonId, salon.id));
   const catIdMap = new Map<string, string>(); // local id -> backend id
   let sortOrder = existingCats.length;
+  // Pass 1: make sure every category row exists (matched by name, same
+  // upsert convention as everything else here) so catIdMap is complete
+  // before any parentId gets resolved through it in pass 2 below --
+  // a subcategory can appear before its parent in the export.
   for (const c of localCats) {
     const found = existingCats.find((e) => e.name === c.name);
     if (found) {
@@ -116,8 +122,25 @@ async function main() {
     }
     const [row] = await db.insert(serviceCategories).values({ salonId: salon.id, name: c.name, sortOrder: sortOrder++ }).returning();
     catIdMap.set(c.id, row.id);
+    existingCats.push(row);
     console.log(`  + category "${c.name}"`);
   }
+  // Pass 2: set parentId on every subcategory, including ones matched to an
+  // already-existing row from a prior (pre-fix) run that flattened them --
+  // this is what actually heals a salon that already imported once.
+  let reparented = 0;
+  for (const c of localCats) {
+    if (!c.parentId) continue;
+    const backendParentId = catIdMap.get(c.parentId);
+    if (!backendParentId) continue; // parent wasn't in this export (shouldn't happen) -- leave top-level rather than guess
+    const backendId = catIdMap.get(c.id)!;
+    const row = existingCats.find((e) => e.id === backendId);
+    if (row && row.parentId !== backendParentId) {
+      await db.update(serviceCategories).set({ parentId: backendParentId }).where(eq(serviceCategories.id, backendId));
+      reparented++;
+    }
+  }
+  if (reparented > 0) console.log(`  ~ re-parented ${reparented} subcategor(y/ies)`);
 
   // ── Services ────────────────────────────────────────────────────────────
   const localSvcs = data.services ?? [];

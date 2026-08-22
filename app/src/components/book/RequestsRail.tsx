@@ -607,7 +607,7 @@ function QueueCard({ entry, onRemove, onDrag, onOpenProfile }: {
   onOpenProfile: (name: string) => void
 }) {
   const svc = svcById[entry.serviceId]
-  const cat = catById[svc.categoryId]
+  const cat = svc ? catById[svc.categoryId] : undefined
   const tech: Tech | undefined = entry.preferredTechId ? techById()[entry.preferredTechId] : undefined
   const wait = Math.max(0, DEMO_NOW_MIN - entry.createdMin)
 
@@ -622,9 +622,9 @@ function QueueCard({ entry, onRemove, onDrag, onOpenProfile }: {
         <span className={`tnum shrink-0 text-[11px] font-bold ${wait >= 20 ? 'text-rust' : 'text-ink-faint'}`}>{wait} min</span>
       </div>
       <div className="mt-1.5 flex items-center gap-1.5 text-small font-semibold text-ink-soft">
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: cat.line }} />
-        <span className="truncate">{svc.name}</span>
-        <span className="tnum text-ink-faint">{svc.durationMin}m</span>
+        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: cat?.line ?? 'hsl(0 0% 60%)' }} />
+        <span className="truncate">{svc?.name ?? 'Removed service'}</span>
+        <span className="tnum text-ink-faint">{svc?.durationMin ?? 0}m</span>
       </div>
       <div className="mt-1 text-small font-medium text-ink-soft">
         {tech ? <>wants: <strong className="text-ink">{tech.name}</strong></> : 'any technician'}
@@ -690,6 +690,7 @@ function WalkInGroupCard({ group, onRemove, onDrag, onOpenProfile }: {
             <div className="space-y-1">
               {g.serviceIds.map((sid) => {
                 const svc = svcById[sid]
+                if (!svc) return null // service removed/reorganized since this walk-in was added
                 const cat = catById[svc.categoryId]
                 return (
                   <button
@@ -700,7 +701,7 @@ function WalkInGroupCard({ group, onRemove, onDrag, onOpenProfile }: {
                     title={`Drag ${svc.short} onto the calendar`}
                   >
                     <GripVertical className="h-3 w-3 shrink-0 text-ink-faint" />
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: cat.line }} />
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: cat?.line ?? 'hsl(0 0% 60%)' }} />
                     <span className="truncate">{svc.name}</span>
                     <span className="tnum ml-auto shrink-0 text-ink-faint">{svc.durationMin}m</span>
                   </button>
@@ -744,11 +745,11 @@ function ApprovedCard({ item, onDrag }: { item: ApprovedItem; onDrag: (e: React.
       </div>
       {item.services.map((s, i) => {
         const svc = svcById[s.serviceId]
-        const cat = catById[svc.categoryId]
+        const cat = svc ? catById[svc.categoryId] : undefined
         return (
           <div key={i} className="mt-1.5 flex items-center gap-1.5 text-small font-semibold text-ink-soft">
-            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: cat.line }} />
-            <span className="truncate">{svc.name}</span>
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: cat?.line ?? 'hsl(0 0% 60%)' }} />
+            <span className="truncate">{svc?.name ?? 'Removed service'}</span>
             <span className="tnum text-ink-faint">{s.durationMin}m</span>
           </div>
         )
@@ -787,8 +788,12 @@ function RequestCard({ req, appts, blocks, onApprove, onAskDecline, onPropose }:
   onPropose: (id: string, startMin: number) => void
 }) {
   const [mode, setMode] = useState<'idle' | 'propose'>('idle')
+  // `svc`/`cat` can be missing if the service or its category was deleted
+  // or reorganized out from under an older request/appointment -- render a
+  // "removed" placeholder instead of throwing (which used to blank the
+  // whole panel, taking every other request/waitlist/walk-in down with it).
   const svc = svcById[req.serviceId]
-  const cat = catById[svc.categoryId]
+  const cat = svc ? catById[svc.categoryId] : undefined
   const tech: Tech | undefined = techById()[req.techId]
   const slots = mode === 'propose' ? nearestSlots(appts, req.serviceId, 3, blocks) : []
 
@@ -801,8 +806,8 @@ function RequestCard({ req, appts, blocks, onApprove, onAskDecline, onPropose }:
         </span>
       </div>
       <div className="mt-1.5 flex items-center gap-1.5 text-small font-semibold text-ink-soft">
-        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: cat.line }} />
-        <span className="truncate">{svc.name}</span>
+        <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: cat?.line ?? 'hsl(0 0% 60%)' }} />
+        <span className="truncate">{svc?.name ?? 'Removed service'}</span>
         <span className="tnum text-ink-faint">{req.durationMin}m</span>
       </div>
       <div className="mt-1.5 text-small font-medium text-ink-soft">
