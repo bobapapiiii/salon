@@ -1966,7 +1966,14 @@ export function AppointmentBook() {
         addons: s.addons.length > 0 ? s.addons : undefined,
         issue: s.techId === 'issue' ? true : undefined,
         requestedTechChoice: s.techId === 'first' || s.techId === 'pref-female' || s.techId === 'pref-male' ? s.techId : undefined,
-        techRequested: s.techRequested ?? (s.techId !== 'first' && s.techId !== 'pref-female' && s.techId !== 'pref-male' && s.techId !== 'issue' ? true : undefined),
+        // Trust the panel's own answer, don't re-infer -- BookingPanel.tsx
+        // deliberately leaves this undefined when a specific tech is picked
+        // under its "Any tech" tab (not its "Requested" tab), so the client
+        // didn't actually ask for that person by name. Re-inferring "true"
+        // here for any non-placeholder techId (the previous behavior) fought
+        // that distinction and flagged every Any-tab-with-a-name-picked
+        // booking as tech-requested regardless of what the user chose.
+        techRequested: s.techRequested,
         log: [logEntry(`Booked at ${fmtTime(s.startMin)} with ${techOf(techId).name}`)],
       })
     }

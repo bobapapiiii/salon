@@ -64,8 +64,22 @@ const APPT_STATUSES = [
 // board, and both are soft status writes so a second terminal (or a
 // refresh) never loses the row.
 const ACTIVE_STATUSES = ["requested", "confirmed", "booked", "checked_in", "in_service", "completed", "checked_out", "no_show"] as const;
+// Every active status can move to any other active status (see the comment
+// above), AND to "cancelled" -- cancelling is available from anywhere on
+// the active board (AppointmentBook.tsx's syncApptDiff() sends every
+// removed-from-the-board row through here as a plain 'cancelled' status
+// write, regardless of what status it was in). "requested" additionally
+// reaches "declined", the one other way an online request leaves the
+// board (declineRequest() in AppointmentBook.tsx). Leaving "cancelled" out
+// of ACTIVE_STATUSES's own cross product is exactly what broke this the
+// first time: every active status listed itself and its siblings as valid
+// targets, but never the terminal "cancelled"/"declined" states, so any
+// cancel attempt 400'd with "Cannot move from X to cancelled".
 const STATUS_TRANSITIONS: Record<string, readonly string[]> = {
-  ...Object.fromEntries(ACTIVE_STATUSES.map((s) => [s, ACTIVE_STATUSES.filter((t) => t !== s)] as const)),
+  ...Object.fromEntries(
+    ACTIVE_STATUSES.map((s) => [s, [...ACTIVE_STATUSES.filter((t) => t !== s), "cancelled"]] as const),
+  ),
+  requested: [...ACTIVE_STATUSES.filter((t) => t !== "requested"), "cancelled", "declined"],
   cancelled: [],
   declined: [],
 };
