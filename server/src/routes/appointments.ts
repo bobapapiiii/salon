@@ -61,10 +61,16 @@ const STATUS_TRANSITIONS: Record<string, readonly string[]> = {
   // slot -- same "no hard deletes, only soft status writes" rule as every
   // other removal in that file's commit() diff-translator.
   requested: ["confirmed", "declined", "cancelled"],
-  confirmed: ["checked_in", "cancelled", "no_show"],
-  booked: ["checked_in", "cancelled", "no_show"],
-  checked_in: ["in_service", "cancelled", "no_show"],
-  in_service: ["completed", "cancelled"],
+  // "checked_out" is reachable directly from every active status below, not
+  // just from "completed" -- checkout is a single terminal action (payment
+  // processed) that staff can trigger at any point, whether or not they
+  // clicked through checked_in/in_service along the way. See
+  // completeCheckout() in AppointmentBook.tsx, which always writes
+  // 'checked_out' regardless of the appointment's current status.
+  confirmed: ["checked_in", "checked_out", "cancelled", "no_show"],
+  booked: ["checked_in", "checked_out", "cancelled", "no_show"],
+  checked_in: ["in_service", "checked_out", "cancelled", "no_show"],
+  in_service: ["completed", "checked_out", "cancelled"],
   completed: ["checked_out"],
   checked_out: [],
   no_show: [],
