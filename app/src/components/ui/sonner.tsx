@@ -14,6 +14,13 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
+      // Default to top-center, not sonner's own bottom-right default --
+      // front desk reported missing error toasts (conflict/refresh
+      // messages) that landed in the bottom-right corner while attention
+      // was on the calendar/dialog above. Every <Toaster /> mount in
+      // App.tsx goes through this one wrapper, so this changes all of
+      // them at once; any call site can still override via `position`.
+      position="top-center"
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,
