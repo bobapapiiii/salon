@@ -3,11 +3,12 @@
 // tips earned per client (allocated pro-rata from each ticket's tip).
 import { useMemo, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight, LogOut, Sparkles } from "lucide-react";
-import type { Appointment, Tech } from "@/lib/booking-types";
+import type { Tech } from "@/lib/booking-types";
 import { fmtTime } from "@/lib/booking-types";
 import { useStaffStore } from "@/lib/staff-store";
 import { sdata, usePersistentState } from "@/lib/persist";
 import { svcById } from '@/lib/services-store'
+import { useDayAppointments } from "@/lib/appointments-store"
 
 
 interface PaymentRec {
@@ -41,13 +42,18 @@ export function TechPortal({ tech, onSignOut }: { tech: Tech; onSignOut: () => v
   const { roles } = useStaffStore();
   const [date, setDate] = useState(() => new Date());
   const key = dayKey(date);
-  const [apptDays] = usePersistentState<Record<string, Appointment[]>>(sdata("appts-v2"), {});
+  // Phase 2: this used to read the localStorage "appts-v2" mirror, which
+  // AppointmentBook.tsx no longer writes now that appointments live on the
+  // server -- that key is permanently frozen as of the Phase 2 deploy, so
+  // this portal would otherwise show stale (or empty) data forever. Reads
+  // straight from the same day-keyed server cache the calendar uses.
+  const dayAppts = useDayAppointments(key);
   const [payments] = usePersistentState<PaymentRec[]>(sdata("payments-v2"), []);
 
   const roleName = roles.find((r) => r.id === tech.teamId)?.name ?? "Technician";
   const myAppts = useMemo(
-    () => (apptDays[key] ?? []).filter((a) => a.techId === tech.id).sort((a, b) => a.startMin - b.startMin),
-    [apptDays, key, tech.id],
+    () => dayAppts.filter((a) => a.techId === tech.id).sort((a, b) => a.startMin - b.startMin),
+    [dayAppts, tech.id],
   )
   const doneAppts = myAppts.filter((a) => a.status !== "requested" && a.status !== "no_show");
   const dayValue = doneAppts.reduce((s, a) => s + (a.priceOverride ?? svcById[a.serviceId]?.price ?? 0), 0);

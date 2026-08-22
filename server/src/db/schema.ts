@@ -196,39 +196,127 @@ export const clients = pgTable(
   ],
 );
 
-// Online-booking requests land here as status "requested" until a staff
-// member approves or declines them; this table is deliberately NOT the
-// same as the frontend's localStorage `Appointment` type -- the two are
-// bridged manually (see server/README.md) rather than unified in this pass.
+// The calendar's single source of truth as of Phase 2 -- online-booking
+// requests AND every staff-created/dragged/checked-in appointment are the
+// same row in this table, distinguished only by `source`/`status`. Was
+// online-request-only before Phase 2 (see migrations/0001 and earlier);
+// widened in migrations/0002_phase2_appointments.sql. Column-vs-jsonb
+// split follows the same "promote only what's queried/joined/filtered"
+// rule Phase 1 established for techs.profile -- everything else round-trips
+// through `profile`, shallow-merged into the API response in
+// routes/appointments.ts, invisible to the frontend.
 export const appointments = pgTable(
   "appointments",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     salonId: uuid("salon_id").notNull().references(() => salons.id, { onDelete: "cascade" }),
-    clientId: uuid("client_id").notNull().references(() => clients.id, { onDelete: "cascade" }),
+    // Nullable as of Phase 2: walk-ins/guests booked straight from the
+    // calendar often have no phone and so no real `clients` row (unlike
+    // every pre-Phase-2 row, which always came through routes/booking.ts's
+    // upsert-by-phone flow). `clientName` is the always-present display
+    // value; `clientId`, when set, is the real client to jump to from
+    // ClientProfile.tsx etc.
+    clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }),
+    clientName: text("client_name").notNull().default(""),
     techId: uuid("tech_id").notNull().references(() => techs.id, { onDelete: "cascade" }),
     serviceId: uuid("service_id").notNull().references(() => services.id, { onDelete: "cascade" }),
     // mode: "string" pinned explicitly -- callers (routes/booking.ts,
-    // src/lib/online-booking-sync.ts on the frontend) all treat this as a
-    // plain "YYYY-MM-DD" string, matching the frontend's own dateKey
-    // convention exactly; leaving mode unspecified risks node-postgres/
-    // Drizzle handing back a JS Date instead, which would silently break
-    // every string comparison and equality filter against this column.
+    // routes/appointments.ts, the frontend's dateKey convention) all treat
+    // this as a plain "YYYY-MM-DD" string; leaving mode unspecified risks
+    // node-postgres/Drizzle handing back a JS Date instead, which would
+    // silently break every string comparison and equality filter against
+    // this column.
     dateKey: date("date_key", { mode: "string" }).notNull(),
     startMin: integer("start_min").notNull(), // minutes from midnight, salon-local time
     durationMin: integer("duration_min").notNull(),
-    status: text("status").notNull().default("requested"), // requested | confirmed | declined | cancelled
-    source: text("source").notNull().default("online"), // online | front_desk | pos (future)
+    // requested | confirmed | booked | checked_in | in_service | completed
+    // | checked_out | no_show | cancelled | declined -- see
+    // routes/appointments.ts's status-transition map for what's a valid
+    // move from what. cancelled/declined are soft statuses, never row
+    // deletes (see the Phase 2 plan for why).
+    status: text("status").notNull().default("requested"),
+    source: text("source").notNull().default("online"), // online | front_desk | walk_in | pos
     clientNote: text("client_note"),
     staffNote: text("staff_note"),
+    // Phase 2 additions -- grouped cancel/move needs `where parallel_group
+    // = X`; `issue` is a cheap salon-wide "needs attention" filter/badge.
+    parallelGroup: text("parallel_group"),
+    issue: boolean("issue").notNull().default(false),
+    // Own typed column (mirrors services.addons's existing precedent) --
+    // a well-defined small array shape, not a bag of unrelated fields.
+    addons: jsonb("addons").$type<{ id: string; name: string; mins: number; price: number }[]>().notNull().default([]),
+    // Catch-all for everything else new this phase and not queried on:
+    // notes, guestOf, priceOverride, requestedTechChoice, techRequested,
+    // genderMismatchOk, checkedInMin/startedMin/completedMin, customFields,
+    // walkinOrigin.
+    profile: jsonb("profile").$type<Record<string, unknown>>().notNull().default({}),
+    // Free-text audit trail, same shape as the frontend's existing
+    // Appointment.log ({at, text}[]) -- deliberately NOT a table this
+    // phase, see the Phase 2 plan's "log stays jsonb" section.
+    log: jsonb("log").$type<{ at: number; text: string }[]>().notNull().default([]),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     decidedBy: uuid("decided_by").references(() => users.id, { onDelete: "set null" }),
+    // Optimistic-concurrency token -- every mutating route requires the
+    // caller's `expectedVersion` to match before applying, 409s with the
+    // current row otherwise. See routes/appointments.ts.
+    version: integer("version").notNull().default(1),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
   },
   (t) => [
     index("appointments_salon_date_idx").on(t.salonId, t.dateKey),
     index("appointments_tech_date_idx").on(t.techId, t.dateKey),
     index("appointments_status_idx").on(t.salonId, t.status),
+  ],
+);
+
+// One row per (tech, day) -- a scheduled unavailable window (lunch break,
+// personal appointment, etc), distinct from a full-day override (see
+// techDayOverrides below). Direct 1:1 mapping of the frontend's TimeBlock;
+// own version/updatedAt/updatedBy since two terminals editing the same
+// block is a realistic collision (same model as appointments).
+export const timeBlocks = pgTable(
+  "time_blocks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    salonId: uuid("salon_id").notNull().references(() => salons.id, { onDelete: "cascade" }),
+    techId: uuid("tech_id").notNull().references(() => techs.id, { onDelete: "cascade" }),
+    dateKey: date("date_key", { mode: "string" }).notNull(),
+    startMin: integer("start_min").notNull(),
+    durationMin: integer("duration_min").notNull(),
+    reason: text("reason").notNull().default(""),
+    version: integer("version").notNull().default(1),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
+  },
+  (t) => [
+    index("time_blocks_salon_date_idx").on(t.salonId, t.dateKey),
+    index("time_blocks_tech_date_idx").on(t.techId, t.dateKey),
+  ],
+);
+
+// One row per (tech, day) that overrides the tech's normal weekly
+// schedule/time-off -- matches the frontend's Record<techId, TechDay>
+// exactly via the unique (techId, dateKey) index, which doubles as the
+// upsert key for PUT /api/staff/schedule-overrides/:techId/:dateKey.
+// Deliberately NO version column -- see the Phase 2 plan's schema section
+// (low-frequency, single-settings-panel edits, not a shared drag surface).
+export const techDayOverrides = pgTable(
+  "tech_day_overrides",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    salonId: uuid("salon_id").notNull().references(() => salons.id, { onDelete: "cascade" }),
+    techId: uuid("tech_id").notNull().references(() => techs.id, { onDelete: "cascade" }),
+    dateKey: date("date_key", { mode: "string" }).notNull(),
+    status: text("status").notNull(), // working | off | vacation | emergency | late | early
+    startMin: integer("start_min"),
+    endMin: integer("end_min"),
+    notes: text("notes"),
+  },
+  (t) => [
+    uniqueIndex("tech_day_overrides_tech_date_idx").on(t.techId, t.dateKey),
+    index("tech_day_overrides_salon_date_idx").on(t.salonId, t.dateKey),
   ],
 );
 
@@ -240,6 +328,8 @@ export const salonsRelations = relations(salons, ({ many }) => ({
   jobRoles: many(jobRoles),
   clients: many(clients),
   appointments: many(appointments),
+  timeBlocks: many(timeBlocks),
+  techDayOverrides: many(techDayOverrides),
 }));
 
 export const serviceCategoriesRelations = relations(serviceCategories, ({ one, many }) => ({
@@ -278,4 +368,12 @@ export const appointmentsRelations = relations(appointments, ({ one }) => ({
   client: one(clients, { fields: [appointments.clientId], references: [clients.id] }),
   tech: one(techs, { fields: [appointments.techId], references: [techs.id] }),
   service: one(services, { fields: [appointments.serviceId], references: [services.id] }),
+}));
+
+export const timeBlocksRelations = relations(timeBlocks, ({ one }) => ({
+  tech: one(techs, { fields: [timeBlocks.techId], references: [techs.id] }),
+}));
+
+export const techDayOverridesRelations = relations(techDayOverrides, ({ one }) => ({
+  tech: one(techs, { fields: [techDayOverrides.techId], references: [techs.id] }),
 }));

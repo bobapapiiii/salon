@@ -7,6 +7,7 @@ import { staffRoutes } from "./routes/staff.js";
 import { catalogRoutes } from "./routes/catalog.js";
 import { staffAdminRoutes } from "./routes/staff-admin.js";
 import { clientsRoutes } from "./routes/clients.js";
+import { appointmentsRoutes } from "./routes/appointments.js";
 
 const app = Fastify({ logger: true });
 
@@ -25,6 +26,7 @@ await app.register(staffRoutes);
 await app.register(catalogRoutes);
 await app.register(staffAdminRoutes);
 await app.register(clientsRoutes);
+await app.register(appointmentsRoutes);
 
 const port = Number(process.env.PORT ?? 8080);
 app

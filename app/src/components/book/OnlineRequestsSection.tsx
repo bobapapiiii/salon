@@ -8,10 +8,9 @@ import { useEffect, useState } from "react";
 import { Calendar, CheckCircle2, Clock, Loader2, RefreshCw, User, XCircle } from "lucide-react";
 import {
   ApiError,
-  approveOnlineRequest,
-  declineOnlineRequest,
   fetchOnlineRequests,
   fmtMinutes,
+  setOnlineRequestStatus,
   type OnlineRequest,
 } from "@/lib/booking-api";
 import { useStaffAuth, type StaffAuth } from "@/lib/auth";
@@ -59,13 +58,19 @@ function RequestsList({ auth }: { auth: StaffAuth }) {
   }, []);
 
   async function decide(id: string, action: "approve" | "decline") {
+    const row = requests?.find((r) => r.id === id);
+    if (!row) return;
     setActingOn(id);
     try {
-      if (action === "approve") await approveOnlineRequest(auth.token, id);
-      else await declineOnlineRequest(auth.token, id);
+      await setOnlineRequestStatus(auth.token, id, action === "approve" ? "confirmed" : "declined", row.version);
       setRequests((r) => r?.filter((x) => x.id !== id) ?? r);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "That request couldn't be updated -- try refreshing.");
+      if (e instanceof ApiError && e.status === 409) {
+        setError("Someone else already updated this request -- refreshing.");
+        load();
+      } else {
+        setError(e instanceof ApiError ? e.message : "That request couldn't be updated -- try refreshing.");
+      }
     } finally {
       setActingOn(null);
     }

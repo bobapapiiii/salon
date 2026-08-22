@@ -9,3 +9,5 @@ app/dist-ssr
 
 # Large raw reference footage (small compressed versions of these are kept in reference/)
 reference/*.mov
+server/.env
+server/gloss-nail-bar-export.json

@@ -210,6 +210,10 @@ export async function bookingRoutes(app: FastifyInstance) {
       .values({
         salonId: salon.id,
         clientId: clientRow.id,
+        // clientName is Phase 2's always-present display value on the
+        // calendar -- set it here too, not just on calendar-created rows,
+        // so an online request never renders with a blank name.
+        clientName: clientRow.name,
         techId,
         serviceId,
         dateKey: date,

@@ -2,15 +2,24 @@
 // Everything here requires a valid Bearer token (see requireStaffAuth) and
 // is scoped to req.staff.salonId -- a logged-in user can only ever see or
 // change their own salon's data.
+//
+// Phase 2 note: booking-feed and the approve/decline actions used to live
+// here -- they're superseded by routes/appointments.ts's
+// GET /api/staff/day/:dateKey (day-bundle fetch) and
+// POST /api/staff/appointments/:id/status (transition-validated, generalizes
+// approve/decline to the full status lifecycle) now that online requests
+// and calendar appointments are the same row. GET /online-requests stays --
+// it's still useful as a flat "all pending requests across days" list
+// independent of the calendar's per-day scoping (Settings panel keeps
+// working unchanged).
 import type { FastifyInstance } from "fastify";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { appointments, clients, services, techs, users } from "../db/schema.js";
 import { requireStaffAuth } from "../lib/require-auth.js";
 
-// Shared shape for both listing routes below -- join client/tech/service
-// names in so neither the Settings panel nor the calendar sync needs N
-// follow-up calls per row.
+// Shared shape for the pending-requests listing below -- join client/tech/
+// service names in so the Settings panel doesn't need N follow-up calls.
 const feedColumns = {
   id: appointments.id,
   dateKey: appointments.dateKey,
@@ -24,6 +33,10 @@ const feedColumns = {
   techName: techs.name,
   serviceName: services.name,
   servicePriceCents: services.priceCents,
+  // Phase 2: the Settings panel's Confirm/Decline buttons now go through
+  // POST /api/staff/appointments/:id/status (optimistic-concurrency,
+  // transition-validated), which requires expectedVersion.
+  version: appointments.version,
 };
 
 export async function staffRoutes(app: FastifyInstance) {
@@ -49,55 +62,5 @@ export async function staffRoutes(app: FastifyInstance) {
       .orderBy(appointments.createdAt);
 
     return { requests: rows };
-  });
-
-  // Everything the calendar (AppointmentBook.tsx) should materialize onto
-  // the board: still-pending requests (it places these in the Requests
-  // rail, same as any other online request) PLUS anything already
-  // confirmed elsewhere (e.g. approved from the Settings panel) that the
-  // calendar hasn't pulled onto the board yet. Declined/cancelled rows are
-  // deliberately excluded -- nothing to show for those.
-  app.get("/api/staff/booking-feed", async (req) => {
-    const salonId = req.staff!.salonId;
-    const rows = await db
-      .select(feedColumns)
-      .from(appointments)
-      .innerJoin(clients, eq(appointments.clientId, clients.id))
-      .innerJoin(techs, eq(appointments.techId, techs.id))
-      .innerJoin(services, eq(appointments.serviceId, services.id))
-      .where(and(eq(appointments.salonId, salonId), inArray(appointments.status, ["requested", "confirmed"])))
-      .orderBy(appointments.createdAt);
-
-    return { requests: rows };
-  });
-
-  app.post("/api/staff/online-requests/:id/approve", async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const salonId = req.staff!.salonId;
-    const [appt] = await db.select().from(appointments).where(and(eq(appointments.id, id), eq(appointments.salonId, salonId)));
-    if (!appt) return reply.code(404).send({ error: "Request not found" });
-    if (appt.status !== "requested") return reply.code(409).send({ error: `Already ${appt.status}` });
-
-    const [updated] = await db
-      .update(appointments)
-      .set({ status: "confirmed", decidedAt: new Date(), decidedBy: req.staff!.userId })
-      .where(eq(appointments.id, id))
-      .returning();
-    return { appointment: updated };
-  });
-
-  app.post("/api/staff/online-requests/:id/decline", async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const salonId = req.staff!.salonId;
-    const [appt] = await db.select().from(appointments).where(and(eq(appointments.id, id), eq(appointments.salonId, salonId)));
-    if (!appt) return reply.code(404).send({ error: "Request not found" });
-    if (appt.status !== "requested") return reply.code(409).send({ error: `Already ${appt.status}` });
-
-    const [updated] = await db
-      .update(appointments)
-      .set({ status: "declined", decidedAt: new Date(), decidedBy: req.staff!.userId })
-      .where(eq(appointments.id, id))
-      .returning();
-    return { appointment: updated };
   });
 }

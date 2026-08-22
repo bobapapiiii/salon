@@ -6,17 +6,18 @@ import {
   CLOSE_MIN, DAY_SLOTS, MIN_PPM, MAX_PPM, MIN_COL_W, MAX_COL_W,
   OPEN_MIN, OVERVIEW_COL_W, SLOT_MIN, TEXT_COL_W, fmtTime, overlaps,
 } from '@/lib/booking-types'
-import { SERVICES, generateDay } from '@/lib/mock-data'
+import { SERVICES } from '@/lib/mock-data'
 import { boardTechs, getStaff, isArchived, moveRole, roleColor, uid, useStaffStore } from '@/lib/staff-store'
 import { sdata, setCodec, upref, usePersistentState } from '@/lib/persist'
-import { getServices, svcById } from '@/lib/services-store'
+import { svcById } from '@/lib/services-store'
 import { setClients, useClientsStore } from '@/lib/clients-store'
-import { ApiError, approveOnlineRequest as apiApproveOnlineRequest, declineOnlineRequest as apiDeclineOnlineRequest, fetchBookingFeed } from '@/lib/booking-api'
 import {
-  buildConfirmedAppointment, buildRequestedAppointment, collectKnownOnlineRequestIds,
-  resolveServiceForRow, resolveTechForRow,
-} from '@/lib/online-booking-sync'
-import { getStaffToken } from '@/lib/auth'
+  apiToAppointment, createAppointment as storeCreateAppointment, createBlock as storeCreateBlock,
+  deleteBlock as storeDeleteBlock, ensureDayLoaded, getApiAppointment, getDayApiAppointments, getDayApiBlocks,
+  getLoadedDayKeys, patchAppointment as storePatchAppointment, patchBlock as storePatchBlock,
+  setStatus as storeSetStatus, useDayAppointments, useDayBlocks,
+} from '@/lib/appointments-store'
+import { useDaySchedule, setTechDay as storeSetTechDay } from '@/lib/schedule-store'
 import { Toolbar } from './Toolbar'
 import { ApptContextMenu, ConfirmCancelDialog, type MenuAction } from './ApptMenus'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -299,17 +300,15 @@ export function AppointmentBook() {
   const todayKey = dayKey(new Date())
   const [dateKey, setDateKey] = usePersistentState<string>(upref('ui-date'), () => dayKey(new Date()))
   const date = useMemo(() => new Date(dateKey + 'T12:00:00'), [dateKey])
-  const [apptDays, setApptDays] = usePersistentState<Record<string, Appointment[]>>(sdata('appts-v2'), {})
-  const [appts, setAppts] = useState<Appointment[]>(() => backfillStageTimestamps(apptDays[dateKey] ?? generateDay(dateKey)))
-  // always-latest refs for the online-booking poll further down, which runs
-  // on a timer outside React's normal render cycle (same "ref mirrors state
-  // every render" pattern as blocksRef/dragRef elsewhere in this file)
-  const apptDaysRef = useRef(apptDays)
-  apptDaysRef.current = apptDays
-  const apptsRef = useRef(appts)
-  apptsRef.current = appts
-  const dateKeyRef = useRef(dateKey)
-  dateKeyRef.current = dateKey
+  // Phase 2: the calendar's day is server-backed (appointments-store.ts's
+  // day-keyed cache), fetched lazily per day the same way the old apptDays
+  // map was populated lazily -- ensureDayLoaded is a cheap no-op once a day
+  // is cached. backfillStageTimestamps stays a pure display-only repair for
+  // pre-Phase-2 rows that predate the checkedIn/started/completed stamps
+  // (never written back, just softens old data on render).
+  ensureDayLoaded(dateKey)
+  const rawAppts = useDayAppointments(dateKey)
+  const appts = useMemo(() => backfillStageTimestamps(rawAppts), [rawAppts])
   const [scale, setScaleRaw] = usePersistentState<Scale>(upref('ui-scale'), { colW: 112, ppm: 1.15 })
   const [density, setDensity] = usePersistentState<15 | 30 | 60 | null>(upref('ui-density'), null)
   const [colorMode, setColorMode] = usePersistentState<'category' | 'status'>(upref('ui-colormode'), 'status')
@@ -375,8 +374,6 @@ export function AppointmentBook() {
   // opened from a specific tech's own ⋯ menu rather than the general
   // Schedule shortcut -- pre-filters the team schedule panel to just them
   const [scheduleFocusTechId, setScheduleFocusTechId] = useState<string | null>(null)
-  const [schedules, setSchedules] = usePersistentState<Record<string, DaySchedule>>(sdata('schedule-v1'), {})
-  const [blocksByDay, setBlocksByDay] = usePersistentState<Record<string, TimeBlock[]>>(sdata('blocks-v1'), {})
   const [gridMenu, setGridMenu] = useState<{ x: number; y: number; techId: string; startMin: number } | null>(null)
   const [techMenu, setTechMenu] = useState<{ x: number; y: number; techId: string } | null>(null)
   const [techSchedView, setTechSchedView] = useState<{ techId: string; mode: 'week' | 'month' } | null>(null)
@@ -385,8 +382,6 @@ export function AppointmentBook() {
   // the day the appointment in the edit panel actually lives on, fixed while
   // that panel's day rail browses the calendar elsewhere (see openDetail)
   const [detailOriginDay, setDetailOriginDay] = useState<string | null>(null)
-  // stable per-day previews for the availability modal (unvisited days generate once)
-  const dayPreviewCache = useRef(new Map<string, Appointment[]>())
   const [blockEdit, setBlockEdit] = useState<{ id: string | null; techId: string; draft: BlockDraft } | null>(null)
   const [blockDeleteId, setBlockDeleteId] = useState<string | null>(null)
   const [clipboardClearConfirm, setClipboardClearConfirm] = useState(false)
@@ -398,12 +393,16 @@ export function AppointmentBook() {
   // → Techs → Clients not taken) — the tech's own call, still overridable by
   // the salon, but never applied silently
   const [pendingBannedClient, setPendingBannedClient] = useState<{ techName: string; clientName: string; apply: () => void } | null>(null)
-  const blocksRef = useRef<TimeBlock[]>([])
-  blocksRef.current = blocksByDay[dateKey] ?? []
   // blocks drag like appointments, but self-contained (no conflict rules)
   const [blockDrag, setBlockDrag] = useState<{ id: string; mode: 'move' | 'resize'; techId: string; startMin: number; durationMin: number; moved: boolean } | null>(null)
+  // tech daily schedule overrides (Phase 2: schedule-store.ts, same
+  // day-bundle cache appointments-store.ts already fetches) -- tier 1 of
+  // the existing 3-tier fallback (explicit override → tech.timeOff →
+  // tech.weeklySchedule); tiers 2/3 stay untouched, still read straight
+  // off the tech record
+  const daySchedOverrides = useDaySchedule(dateKey)
   const daySchedule = useMemo(() => {
-    const explicit = schedules[dateKey] ?? {}
+    const explicit = daySchedOverrides
     const wd = new Date(dateKey + 'T12:00:00').getDay()
     const out: DaySchedule = {}
     for (const t of techs) {
@@ -424,12 +423,12 @@ export function AppointmentBook() {
       else if (w && (w.startMin != null || w.endMin != null)) out[t.id] = { status: 'working', startMin: w.startMin, endMin: w.endMin }
     }
     return out
-  }, [schedules, dateKey, techs])
+  }, [daySchedOverrides, dateKey, techs])
   const schedRef = useRef(daySchedule)
   schedRef.current = daySchedule
-  const dayBlocks = blocksByDay[dateKey] ?? []
-  const setDayBlocks = (next: TimeBlock[] | ((b: TimeBlock[]) => TimeBlock[])) =>
-    setBlocksByDay((m) => ({ ...m, [dateKey]: typeof next === 'function' ? next(m[dateKey] ?? []) : next }))
+  const dayBlocks = useDayBlocks(dateKey)
+  const blocksRef = useRef<TimeBlock[]>(dayBlocks)
+  blocksRef.current = dayBlocks
   const [pointsByClient, setPointsByClient] = usePersistentState<Record<string, number>>(sdata('loyalty-v1'), {})
   // cancellation history, kept separately since a cancelled appointment is removed
   // from the day's board entirely (nothing else needs it, but Reports does)
@@ -621,10 +620,12 @@ export function AppointmentBook() {
     return () => el.removeEventListener('wheel', h)
   }, [])
 
-  // ── day navigation (persisted per-day books keep edits while you browse) ──
+  // ── day navigation (server-backed: each day is fetched lazily on first
+  // visit, same as the old apptDays map was populated lazily -- see
+  // appointments-store.ts's ensureDayLoaded) ───────────────────────────────
   const goDay = (d: Date) => {
     const key = dayKey(d)
-    setAppts(backfillStageTimestamps(apptDays[key] ?? generateDay(key)))
+    ensureDayLoaded(key)
     setDateKey(key)
     historyRef.current = []
     redoRef.current = []
@@ -632,78 +633,37 @@ export function AppointmentBook() {
     setMenu(null)
   }
 
-  // mirror the visible day's appointments into the persisted map
-  useEffect(() => {
-    setApptDays((m) => (m[dateKey] === appts ? m : { ...m, [dateKey]: appts }))
-  }, [appts, dateKey]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // one-time migration: any appointment actually covered by a real payment
-  // (regardless of what status it happens to still say -- 'completed' from
-  // before checked_out existed, or anything else a manual status edit left
-  // behind) should read as checked_out. Fold those over across every day,
-  // not just the one on screen, so an old checkout reads the same as a new
-  // one instead of waiting for the salon to happen to revisit that day.
-  // Idempotent (once migrated, nothing here still has a mismatched status),
-  // so this settles after one pass and doesn't loop. Future days are
-  // exempt from this promotion -- checkout itself is blocked for a day
-  // that hasn't arrived yet, so nothing there should ever read as checked
-  // out either, no matter what a payment record might say
-  //
-  // matching MUST stay scoped to the appointment's own day -- ids only
-  // reset to a1 per day (the generator restarts the counter every
-  // generateDay call), so they're not unique across days. An earlier
-  // version of this matched payments against the whole ledger regardless
-  // of day, which could pair a real payment from one day to an unrelated
-  // same-id appointment on a completely different day -- e.g. tagging a
-  // still-requested booking as checked_out just because some other day
-  // happened to check out whatever appointment got the same "a3" id. The
-  // corrective branch below undoes exactly that: anything checked_out with
-  // no real same-day payment behind it gets its original status restored
-  // from the (deterministic) generator, rather than staying stuck reading
-  // as paid -- this one runs regardless of day, since undoing a wrong
-  // checked_out is never the same thing as completing one
-  useEffect(() => {
-    let anyChanged = false
-    const migrated: Record<string, Appointment[]> = {}
-    for (const [k, list] of Object.entries(apptDays)) {
-      let dayChanged = false
-      const dayHasPayment = (id: string) => payments.some((p) => p.dateKey === k && p.apptIds?.includes(id))
-      let pristine: Appointment[] | null = null
-      const nextList = list.map((a) => {
-        if (k <= todayKey && a.status !== 'checked_out' && a.status !== 'no_show' && dayHasPayment(a.id)) {
-          dayChanged = true
-          return { ...a, status: 'checked_out' as const }
-        }
-        if (a.status === 'checked_out' && !dayHasPayment(a.id)) {
-          pristine ??= generateDay(k)
-          const orig = pristine.find((p) => p.id === a.id)
-          if (orig && orig.status !== a.status) {
-            dayChanged = true
-            return { ...a, status: orig.status }
-          }
-        }
-        return a
-      })
-      migrated[k] = dayChanged ? nextList : list
-      if (dayChanged) anyChanged = true
-    }
-    if (!anyChanged) return
-    setApptDays(migrated)
-    if (migrated[dateKey] !== apptDays[dateKey]) setAppts(migrated[dateKey])
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apptDays, payments])
+  // Phase 2 note: the payment-vs-status reconciliation migration that used
+  // to live here is gone -- it existed to repair a client-only data store
+  // where a checkout could leave `status` and the payments ledger out of
+  // sync (and to undo a wrong checked_out via the deterministic
+  // generateDay() fallback, which no longer exists). The server is now
+  // authoritative for status: completeCheckout()/reopen's patch lines set
+  // it directly via commit(), so there's nothing left to reconcile after
+  // the fact.
 
   // appts/blocks for an arbitrary day, not just the one on screen — lets the
   // edit panel's "available times" rail preview other days without visiting
-  // them (same stable-preview-cache pattern as the tech week/month takeover)
+  // them. Server-backed: ensureDayLoaded kicks off that day's fetch if it
+  // hasn't been visited yet (same lazy cache the main day view uses) --
+  // reads it back via the non-hook getDayApiAppointments/getDayApiBlocks,
+  // reactive because this component's own useDayAppointments/useDayBlocks
+  // subscription re-renders on ANY day's fetch resolving (appointments-
+  // store.ts's listeners aren't scoped per day). An unvisited day briefly
+  // reads as empty until its fetch resolves, rather than conjuring demo
+  // appointments the way the old generateDay() fallback did.
   const dayApptsFor = (k: string): Appointment[] => {
     if (k === dateKey) return appts
-    if (apptDays[k]) return apptDays[k]
-    let v = dayPreviewCache.current.get(k)
-    if (!v) { v = generateDay(k); dayPreviewCache.current.set(k, v) }
-    return v
+    ensureDayLoaded(k)
+    return backfillStageTimestamps(
+      getDayApiAppointments(k).filter((a) => a.status !== 'cancelled' && a.status !== 'declined').map(apiToAppointment),
+    )
   }
-  const dayBlocksFor = (k: string): TimeBlock[] => blocksByDay[k] ?? []
+  const dayBlocksFor = (k: string): TimeBlock[] => {
+    if (k === dateKey) return dayBlocks
+    ensureDayLoaded(k)
+    return getDayApiBlocks(k).map((b) => ({ id: b.id, techId: b.techId, startMin: b.startMin, durationMin: b.durationMin, reason: b.reason }))
+  }
 
   // ── columns model (role groups from the staff store; techs A to Z within a role) ──
   const columns = useMemo<Column[]>(() => {
@@ -820,49 +780,158 @@ export function AppointmentBook() {
   }, [appts])
 
   // ── mutations (with undo/redo history, snapshots include the queues) ──────
+  //
+  // Phase 2: commit()/commitBlocks() no longer hold the day's array in
+  // local state -- appts/dayBlocks are now derived from the server-backed
+  // day-keyed store (appointments-store.ts). Every one of this file's ~20
+  // mutation call sites still builds the FULL desired next-state array the
+  // same way it always has (conflict resolution, makeRoom/relocateSquatters,
+  // parallel groups, etc. are all untouched) and calls commit(next)/
+  // commitBlocks(next); what changed is what commit() does with it: instead
+  // of setAppts(next), it diffs `next` against the current day and fires
+  // the minimal set of create/patch/status/cancel calls against the store,
+  // which apply optimistically and reconcile on 409 the same way every
+  // other Phase 1/2 store does. This keeps the blast radius of the
+  // localStorage -> Postgres swap to these four functions rather than
+  // touching every call site's business logic.
   type Snapshot = { appts: Appointment[]; waitlist: QueueEntry[]; walkins: WalkInGroup[]; approved: ApprovedItem[]; blocks: TimeBlock[]; clipboard: ClipItem[] }
   const redoRef = useRef<Snapshot[]>([])
+
+  // What to send for a field that went from set to cleared (nextA[key] is
+  // undefined) -- column fields need a type-appropriate value (zod on the
+  // server rejects null for non-nullable columns), profile catch-all
+  // fields can always take null. Fields never cleared in practice (techId,
+  // clientName, serviceId, startMin, durationMin, bookingSource) aren't
+  // listed -- an actually-undefined value there would be a real bug
+  // upstream, not something to paper over here.
+  const APPT_CLEAR_VALUE: Record<string, unknown> = {
+    parallelGroup: null, issue: false, addons: [],
+    notes: null, guestOf: null, priceOverride: null, requestedTechChoice: null, techRequested: null,
+    genderMismatchOk: null, checkedInMin: null, startedMin: null, completedMin: null, customFields: null,
+    walkinOrigin: null,
+  }
+  const diffApptFields = (prevA: Appointment, nextA: Appointment): Record<string, unknown> => {
+    const patch: Record<string, unknown> = {}
+    const keys = new Set([...Object.keys(prevA), ...Object.keys(nextA)])
+    for (const key of keys) {
+      if (key === 'id' || key === 'status') continue
+      const pv = (prevA as unknown as Record<string, unknown>)[key]
+      const nv = (nextA as unknown as Record<string, unknown>)[key]
+      if (JSON.stringify(pv) === JSON.stringify(nv)) continue
+      patch[key] = nv !== undefined ? nv : (APPT_CLEAR_VALUE[key] ?? null)
+    }
+    return patch
+  }
+
+  // Diffs `prevList` -> `nextList` for one day and fires the minimal store
+  // calls to get there. Used by both commit() (prevList = the live board,
+  // nextList = the caller's desired state) and undo/redo (prevList =
+  // current, nextList = the snapshot being restored) -- same direction of
+  // travel either way, just a different target.
+  const syncApptDiff = useCallback((dk: string, prevList: Appointment[], nextList: Appointment[]) => {
+    const prevMap = new Map(prevList.map((a) => [a.id, a]))
+    const nextMap = new Map(nextList.map((a) => [a.id, a]))
+    for (const [id, nextA] of nextMap) {
+      const prevA = prevMap.get(id)
+      if (!prevA) {
+        // Not on the board we're diffing from -- but it might still exist
+        // server-side under a hidden status (cancelled/declined don't show
+        // up in the visible appts list), most commonly when undo restores
+        // an appointment that was just cancelled, or approveRequest's
+        // relocate-to-approved-queue path is undone. Restore it via
+        // setStatus rather than creating a duplicate row the server would
+        // reject as an id clash.
+        const raw = getApiAppointment(dk, id)
+        if (raw) {
+          const patch = diffApptFields(apiToAppointment(raw), nextA)
+          storeSetStatus(dk, id, nextA.status, patch as Partial<Appointment>)
+        } else {
+          storeCreateAppointment(dk, nextA)
+        }
+        continue
+      }
+      if (JSON.stringify(prevA) === JSON.stringify(nextA)) continue
+      const patch = diffApptFields(prevA, nextA)
+      if (nextA.status !== prevA.status) {
+        // status must go through the transition-validated /status endpoint
+        // -- a general PATCH silently ignores a status field, so any
+        // accompanying content changes ride along in the SAME call rather
+        // than a second PATCH that would race this one on expectedVersion
+        storeSetStatus(dk, id, nextA.status, patch as Partial<Appointment>)
+      } else if (Object.keys(patch).length > 0) {
+        storePatchAppointment(dk, id, patch as Partial<Appointment>)
+      }
+    }
+    for (const [id] of prevMap) {
+      // present in the "from" list but not the target -- every removal in
+      // this file means "no longer an active appointment" (cancelled,
+      // declined-and-relocated-to-approved, a removed checkout extra).
+      // Never a hard delete: there is no DELETE route for appointments,
+      // cancel/decline are the only ways off the active board, and both
+      // are soft status writes so a second terminal never loses the row.
+      if (!nextMap.has(id)) storeSetStatus(dk, id, 'cancelled')
+    }
+  }, [])
+
+  const syncBlockDiff = useCallback((dk: string, prevList: TimeBlock[], nextList: TimeBlock[]) => {
+    const prevMap = new Map(prevList.map((b) => [b.id, b]))
+    const nextMap = new Map(nextList.map((b) => [b.id, b]))
+    for (const [id, nextB] of nextMap) {
+      const prevB = prevMap.get(id)
+      if (!prevB) { storeCreateBlock(dk, nextB); continue }
+      if (JSON.stringify(prevB) === JSON.stringify(nextB)) continue
+      const patch: Partial<TimeBlock> = {}
+      if (nextB.techId !== prevB.techId) patch.techId = nextB.techId
+      if (nextB.startMin !== prevB.startMin) patch.startMin = nextB.startMin
+      if (nextB.durationMin !== prevB.durationMin) patch.durationMin = nextB.durationMin
+      if (nextB.reason !== prevB.reason) patch.reason = nextB.reason ?? ''
+      if (Object.keys(patch).length > 0) storePatchBlock(dk, id, patch)
+    }
+    for (const [id] of prevMap) {
+      if (!nextMap.has(id)) storeDeleteBlock(dk, id)
+    }
+  }, [])
 
   const commit = useCallback((next: Appointment[]) => {
     historyRef.current.push({ appts, waitlist, walkins, approved, blocks: dayBlocks, clipboard })
     if (historyRef.current.length > 30) historyRef.current.shift()
     redoRef.current = [] // a new action clears the redo stack
-    setAppts(next)
-  }, [appts, waitlist, walkins, approved, dayBlocks])
+    syncApptDiff(dateKey, appts, next)
+  }, [appts, waitlist, walkins, approved, dayBlocks, clipboard, dateKey, syncApptDiff])
 
   // block mutations snapshot too, so undo covers them
-  const commitBlocks = (next: TimeBlock[]) => {
+  const commitBlocks = useCallback((next: TimeBlock[]) => {
     historyRef.current.push({ appts, waitlist, walkins, approved, blocks: dayBlocks, clipboard })
     if (historyRef.current.length > 30) historyRef.current.shift()
     redoRef.current = []
-    setDayBlocks(next)
-  }
+    syncBlockDiff(dateKey, dayBlocks, next)
+  }, [appts, waitlist, walkins, approved, dayBlocks, clipboard, dateKey, syncBlockDiff])
 
   const undo = useCallback(() => {
     const prev = historyRef.current.pop()
     if (prev) {
       redoRef.current.push({ appts, waitlist, walkins, approved, blocks: dayBlocks, clipboard })
-      setAppts(prev.appts)
+      syncApptDiff(dateKey, appts, prev.appts)
+      syncBlockDiff(dateKey, dayBlocks, prev.blocks)
       setWaitlist(prev.waitlist)
       setWalkins(prev.walkins)
       setApproved(prev.approved)
-      setDayBlocks(prev.blocks)
       setClipboard(prev.clipboard)
     }
-  }, [appts, waitlist, walkins, approved, dayBlocks, clipboard])
+  }, [appts, waitlist, walkins, approved, dayBlocks, clipboard, dateKey, syncApptDiff, syncBlockDiff])
 
   const redo = useCallback(() => {
     const next = redoRef.current.pop()
     if (next) {
       historyRef.current.push({ appts, waitlist, walkins, approved, blocks: dayBlocks, clipboard })
-      setAppts(next.appts)
+      syncApptDiff(dateKey, appts, next.appts)
+      syncBlockDiff(dateKey, dayBlocks, next.blocks)
       setWaitlist(next.waitlist)
       setWalkins(next.walkins)
       setApproved(next.approved)
-      setDayBlocks(next.blocks)
       setClipboard(next.clipboard)
     }
-  }, [appts, waitlist, walkins, approved, dayBlocks, clipboard])
+  }, [appts, waitlist, walkins, approved, dayBlocks, clipboard, dateKey, syncApptDiff, syncBlockDiff])
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -1414,7 +1483,7 @@ export function AppointmentBook() {
       DAY_MIN - st.durationMin,
     )
     const appt: Appointment = {
-      id: `a${Date.now()}-x`, techId, clientName: person, serviceId: x.serviceId,
+      id: crypto.randomUUID(), techId, clientName: person, serviceId: x.serviceId,
       startMin: start, durationMin: st.durationMin, status: 'confirmed' as const,
       guestOf: personIsAccount ? undefined : checkoutGuestOf ?? hostClient?.id,
       priceOverride: st.price !== svc.price ? st.price : undefined,
@@ -1446,15 +1515,21 @@ export function AppointmentBook() {
   // ── live reopen-ticket editing — same idea as the checkout helpers above,
   // but the ticket being reopened may live on a day other than the one on
   // screen right now, so every mutation branches on that instead of always
-  // hitting the live `appts` array
-  const reopenDayAppts = (payDateKey: string) => (payDateKey === dateKey ? appts : apptDays[payDateKey] ?? [])
+  // hitting the live `appts` array. commitToDay pushes through commit()
+  // (undo history included) when it's today's board, otherwise diffs
+  // straight against that other day's store cache -- matching this file's
+  // longstanding behavior of never undo-tracking a cross-day write.
+  const reopenDayAppts = dayApptsFor
+  const commitToDay = (dk: string, next: Appointment[]) => {
+    if (dk === dateKey) { commit(next); return }
+    syncApptDiff(dk, dayApptsFor(dk), next)
+  }
 
   const reopenPatchLine = (id: string, patch: Partial<Appointment>) => {
     if (!refundPrompt) return
     const pdKey = refundPrompt.payment.dateKey
     const patched = (list: Appointment[]) => list.map((a) => (a.id === id ? { ...a, ...patch } : a))
-    if (pdKey === dateKey) commit(patched(appts))
-    else setApptDays((m) => ({ ...m, [pdKey]: patched(m[pdKey] ?? []) }))
+    commitToDay(pdKey, patched(dayApptsFor(pdKey)))
   }
 
   const reopenRemoveLine = (id: string) =>
@@ -1474,7 +1549,7 @@ export function AppointmentBook() {
       DAY_MIN - st.durationMin,
     )
     const appt: Appointment = {
-      id: `a${Date.now()}-rx`, techId, clientName: person, serviceId: x.serviceId,
+      id: crypto.randomUUID(), techId, clientName: person, serviceId: x.serviceId,
       // added onto an already-paid ticket's reopen session -- checked_out,
       // not just completed, matching what completeReopen stamps it to once
       // this correction is actually submitted
@@ -1485,8 +1560,7 @@ export function AppointmentBook() {
       bookingSource: 'front_desk',
     }
     const pdKey = payment.dateKey
-    if (pdKey === dateKey) commit([...appts, appt])
-    else setApptDays((m) => ({ ...m, [pdKey]: [...(m[pdKey] ?? []), appt] }))
+    commitToDay(pdKey, [...dayApptsFor(pdKey), appt])
     setReopenDraft((d) => ({ ...d, addedIds: [...d.addedIds, appt.id] }))
     // name-only guests register under the host's profile
     if (!personIsAccount && hostClient && person !== payment.clientName) {
@@ -1503,8 +1577,7 @@ export function AppointmentBook() {
   const reopenRemoveExtra = (id: string) => {
     if (!refundPrompt) return
     const pdKey = refundPrompt.payment.dateKey
-    if (pdKey === dateKey) commit(appts.filter((a) => a.id !== id))
-    else setApptDays((m) => ({ ...m, [pdKey]: (m[pdKey] ?? []).filter((a) => a.id !== id) }))
+    commitToDay(pdKey, dayApptsFor(pdKey).filter((a) => a.id !== id))
     setReopenDraft((d) => ({
       ...d,
       addedIds: d.addedIds.filter((x) => x !== id),
@@ -1649,7 +1722,7 @@ export function AppointmentBook() {
           const st = svcForTech(m.techId, m.serviceId)
           const base = svcById[m.serviceId]
           return {
-            id: `a${Date.now()}-${i}`,
+            id: crypto.randomUUID(),
             techId: m.techId,
             clientName: d.clip!.services[i].clientName ?? d.clip!.clientName,
             serviceId: m.serviceId,
@@ -1787,7 +1860,7 @@ export function AppointmentBook() {
     if (!blockEdit) return
     const isNew = blockEdit.id === null
     if (isNew) {
-      commitBlocks([...dayBlocks, { id: `b${Date.now()}`, techId: blockEdit.techId, startMin: d.startMin, durationMin: d.endMin - d.startMin, reason: d.reason }])
+      commitBlocks([...dayBlocks, { id: crypto.randomUUID(), techId: blockEdit.techId, startMin: d.startMin, durationMin: d.endMin - d.startMin, reason: d.reason }])
     } else {
       commitBlocks(dayBlocks.map((b) => (b.id === blockEdit.id ? { ...b, startMin: d.startMin, durationMin: d.endMin - d.startMin, reason: d.reason } : b)))
     }
@@ -1826,7 +1899,7 @@ export function AppointmentBook() {
     const relocated = new Map<string, Appointment>()
     // requested tech had no room even after relocation, needs the double-book prompt
     let forceDouble = false
-    for (const [i, s] of services.entries()) {
+    for (const s of services) {
       const svc = svcById[s.serviceId]
       const addonMins = (s.addons ?? []).reduce((m, a) => m + a.mins, 0)
       let dur = s.durationMin ?? svc.durationMin
@@ -1878,7 +1951,7 @@ export function AppointmentBook() {
       bookedCount.set(techId, (bookedCount.get(techId) ?? 0) + 1)
       const addonNote = s.addons.length > 0 ? `Add-ons: ${s.addons.map((a) => a.name).join(', ')}` : undefined
       newAppts.push({
-        id: `a${Date.now()}-${i}`,
+        id: crypto.randomUUID(),
         techId,
         clientName: s.clientName,
         serviceId: s.serviceId,
@@ -1957,14 +2030,9 @@ export function AppointmentBook() {
   }
 
   // ── team schedule (per-day tech status/hours) ─────────────────────────────
-  const setTechDay = (techId: string, patch: Partial<DaySchedule[string]>) =>
-    setSchedules((m) => ({
-      ...m,
-      [dateKey]: {
-        ...(m[dateKey] ?? {}),
-        [techId]: { ...(m[dateKey]?.[techId] ?? { status: 'working' as const }), ...patch },
-      },
-    }))
+  // signature unchanged (TechSchedulePanel's onSet prop keeps working as-is)
+  // -- only the internals swap to the server-backed schedule-store.ts
+  const setTechDay = (techId: string, patch: Partial<DaySchedule[string]>) => storeSetTechDay(dateKey, techId, patch)
 
   // ── checkout ──────────────────────────────────────────────────────────────
   // one ticket per client visit, or the whole party for linked groups.
@@ -2306,8 +2374,8 @@ export function AppointmentBook() {
     const hostClient = clients.find((c) => c.name === r.clientName)
     const newAppts: Appointment[] = (r.lines ?? [])
       .filter((l) => l.techId !== '')
-      .map((l, i) => ({
-        id: `a${Date.now()}-pos${i}`,
+      .map((l) => ({
+        id: crypto.randomUUID(),
         techId: l.techId,
         clientName: l.person ?? r.clientName,
         serviceId: l.serviceId,
@@ -2416,7 +2484,7 @@ export function AppointmentBook() {
     // scope to the payment's OWN day, not today -- this is also the target
     // of Manage Register's "find a transaction" search, which can surface a
     // ticket from any past day, not just something still owed today
-    const payDayAppts = p.dateKey === dateKey ? appts : apptDays[p.dateKey] ?? []
+    const payDayAppts = dayApptsFor(p.dateKey)
     const items = (p.apptIds ?? []).map((id) => payDayAppts.find((x) => x.id === id)).filter((x): x is Appointment => x != null)
     setRegisterOpen(false)
     setFindTxOpen(false)
@@ -2435,7 +2503,7 @@ export function AppointmentBook() {
       ...reopenDraft.addedIds,
     ]
     return ids.map((id) => dayAppts.find((a) => a.id === id)).filter((a): a is Appointment => a != null)
-  }, [refundPrompt, reopenDraft, appts, apptDays, dateKey])
+  }, [refundPrompt, reopenDraft, appts, dateKey])
 
   // same idea as checkoutPointsRecipients/checkoutExistingPrefs above, just
   // scoped to whoever's actually on this reopened ticket right now
@@ -2472,10 +2540,7 @@ export function AppointmentBook() {
     const stamp = (list: Appointment[]) => list.map((a) => (idSet.has(a.id)
       ? { ...a, status: 'checked_out' as const, log: [...(a.log ?? []), logEntry(`Ticket corrected, $${p.total.toFixed(2)}`)] }
       : a))
-    if (ids.length > 0) {
-      if (payment.dateKey === dateKey) commit(stamp(appts))
-      else setApptDays((m) => ({ ...m, [payment.dateKey]: stamp(m[payment.dateKey] ?? []) }))
-    }
+    if (ids.length > 0) commitToDay(payment.dateKey, stamp(dayApptsFor(payment.dateKey)))
     const patch = (pay: typeof payment) => {
       const next = { ...pay, subtotal: p.subtotal, tip: p.tip, total: p.total, balanceDue: p.balanceDue, apptIds: ids, tipByTech: p.tipByTech ?? pay.tipByTech }
       if (p.sources.length > 0) next.sources = [...paymentSources(pay), ...p.sources]
@@ -2843,17 +2908,39 @@ export function AppointmentBook() {
         }))
       }
       if (crossDay) {
-        // finalKeep's ids live on originDay, not today's board — drop them
-        // from there and append them (already resolved above against the
-        // live day) onto today, alongside any relocated squatters
-        setApptDays((m) => ({
-          ...m,
-          [originDay]: (m[originDay] ?? originBoard).filter((a) => !byId.has(a.id) && !removedIds.includes(a.id)),
-        }))
-        commit([
-          ...appts.filter((a) => !removedIds.includes(a.id)).map((a) => relocated.get(a.id) ?? a),
-          ...finalKeep,
-        ])
+        // finalKeep's rows currently live in originDay's cache. Anything
+        // else this save touched on originDay (a squatter relocated to
+        // make room, or a removal) is a normal same-day diff there. Each
+        // moving row relocates via one PATCH (content diff + dateKey
+        // together, see appointments-store.ts's patchAppointment) rather
+        // than a PATCH + /move pair that would race each other on the same
+        // expectedVersion; a row whose status ALSO changed sends that
+        // through /status first (status must go through the transition-
+        // validated endpoint) and awaits it before the relocating patch,
+        // so those two never race each other either.
+        const originStayersPrev = originBoard.filter((a) => !byId.has(a.id))
+        const originStayersNext = originStayersPrev
+          .filter((a) => !removedIds.includes(a.id))
+          .map((a) => relocated.get(a.id) ?? a)
+        syncApptDiff(originDay, originStayersPrev, originStayersNext)
+
+        void (async () => {
+          for (const u of finalKeep) {
+            const orig = originBoard.find((a) => a.id === u.id)
+            if (!orig) {
+              storeCreateAppointment(dateKey, u)
+              continue
+            }
+            const patch = diffApptFields(orig, u)
+            if (u.status !== orig.status) {
+              await storeSetStatus(originDay, u.id, u.status, patch as Partial<Appointment>)
+              storePatchAppointment(originDay, u.id, { dateKey } as Partial<Appointment> & { dateKey: string })
+            } else {
+              storePatchAppointment(originDay, u.id, { ...patch, dateKey } as Partial<Appointment> & { dateKey: string })
+            }
+          }
+        })()
+
         setDetailId(null)
         showFlash(
           relocated.size > 0
@@ -2959,7 +3046,7 @@ export function AppointmentBook() {
     const payment = payments.find((p) => p.dateKey === originKey && detailGroup.some((g) => p.apptIds?.includes(g.id)))
       ?? [...payments].reverse().find((p) => p.clientName === a.clientName && p.dateKey === originKey)
     if (!payment) return null
-    const payDayAppts = payment.dateKey === dateKey ? appts : apptDays[payment.dateKey] ?? []
+    const payDayAppts = dayApptsFor(payment.dateKey)
     const items = (payment.apptIds ?? []).map((id) => payDayAppts.find((x) => x.id === id)).filter((x): x is Appointment => x != null)
     return { payment, items: items.length > 0 ? items : detailGroup }
   }
@@ -3054,17 +3141,15 @@ export function AppointmentBook() {
     const newGroup = detailAppt.parallelGroup ? `pg${Date.now()}` : undefined
     const groupMinStart = Math.min(...detailGroup.map((g) => g.startMin))
     const fromLabel = dayLabel(new Date((detailOriginDay ?? dateKey) + 'T12:00:00'))
-    setApptDays((m) => ({
-      ...m,
-      [targetDateKey]: [...(m[targetDateKey] ?? generateDay(targetDateKey)), ...detailGroup.map((g, i) => ({
-        ...g,
-        id: `a${Date.now()}-${i}`,
-        startMin: startMin + (g.startMin - groupMinStart),
-        status: 'confirmed' as const,
-        parallelGroup: newGroup,
-        log: [logEntry(`Rebooked from ${fromLabel}`)],
-      }))],
+    const rebooked = detailGroup.map((g) => ({
+      ...g,
+      id: crypto.randomUUID(),
+      startMin: startMin + (g.startMin - groupMinStart),
+      status: 'confirmed' as const,
+      parallelGroup: newGroup,
+      log: [logEntry(`Rebooked from ${fromLabel}`)],
     }))
+    commitToDay(targetDateKey, [...dayApptsFor(targetDateKey), ...rebooked])
     setDetailId(null)
     showFlash(`✓ Rebooked to ${dayLabel(new Date(targetDateKey + 'T12:00:00'))} at ${fmtTime(startMin)}`)
   }
@@ -3159,7 +3244,7 @@ export function AppointmentBook() {
     payments
       .filter((p) => p.clientName === name || p.clientNames?.includes(name))
       .map((p) => {
-        const dayAppts = p.dateKey === dateKey ? appts : apptDays[p.dateKey] ?? []
+        const dayAppts = dayApptsFor(p.dateKey)
         const items = (p.apptIds ?? []).map((id) => dayAppts.find((a) => a.id === id)).filter((a): a is Appointment => a != null)
         // per-service breakdown -- each line keeps its own service, tech, price,
         // and category color, so the Last 5 visits popup can look like checkout
@@ -3195,7 +3280,12 @@ export function AppointmentBook() {
 
   const visitsClient = visitsName ? resolveClient(visitsName) : null
 
-  // every visit by a name-only guest of this client, newest first
+  // every visit by a name-only guest of this client, newest first. Scoped
+  // to days actually loaded into the cache this session (getLoadedDayKeys)
+  // -- unlike the old all-in-localStorage apptDays map, the server-backed
+  // store only holds days that have actually been visited/fetched, so this
+  // can miss a guest visit on a day nobody's browsed to yet. A real
+  // cross-day search is a follow-up server endpoint, out of scope here.
   const guestVisits = useMemo(() => {
     if (!profileClient) return []
     const out: { dateKey: string; appt: Appointment }[] = []
@@ -3208,10 +3298,9 @@ export function AppointmentBook() {
         }
       }
     }
-    Object.entries(apptDays).forEach(([dk, list]) => push(dk, list))
-    push(dateKey, appts)
+    for (const dk of getLoadedDayKeys()) push(dk, dayApptsFor(dk))
     return out.sort((a, b) => b.dateKey.localeCompare(a.dateKey) || b.appt.startMin - a.appt.startMin)
-  }, [profileClient, apptDays, appts, dateKey])
+  }, [profileClient, appts, dateKey])
 
   const addClientNote = (text: string, alertOn: ClientAlertTrigger[]) => {
     if (!profileClient) return
@@ -3252,9 +3341,11 @@ export function AppointmentBook() {
   const saveClientProfile = (patch: Partial<ClientRecord>) => {
     if (!profileClient) return
     setClients((xs) => {
-      // rename everywhere if the name changed
+      // rename on today's board if the name changed -- same scope the
+      // original localStorage version had (only the currently-viewed day;
+      // a rename never swept every other day's cache either)
       if (patch.name && patch.name !== profileClient.name) {
-        setAppts((cur) => cur.map((a) => (a.clientName === profileClient.name ? { ...a, clientName: patch.name! } : a)))
+        commit(appts.map((a) => (a.clientName === profileClient.name ? { ...a, clientName: patch.name! } : a)))
         setProfileName(patch.name)
       }
       const exists = xs.some((c) => c.id === profileClient.id)
@@ -3265,107 +3356,17 @@ export function AppointmentBook() {
     showFlash('✓ Guest profile saved')
   }
 
-  // ── online booking sync (server/) ───────────────────────────────────────
-  // Pulls pending + already-confirmed bookings from the new backend
-  // (server/) onto this calendar on a timer, so staff never have to check
-  // two separate places for what needs their attention. Uses whichever
-  // staff account is signed in app-wide (lib/auth.ts) -- silently does
-  // nothing until someone's signed in. Tech/service are matched by name
-  // against this salon's catalog (the backend and the frontend keep
-  // separate catalogs today, see server/README.md); a request whose tech or
-  // service name doesn't match anything here is skipped rather than guessed
-  // at, and logged to the console so it's not a silent black hole. See
-  // HANDOFF.md #10.
-  useEffect(() => {
-    let cancelled = false
-    const run = async () => {
-      const token = getStaffToken()
-      if (!token) return
-      let feed: Awaited<ReturnType<typeof fetchBookingFeed>>['requests']
-      try {
-        feed = (await fetchBookingFeed(token)).requests
-      } catch {
-        return // offline, server unreachable, or token expired -- retry next tick
-      }
-      if (cancelled || feed.length === 0) return
-
-      const known = collectKnownOnlineRequestIds(apptDaysRef.current, dateKeyRef.current, apptsRef.current)
-      const fresh = feed.filter((r) => !known.has(r.id))
-      if (fresh.length === 0) return
-
-      const poolTechs = getStaff().techs
-      const poolServices = getServices()
-      const byDay = new Map<string, Appointment[]>()
-      let skipped = 0
-      for (const row of fresh) {
-        const tech = resolveTechForRow(row, poolTechs)
-        const service = resolveServiceForRow(row, poolServices)
-        if (!tech || !service) {
-          skipped++
-          continue
-        }
-        const dayExisting = row.dateKey === dateKeyRef.current ? apptsRef.current : apptDaysRef.current[row.dateKey] ?? []
-        const appt =
-          row.status === 'confirmed'
-            ? buildConfirmedAppointment(row, tech.id, service.id, byDay.get(row.dateKey) ?? dayExisting)
-            : buildRequestedAppointment(row, tech.id, service.id)
-        if (!byDay.has(row.dateKey)) byDay.set(row.dateKey, [...dayExisting])
-        byDay.get(row.dateKey)!.push(appt)
-        addNotification({
-          kind: row.status === 'confirmed' ? 'online_approved' : 'online_request',
-          text: row.status === 'confirmed' ? 'Online booking confirmed' : 'New online booking request',
-          detail: `${row.clientName} · ${row.serviceName} · ${row.dateKey}`,
-          dateKey: row.dateKey,
-          apptId: appt.id,
-        })
-      }
-      if (cancelled || byDay.size === 0) return
-
-      // the currently-viewed day goes through setAppts (a separate effect
-      // already mirrors appts into apptDays); every other day is written
-      // straight into apptDays so it's there next time staff navigate to
-      // it, without disturbing whatever's on screen right now
-      const currentDay = dateKeyRef.current
-      if (byDay.has(currentDay)) {
-        setAppts(byDay.get(currentDay)!)
-        byDay.delete(currentDay)
-      }
-      if (byDay.size > 0) {
-        setApptDays((m) => {
-          const next = { ...m }
-          for (const [day, list] of byDay) next[day] = list
-          return next
-        })
-      }
-      if (skipped > 0) {
-        console.warn(`[online booking sync] skipped ${skipped} request(s), couldn't match tech/service name to this salon's catalog`)
-      }
-    }
-    run()
-    const timer = setInterval(run, 45000)
-    return () => {
-      cancelled = true
-      clearInterval(timer)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // best-effort: tell the backend what staff just decided here, so Settings
-  // → Online requests (which reads the backend directly) reflects it too.
-  // Never blocks or fails the local decision -- the calendar's own state is
-  // already the source of truth for what staff see next, this is purely to
-  // keep the backend's copy from going stale.
-  const pushOnlineDecision = (linked: Appointment[], decision: 'approve' | 'decline') => {
-    const token = getStaffToken()
-    if (!token) return
-    const call = decision === 'approve' ? apiApproveOnlineRequest : apiDeclineOnlineRequest
-    for (const a of linked) {
-      if (!a.onlineRequestId) continue
-      call(token, a.onlineRequestId).catch((err) => {
-        if (!(err instanceof ApiError)) console.warn('[online booking sync] failed to sync decision to server', err)
-      })
-    }
-  }
+  // Phase 2 note: the online-booking-sync bridge (a 45s poll matching the
+  // backend's requests to this calendar's catalog by NAME, since the two
+  // used to keep separate catalogs -- see the now-deleted online-booking-
+  // sync.ts and HANDOFF.md #10) is gone. routes/booking.ts's public
+  // booking endpoint now inserts directly into the same `appointments`
+  // table this calendar reads (status: 'requested', real techId/serviceId
+  // already resolved server-side), so an online request just shows up in
+  // useDayAppointments() like any other row on the day it's for -- no
+  // polling, no name-matching, no separate sync step. approveRequest/
+  // declineRequest below already operate on `appts` (a real row already on
+  // the board), so their placement logic needed no changes at all.
 
   // ── requests approval ─────────────────────────────────────────────────────
   // ── requests rail actions ──────────────────────────────────────────────────
@@ -3425,10 +3426,12 @@ export function AppointmentBook() {
         dateKey,
         apptId: req.id,
       })
-      pushOnlineDecision(linked, 'approve')
       return
     }
-    // requested time unavailable, keep the manual drag-onto-calendar flow
+    // requested time unavailable, keep the manual drag-onto-calendar flow --
+    // the original requested row is cancelled (see STATUS_TRANSITIONS'
+    // requested->cancelled entry); a brand-new confirmed appointment gets
+    // created once staff drags it from the approved-queue rail below
     commit(appts.filter((a) => !ids.has(a.id)))
     setApproved((x) => [...x, {
       id: `ap${Date.now()}`,
@@ -3446,7 +3449,6 @@ export function AppointmentBook() {
       detail: `${req.clientName} · requested ${fmtTime(req.startMin)}, needs placement`,
       dateKey,
     })
-    pushOnlineDecision(linked, 'approve')
   }
   const declineRequest = (id: string) => {
     const req = appts.find((a) => a.id === id)
@@ -3454,8 +3456,15 @@ export function AppointmentBook() {
     const linked = req.parallelGroup
       ? appts.filter((a) => a.parallelGroup === req.parallelGroup && a.status === 'requested')
       : [req]
-    const ids = new Set(linked.map((a) => a.id))
-    commit(appts.filter((a) => !ids.has(a.id)))
+    // 'declined', not the generic removed->cancelled default commit() uses
+    // elsewhere -- a decline is a distinct, reportable outcome from a
+    // cancellation, and it's a status this specific transition (requested
+    // -> declined) already validates server-side. Pushes its own undo
+    // snapshot the same way commit() does, since it bypasses commit().
+    historyRef.current.push({ appts, waitlist, walkins, approved, blocks: dayBlocks, clipboard })
+    if (historyRef.current.length > 30) historyRef.current.shift()
+    redoRef.current = []
+    for (const a of linked) storeSetStatus(dateKey, a.id, 'declined')
     showFlash('Request declined, client notified')
     addNotification({
       kind: 'online_declined',
@@ -3463,7 +3472,6 @@ export function AppointmentBook() {
       detail: `${req.clientName} · requested ${fmtTime(req.startMin)}`,
       dateKey,
     })
-    pushOnlineDecision(linked, 'decline')
   }
   const proposeRequest = (id: string, startMin: number) => {
     commit(appts.map((a) => (a.id === id ? { ...a, startMin, status: 'confirmed' as const } : a)))
@@ -4324,14 +4332,8 @@ export function AppointmentBook() {
             mode={techSchedView.mode}
             pxPerMin={scale.ppm}
             density={density}
-            getAppts={(k) => {
-              if (k === dateKey) return appts
-              if (apptDays[k]) return apptDays[k]
-              let v = dayPreviewCache.current.get(k)
-              if (!v) { v = generateDay(k); dayPreviewCache.current.set(k, v) }
-              return v
-            }}
-            getBlocks={(k) => blocksByDay[k] ?? []}
+            getAppts={dayApptsFor}
+            getBlocks={dayBlocksFor}
             onBook={(d, startMin) => {
               // stay in the tech view, just book into the right day
               const techId = techSchedView.techId
@@ -4473,7 +4475,7 @@ export function AppointmentBook() {
             <button
               onClick={() => {
                 commitBlocks([...dayBlocks, {
-                  id: `b${Date.now()}`, techId: gridMenu.techId,
+                  id: crypto.randomUUID(), techId: gridMenu.techId,
                   startMin: gridMenu.startMin, durationMin: 60, reason: 'Block',
                 }])
                 showFlash(`✓ 1 hour blocked for ${techOf(gridMenu.techId).name}, right-click it to set a reason`)
@@ -4826,7 +4828,7 @@ export function AppointmentBook() {
           onViewInvoice={(paymentId) => {
             const p = payments.find((x) => x.id === paymentId)
             if (!p) return
-            const dayAppts = p.dateKey === dateKey ? appts : apptDays[p.dateKey] ?? []
+            const dayAppts = dayApptsFor(p.dateKey)
             const items = (p.apptIds ?? []).map((id) => dayAppts.find((a) => a.id === id)).filter((a): a is Appointment => a != null)
             setInvoicePayment({ payment: p, items })
           }}
@@ -4879,7 +4881,7 @@ export function AppointmentBook() {
         onDate={setJobCardDate}
         dayAppts={dayApptsFor}
         clients={clients}
-        apptDates={new Set([...Object.keys(apptDays), dateKey])}
+        apptDates={new Set(getLoadedDayKeys())}
         onClose={() => setJobCardOpen(false)}
       />
 

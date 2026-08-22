@@ -137,30 +137,30 @@ export interface OnlineRequest {
   techName: string;
   serviceName: string;
   servicePriceCents: number;
+  // Phase 2 optimistic-concurrency token, required by setOnlineRequestStatus.
+  version: number;
 }
 
 export function fetchOnlineRequests(token: string): Promise<{ requests: OnlineRequest[] }> {
   return request(`/api/staff/online-requests`, { headers: { Authorization: `Bearer ${token}` } });
 }
 
-/** Pending requests PLUS anything already confirmed elsewhere (e.g. from
- *  the Settings panel) that hasn't been placed on the calendar yet -- what
- *  AppointmentBook.tsx's sync polls. See online-booking-sync.ts. */
-export function fetchBookingFeed(token: string): Promise<{ requests: OnlineRequest[] }> {
-  return request(`/api/staff/booking-feed`, { headers: { Authorization: `Bearer ${token}` } });
-}
-
-export function approveOnlineRequest(token: string, id: string): Promise<unknown> {
-  return request(`/api/staff/online-requests/${encodeURIComponent(id)}/approve`, {
+// Phase 2: booking-feed and the dedicated approve/decline actions are
+// retired -- online requests are calendar appointments now (see
+// routes/appointments.ts), materialized directly by the day-bundle fetch
+// rather than polled and bridged in. Confirm/decline from the Settings
+// panel goes through the same transition-validated status endpoint the
+// calendar itself uses.
+export function setOnlineRequestStatus(
+  token: string,
+  id: string,
+  status: "confirmed" | "declined",
+  expectedVersion: number,
+): Promise<unknown> {
+  return request(`/api/staff/appointments/${encodeURIComponent(id)}/status`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
-  });
-}
-
-export function declineOnlineRequest(token: string, id: string): Promise<unknown> {
-  return request(`/api/staff/online-requests/${encodeURIComponent(id)}/decline`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ status, expectedVersion }),
   });
 }
 
