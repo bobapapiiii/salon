@@ -143,14 +143,31 @@ async function main() {
   if (reparented > 0) console.log(`  ~ re-parented ${reparented} subcategor(y/ies)`);
 
   // ── Services ────────────────────────────────────────────────────────────
+  // `short` (a compact display name, distinct from `name`) has been part of
+  // the export shape from the start but was never actually written to the
+  // `short` column below -- every row created by an import before this fix
+  // is stuck at the column's "" default. That's silently invisible in most
+  // of the app (checkout, the client search dropdown, etc. all read `name`
+  // instead), but a handful of surfaces -- the calendar's day-view cards,
+  // the walk-in builder's service picker -- read `short` specifically and
+  // rendered a blank label for every one of these services.
   const localSvcs = data.services ?? [];
   const existingSvcs = await db.select().from(services).where(eq(services.salonId, salon.id));
   const svcIdMap = new Map<string, string>();
   sortOrder = existingSvcs.length;
+  let healedShort = 0;
   for (const s of localSvcs) {
     const found = existingSvcs.find((e) => e.name === s.name);
     if (found) {
       svcIdMap.set(s.id, found.id);
+      // Heal a service imported before `short` was wired in below -- only
+      // backfill when the export actually has a real value to give it, so
+      // a service a staff member has since intentionally cleared in
+      // Settings (short === "") isn't stomped back to the old export value.
+      if (!found.short && s.short) {
+        await db.update(services).set({ short: s.short }).where(eq(services.id, found.id));
+        healedShort++;
+      }
       continue;
     }
     const [row] = await db
@@ -159,6 +176,7 @@ async function main() {
         salonId: salon.id,
         categoryId: catIdMap.get(s.categoryId) ?? null,
         name: s.name,
+        short: s.short,
         durationMin: s.durationMin,
         priceCents: Math.round(s.price * 100),
         active: s.active !== false,
@@ -169,6 +187,7 @@ async function main() {
     svcIdMap.set(s.id, row.id);
     console.log(`  + service "${s.name}" ($${s.price}, ${s.durationMin}min)`);
   }
+  if (healedShort > 0) console.log(`  ~ backfilled "short" display name for ${healedShort} already-imported service(s)`);
 
   // ── Techs (+ skills) ────────────────────────────────────────────────────
   const roleById = new Map((data.staff?.roles ?? []).map((r) => [r.id, r]));

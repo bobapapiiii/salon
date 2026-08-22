@@ -417,6 +417,9 @@ function WalkInBuilder({ clients, onAddClient, onAdd }: {
   const [q, setQ] = useState('')
   const [searching, setSearching] = useState(false)
   const [newPhone, setNewPhone] = useState('')
+  // service search for the active guest's picker below -- separate from `q`
+  // above, which is the client-search box (name/phone), not the service one
+  const [svcQuery, setSvcQuery] = useState('')
 
   const matches = useMemo(() => {
     if (!q.trim()) return []
@@ -461,7 +464,7 @@ function WalkInBuilder({ clients, onAddClient, onAdd }: {
   const submit = () => {
     if (!canSubmit) return
     onAdd(guests)
-    setGuests([]); setActiveIdx(0); setQ(''); setOpen(false)
+    setGuests([]); setActiveIdx(0); setQ(''); setSvcQuery(''); setOpen(false)
   }
 
   if (!open) {
@@ -544,40 +547,66 @@ function WalkInBuilder({ clients, onAddClient, onAdd }: {
         )}
       </div>
 
-      {/* services for active guest */}
+      {/* services for active guest -- same searchable, full-name list as the
+          new-appointment picker (BookingPanel.tsx's "Services for <guest>"
+          tab), not the old 2-col grid of color-dot buttons keyed off
+          Service.short: `short` is a separate, optional display field that
+          real imported catalogs never got backfilled for (see
+          import-local-data.ts), so it silently rendered blank for every
+          walk-in here even though the calendar/checkout everywhere else
+          shows the service's real `name` fine. */}
       {active && (
         <>
           <div className="text-[11px] font-semibold text-ink-soft">
             Services for <span className="text-clay">{active.name}</span>
             {active.serviceIds.length === 0 && <span className="ml-1 text-rust">pick at least one</span>}
           </div>
-          <div className="grid max-h-44 grid-cols-2 gap-1 overflow-y-auto">
-            {orderedSvcs.map((s, i) => {
-              const on = active.serviceIds.includes(s.id)
-              const cat = catById[s.categoryId]
-              const group = serviceGroupLabel(s, categories)
-              const showHeader = group !== undefined && (i === 0 || group !== serviceGroupLabel(orderedSvcs[i - 1], categories))
-              return (
-                <div key={s.id} className={showHeader ? 'col-span-2' : ''}>
-                  {showHeader && (
-                    <div className={`px-0.5 pb-0.5 text-[9.5px] font-bold uppercase tracking-wide text-ink-faint ${i === 0 ? '' : 'pt-1.5'}`}>
-                      {group}
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => toggleSvc(s.id)}
-                    className={`flex w-full items-center gap-1.5 rounded-[6px] border px-1.5 py-1 text-left text-[11px] transition-colors ${
-                      on ? 'border-clay bg-clay-tint font-semibold text-clay' : 'border-line bg-surface text-ink-soft hover:border-line-strong'
-                    }`}
-                  >
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: cat.line }} />
-                    <span className="truncate">{s.short}</span>
-                    {on && <Check className="ml-auto h-3 w-3 shrink-0" />}
-                  </button>
-                </div>
-              )
-            })}
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-faint" />
+            <input
+              value={svcQuery}
+              onChange={(e) => setSvcQuery(e.target.value)}
+              placeholder="Search services"
+              className={`${field} pl-7`}
+            />
+          </div>
+          <div className="max-h-44 space-y-0.5 overflow-y-auto">
+            {(() => {
+              const query = svcQuery.trim().toLowerCase()
+              const filteredSvcs = query ? orderedSvcs.filter((s) => s.name.toLowerCase().includes(query)) : orderedSvcs
+              if (filteredSvcs.length === 0) {
+                return <div className="py-3 text-center text-[11px] text-ink-faint">No services match "{svcQuery.trim()}"</div>
+              }
+              return filteredSvcs.map((s, i) => {
+                const on = active.serviceIds.includes(s.id)
+                const cat = catById[s.categoryId]
+                const group = serviceGroupLabel(s, categories)
+                const showHeader = group !== undefined && (i === 0 || group !== serviceGroupLabel(filteredSvcs[i - 1], categories))
+                return (
+                  <div key={s.id}>
+                    {showHeader && (
+                      <div className={`px-0.5 pb-0.5 text-[9.5px] font-bold uppercase tracking-wide text-ink-faint ${i === 0 ? '' : 'pt-1.5'}`}>
+                        {group}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => toggleSvc(s.id)}
+                      className={`flex w-full items-center gap-1.5 rounded-[6px] border px-1.5 py-1 text-left text-[11px] transition-colors ${
+                        on ? 'border-clay bg-clay-tint font-semibold text-clay' : 'border-line bg-surface text-ink-soft hover:border-line-strong'
+                      }`}
+                    >
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: cat.line }} />
+                      <span className="min-w-0 flex-1 truncate">
+                        {s.name}
+                        <span className="ml-1.5 font-normal text-ink-faint">${s.price} · {s.durationMin}min</span>
+                      </span>
+                      {on && <Check className="ml-auto h-3 w-3 shrink-0" />}
+                    </button>
+                  </div>
+                )
+              })
+            })()}
           </div>
         </>
       )}
@@ -591,7 +620,7 @@ function WalkInBuilder({ clients, onAddClient, onAdd }: {
           <Users className="h-3.5 w-3.5" />
           Add {guests.length > 1 ? `party of ${guests.length}` : 'walk-in'}
         </button>
-        <button onClick={() => { setOpen(false); setGuests([]) }} className="rounded-[8px] px-2.5 text-[12px] font-semibold text-ink-soft hover:bg-surface">
+        <button onClick={() => { setOpen(false); setGuests([]); setSvcQuery('') }} className="rounded-[8px] px-2.5 text-[12px] font-semibold text-ink-soft hover:bg-surface">
           Cancel
         </button>
       </div>
