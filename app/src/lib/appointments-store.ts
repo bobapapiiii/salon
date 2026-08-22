@@ -52,6 +52,31 @@ const loadedDays = new Set<string>();
 const inFlight = new Map<string, Promise<void>>();
 const lastFailureAt = new Map<string, number>();
 
+// Serializes network writes per appointment id. Typing into a checkout
+// field (or any other back-to-back edit on the same row) fires one call
+// per keystroke; the optimistic UI update is instant, but the outgoing
+// PATCH captures `expectedVersion` from whatever the row's version was
+// *at the moment that keystroke fired*, not when it actually gets sent --
+// the store never bumps a row's version locally, only a confirmed server
+// response does. Two calls for the same id in flight at once therefore
+// carry the SAME expectedVersion, and the server's PATCH route does a
+// read-merge-conditional-update (see routes/appointments.ts) that is not
+// itself safe against overlapping writes: whichever request's UPDATE
+// commits first bumps the version, and the second's `WHERE version = ...`
+// then matches nothing -- a guaranteed 409 ("changed elsewhere") against
+// the client's own very next keystroke, not a real conflict with anyone
+// else. Chaining every write for a given id behind whatever's still
+// in flight for that id, and re-reading the row's current version right
+// before actually sending, turns that guaranteed self-conflict into an
+// ordinary sequential pair of writes.
+const inFlightById = new Map<string, Promise<unknown>>();
+function enqueueForId<T>(id: string, run: () => Promise<T>): Promise<T> {
+  const prior = inFlightById.get(id) ?? Promise.resolve();
+  const next = prior.catch(() => {}).then(run);
+  inFlightById.set(id, next.catch(() => {}));
+  return next;
+}
+
 const listeners = new Set<() => void>();
 function emit() {
   listeners.forEach((l) => l());
@@ -316,50 +341,64 @@ export function patchAppointment(
     }
   }
 
-  return apiPatchAppointment(id, { ...(apiPatch as object), expectedVersion: before.version } as never)
-    .then((res) => {
-      const homeKey = res.appointment.dateKey;
-      if (days.has(homeKey)) {
-        // Reconcile in place when the row is already sitting in this day's
-        // cache (the overwhelmingly common case -- a same-day content edit,
-        // e.g. every keystroke of a checkout custom field). Filter+append
-        // here used to shove the just-edited row to the END of the array on
-        // every successful patch -- harmless for the calendar (positioned by
-        // startMin/techId, not array order) but visibly reordered any list
-        // that renders in array order, like CheckoutDialog's per-service
-        // lines: type into "Color" on the top line, and by the time the
-        // optimistic patch round-trips, that line jumps to the bottom.
-        // Only a genuine cross-day arrival (row not yet present here) still
-        // appends, since there's no prior position to preserve.
-        const homeList = days.get(homeKey)?.appts ?? [];
-        const idx = homeList.findIndex((a) => a.id === id);
-        setDayAppts(homeKey, idx === -1 ? [...homeList, res.appointment] : homeList.map((a) => (a.id === id ? res.appointment : a)));
-      }
-      for (const [key, day] of days) {
-        if (key !== homeKey && day.appts.some((a) => a.id === id)) {
-          setDayAppts(key, day.appts.filter((a) => a.id !== id));
+  return enqueueForId(id, () => {
+    // Re-read the row's current version right before actually sending --
+    // if an earlier queued write for this same id has landed since this
+    // call was made, `before.version` captured above is already stale.
+    const latest = (days.get(targetDateKey)?.appts ?? days.get(dateKey)?.appts ?? []).find((a) => a.id === id) ?? optimistic;
+    return apiPatchAppointment(id, { ...(apiPatch as object), expectedVersion: latest.version } as never)
+      .then((res) => {
+        const homeKey = res.appointment.dateKey;
+        if (days.has(homeKey)) {
+          // Reconcile in place when the row is already sitting in this day's
+          // cache (the overwhelmingly common case -- a same-day content edit,
+          // e.g. every keystroke of a checkout custom field). Filter+append
+          // here used to shove the just-edited row to the END of the array on
+          // every successful patch -- harmless for the calendar (positioned by
+          // startMin/techId, not array order) but visibly reordered any list
+          // that renders in array order, like CheckoutDialog's per-service
+          // lines: type into "Color" on the top line, and by the time the
+          // optimistic patch round-trips, that line jumps to the bottom.
+          // Only a genuine cross-day arrival (row not yet present here) still
+          // appends, since there's no prior position to preserve.
+          const homeList = days.get(homeKey)?.appts ?? [];
+          const idx = homeList.findIndex((a) => a.id === id);
+          setDayAppts(homeKey, idx === -1 ? [...homeList, res.appointment] : homeList.map((a) => (a.id === id ? res.appointment : a)));
         }
-      }
-    })
-    .catch((err) => {
-      // revert: pull the optimistic row out of wherever it landed, restore
-      // its original day/slot (or the server's authoritative row on a 409)
-      for (const [key, day] of days) {
-        if (key !== dateKey && day.appts.some((a) => a.id === id)) {
-          setDayAppts(key, day.appts.filter((a) => a.id !== id));
+        for (const [key, day] of days) {
+          if (key !== homeKey && day.appts.some((a) => a.id === id)) {
+            setDayAppts(key, day.appts.filter((a) => a.id !== id));
+          }
         }
-      }
-      const current = (days.get(dateKey)?.appts ?? []).filter((a) => a.id !== id);
-      if (err instanceof ApiConflictError && err.status === 409 && err.body && typeof err.body === "object" && "appointment" in err.body) {
-        const serverRow = (err.body as { appointment: ApiAppointment }).appointment;
-        setDayAppts(serverRow.dateKey, [...(days.get(serverRow.dateKey)?.appts ?? []).filter((a) => a.id !== id), serverRow]);
-        if (serverRow.dateKey !== dateKey) setDayAppts(dateKey, current);
-        toast.error("That appointment changed elsewhere -- refreshed");
-      } else {
-        setDayAppts(dateKey, [...current, before]);
-        toast.error(errorMessage(err));
-      }
-    });
+      })
+      .catch((err) => {
+        // revert: pull the optimistic row out of wherever it landed, restore
+        // its original day/slot (or the server's authoritative row on a
+        // 409) -- same in-place reconcile as the success path above, so a
+        // failed/conflicted write doesn't ALSO shove the row to the end of
+        // whatever list is currently showing it.
+        for (const [key, day] of days) {
+          if (key !== dateKey && day.appts.some((a) => a.id === id)) {
+            setDayAppts(key, day.appts.filter((a) => a.id !== id));
+          }
+        }
+        const current = days.get(dateKey)?.appts ?? [];
+        if (err instanceof ApiConflictError && err.status === 409 && err.body && typeof err.body === "object" && "appointment" in err.body) {
+          const serverRow = (err.body as { appointment: ApiAppointment }).appointment;
+          if (days.has(serverRow.dateKey)) {
+            const homeList = days.get(serverRow.dateKey)?.appts ?? [];
+            const idx = homeList.findIndex((a) => a.id === id);
+            setDayAppts(serverRow.dateKey, idx === -1 ? [...homeList, serverRow] : homeList.map((a) => (a.id === id ? serverRow : a)));
+          }
+          if (serverRow.dateKey !== dateKey) setDayAppts(dateKey, current.filter((a) => a.id !== id));
+          toast.error("That appointment changed elsewhere -- refreshed");
+        } else {
+          const idx = current.findIndex((a) => a.id === id);
+          setDayAppts(dateKey, idx === -1 ? [...current, before] : current.map((a) => (a.id === id ? before : a)));
+          toast.error(errorMessage(err));
+        }
+      });
+  });
 }
 
 /** Drag/resize/cross-day reschedule. May relocate the row into a
@@ -388,42 +427,56 @@ export function moveAppointment(dateKey: string, id: string, move: { techId?: st
     }
   }
 
-  apiMoveAppointment(id, { ...move, expectedVersion: before.version })
-    .then((res) => {
-      const homeKey = res.appointment.dateKey;
-      if (days.has(homeKey)) {
-        // Same in-place-reconcile fix as patchAppointment() above -- keep
-        // the row's array position when it's already cached here (a
-        // same-day move), only append for a genuine new arrival.
-        const homeList = days.get(homeKey)?.appts ?? [];
-        const idx = homeList.findIndex((a) => a.id === id);
-        setDayAppts(homeKey, idx === -1 ? [...homeList, res.appointment] : homeList.map((a) => (a.id === id ? res.appointment : a)));
-      }
-      // Clean up the id from every OTHER cached day it might still be
-      // sitting in (the optimistic pre-move day, if different from home).
-      for (const [key, day] of days) {
-        if (key !== homeKey && day.appts.some((a) => a.id === id)) {
-          setDayAppts(key, day.appts.filter((a) => a.id !== id));
+  enqueueForId(id, () => {
+    // Re-read the row's current version right before sending -- same
+    // self-race guard as patchAppointment() above (drag/resize firing
+    // back-to-back for the same row before the first round-trips).
+    const latest = (days.get(targetDateKey)?.appts ?? days.get(dateKey)?.appts ?? []).find((a) => a.id === id) ?? optimistic;
+    return apiMoveAppointment(id, { ...move, expectedVersion: latest.version })
+      .then((res) => {
+        const homeKey = res.appointment.dateKey;
+        if (days.has(homeKey)) {
+          // Same in-place-reconcile fix as patchAppointment() above -- keep
+          // the row's array position when it's already cached here (a
+          // same-day move), only append for a genuine new arrival.
+          const homeList = days.get(homeKey)?.appts ?? [];
+          const idx = homeList.findIndex((a) => a.id === id);
+          setDayAppts(homeKey, idx === -1 ? [...homeList, res.appointment] : homeList.map((a) => (a.id === id ? res.appointment : a)));
         }
-      }
-    })
-    .catch((err) => {
-      // Revert: remove from wherever it optimistically landed, restore to
-      // its original day.
-      for (const [key, day] of days) {
-        if (key !== dateKey && day.appts.some((a) => a.id === id)) {
-          setDayAppts(key, day.appts.filter((a) => a.id !== id));
+        // Clean up the id from every OTHER cached day it might still be
+        // sitting in (the optimistic pre-move day, if different from home).
+        for (const [key, day] of days) {
+          if (key !== homeKey && day.appts.some((a) => a.id === id)) {
+            setDayAppts(key, day.appts.filter((a) => a.id !== id));
+          }
         }
-      }
-      const current = (days.get(dateKey)?.appts ?? []).filter((a) => a.id !== id);
-      setDayAppts(dateKey, [...current, before]);
-
-      if (err instanceof ApiConflictError && err.body && typeof err.body === "object" && "appointment" in err.body) {
-        toast.error((err as ApiError).message || "That slot is taken -- refreshed");
-      } else {
-        toast.error(errorMessage(err));
-      }
-    });
+      })
+      .catch((err) => {
+        // Revert: remove from wherever it optimistically landed, restore to
+        // its original day/slot in place (or the server's authoritative row
+        // on a 409) -- same in-place reconcile as patchAppointment() above.
+        for (const [key, day] of days) {
+          if (key !== dateKey && day.appts.some((a) => a.id === id)) {
+            setDayAppts(key, day.appts.filter((a) => a.id !== id));
+          }
+        }
+        const current = days.get(dateKey)?.appts ?? [];
+        if (err instanceof ApiConflictError && err.body && typeof err.body === "object" && "appointment" in err.body) {
+          const serverRow = (err.body as { appointment: ApiAppointment }).appointment;
+          if (days.has(serverRow.dateKey)) {
+            const homeList = days.get(serverRow.dateKey)?.appts ?? [];
+            const idx = homeList.findIndex((a) => a.id === id);
+            setDayAppts(serverRow.dateKey, idx === -1 ? [...homeList, serverRow] : homeList.map((a) => (a.id === id ? serverRow : a)));
+          }
+          if (serverRow.dateKey !== dateKey) setDayAppts(dateKey, current.filter((a) => a.id !== id));
+          toast.error((err as ApiError).message || "That slot is taken -- refreshed");
+        } else {
+          const idx = current.findIndex((a) => a.id === id);
+          setDayAppts(dateKey, idx === -1 ? [...current, before] : current.map((a) => (a.id === id ? before : a)));
+          toast.error(errorMessage(err));
+        }
+      });
+  });
 }
 
 /** Thin status-transition wrapper -- transition validity is enforced
@@ -451,21 +504,26 @@ export function setStatus(
   const optimistic: ApiAppointment = { ...before, ...extraApi, status };
   setDayAppts(dateKey, list.map((a) => (a.id === id ? optimistic : a)));
 
-  return apiSetAppointmentStatus(id, status, before.version, extraApi)
-    .then((res) => {
-      const current = days.get(dateKey)?.appts ?? [];
-      setDayAppts(dateKey, current.map((a) => (a.id === id ? res.appointment : a)));
-    })
-    .catch((err) => {
-      const current = days.get(dateKey)?.appts ?? [];
-      if (err instanceof ApiConflictError && err.body && typeof err.body === "object" && "appointment" in err.body) {
-        setDayAppts(dateKey, current.map((a) => (a.id === id ? (err.body as { appointment: ApiAppointment }).appointment : a)));
-        toast.error((err as ApiError).message || "That appointment changed elsewhere -- refreshed");
-      } else {
-        setDayAppts(dateKey, current.map((a) => (a.id === id ? before : a)));
-        toast.error(errorMessage(err));
-      }
-    });
+  return enqueueForId(id, () => {
+    // Re-read the row's current version right before sending -- same
+    // self-race guard as patchAppointment() above.
+    const latest = (days.get(dateKey)?.appts ?? []).find((a) => a.id === id) ?? optimistic;
+    return apiSetAppointmentStatus(id, status, latest.version, extraApi)
+      .then((res) => {
+        const current = days.get(dateKey)?.appts ?? [];
+        setDayAppts(dateKey, current.map((a) => (a.id === id ? res.appointment : a)));
+      })
+      .catch((err) => {
+        const current = days.get(dateKey)?.appts ?? [];
+        if (err instanceof ApiConflictError && err.body && typeof err.body === "object" && "appointment" in err.body) {
+          setDayAppts(dateKey, current.map((a) => (a.id === id ? (err.body as { appointment: ApiAppointment }).appointment : a)));
+          toast.error((err as ApiError).message || "That appointment changed elsewhere -- refreshed");
+        } else {
+          setDayAppts(dateKey, current.map((a) => (a.id === id ? before : a)));
+          toast.error(errorMessage(err));
+        }
+      });
+  });
 }
 
 // ── time block mutations ─────────────────────────────────────────────────
